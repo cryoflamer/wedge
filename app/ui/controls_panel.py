@@ -296,17 +296,19 @@ class ControlsPanel(QWidget):
 
     def set_trajectory_items(
         self,
-        items: list[tuple[int, str, str]],
+        items: list[tuple[int, str, str, bool]],
         selected_trajectory_id: int | None,
     ) -> None:
         blocker = QSignalBlocker(self._trajectory_list)
         self._trajectory_list.clear()
         selected_item: QListWidgetItem | None = None
 
-        for trajectory_id, label, color in items:
+        for trajectory_id, label, color, visible in items:
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, trajectory_id)
-            item.setIcon(self._color_icon(color))
+            item.setIcon(self._color_icon(color, visible))
+            if not visible:
+                item.setForeground(QColor("#777777"))
             self._trajectory_list.addItem(item)
             if trajectory_id == selected_trajectory_id:
                 selected_item = item
@@ -325,10 +327,12 @@ class ControlsPanel(QWidget):
             if trajectory_id is not None:
                 self._trajectory_info.setText(f"selected: #{int(trajectory_id)}")
 
-    def _color_icon(self, color: str) -> QIcon:
+    def _color_icon(self, color: str, visible: bool) -> QIcon:
         pixmap = QPixmap(12, 12)
         pixmap.fill(Qt.transparent)
         qcolor = QColor(color)
+        if not visible:
+            qcolor.setAlpha(90)
         for x in range(12):
             for y in range(12):
                 pixmap.setPixelColor(x, y, qcolor)
