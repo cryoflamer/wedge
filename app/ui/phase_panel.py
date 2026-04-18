@@ -534,11 +534,21 @@ class PhasePanel(QWidget):
         point: QPointF,
     ) -> None:
         d_value, tau_value = self._map_click(point)
+        label_text = f"d={d_value:.3f}, tau={tau_value:.3f}"
         painter.setPen(QPen(QColor(60, 60, 60, 120), 1, Qt.DashLine))
         painter.drawLine(QPointF(plot.left(), point.y()), QPointF(plot.right(), point.y()))
         painter.drawLine(QPointF(point.x(), plot.top()), QPointF(point.x(), plot.bottom()))
 
-        label_rect = QRectF(plot.left() + 8.0, plot.bottom() - 28.0, 176.0, 20.0)
+        metrics = painter.fontMetrics()
+        text_width = metrics.horizontalAdvance(label_text)
+        label_width = text_width + 16.0
+        label_height = metrics.height() + 6.0
+        label_rect = QRectF(
+            plot.left() + 8.0,
+            plot.bottom() - label_height - 8.0,
+            label_width,
+            label_height,
+        )
         painter.setPen(QPen(QColor("#666666"), 1))
         painter.setBrush(QColor(255, 255, 255, 220))
         painter.drawRoundedRect(label_rect, 4.0, 4.0)
@@ -546,5 +556,5 @@ class PhasePanel(QWidget):
         painter.drawText(
             label_rect.adjusted(6.0, 0.0, -6.0, 0.0),
             Qt.AlignVCenter | Qt.AlignLeft,
-            f"d={d_value:.3f}, tau={tau_value:.3f}",
+            label_text,
         )
