@@ -108,64 +108,19 @@ def load_config(path: str | Path) -> Config:
     )
 
 
-def save_config(config: Config, path: str | Path) -> Path:
+def save_runtime_config(config: Config, path: str | Path) -> Path:
     config_path = Path(path)
-    payload = {
-        "app": {
-            "title": config.app.title,
-            "theme": config.app.theme,
-            "log_level": config.app.log_level,
-        },
-        "simulation": {
-            "alpha": config.simulation.alpha,
-            "beta": config.simulation.beta,
-            "n_phase_default": config.simulation.n_phase_default,
-            "n_geom_default": config.simulation.n_geom_default,
-            "eps": config.simulation.eps,
-        },
-        "replay": {
-            "delay_ms": config.replay.delay_ms,
-            "selected_only_by_default": config.replay.selected_only_by_default,
-        },
-        "export": {
-            "dpi": config.export.dpi,
-            "default_mode": config.export.default_mode,
-            "monochrome_line_styles": list(config.export.monochrome_line_styles),
-        },
-        "view": {
-            "show_grid": config.view.show_grid,
-            "show_labels": config.view.show_labels,
-            "show_directrix": config.view.show_directrix,
-            "show_reflection_points": config.view.show_reflection_points,
-            "phase_point_radius": config.view.phase_point_radius,
-            "geometry_point_radius": config.view.geometry_point_radius,
-        },
-        "window": {
-            "width": config.window.width,
-            "height": config.window.height,
-            "x": config.window.x,
-            "y": config.window.y,
-        },
-        "autosave": {
-            "enabled": config.autosave.enabled,
-            "path": config.autosave.path,
-        },
-        "regions": [
-            {
-                "name": region.name,
-                "label": region.label,
-                "predicate": region.predicate,
-                "style": {
-                    "fill": region.style.fill,
-                    "alpha": region.style.alpha,
-                    "hatch": region.style.hatch,
-                    "border": region.style.border,
-                    "line_style": region.style.line_style,
-                },
-                "priority": region.priority,
-            }
-            for region in config.regions
-        ],
+    if config_path.exists():
+        with config_path.open("r", encoding="utf-8") as file:
+            payload = yaml.safe_load(file) or {}
+    else:
+        payload = {}
+
+    payload["window"] = {
+        "width": config.window.width,
+        "height": config.window.height,
+        "x": config.window.x,
+        "y": config.window.y,
     }
 
     with config_path.open("w", encoding="utf-8") as file:

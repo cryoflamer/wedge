@@ -20,8 +20,8 @@ from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
 from app.models.session import Session
 from app.models.trajectory import TrajectorySeed
+from app.services.config_loader import save_runtime_config
 from app.services.export_service import export_widget_bundle_png
-from app.services.config_loader import save_config
 from app.services.session_service import load_session, save_session
 from app.ui.angle_panel import AnglePanel
 from app.ui.controls_panel import ControlsPanel
@@ -107,7 +107,7 @@ class MainWindow(QMainWindow):
         self._config.window.x = self.x()
         self._config.window.y = self.y()
         self._autosave_session()
-        save_config(self._config, self._config_path)
+        save_runtime_config(self._config, self._config_path)
         super().closeEvent(event)
 
     def _build_layout(self) -> None:
