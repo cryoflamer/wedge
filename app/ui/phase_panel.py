@@ -69,6 +69,16 @@ class PhasePanel(QWidget):
         self._update_hint()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        if self._fixed_domain and event.button() in (Qt.LeftButton, Qt.RightButton):
+            logger.info(
+                "Phase interaction ignored: wall=%s fixed_domain=true button=%s",
+                self.wall,
+                int(event.button()),
+            )
+            self._last_click.setText("zoom/pan disabled: uncheck fixed domain")
+            self._update_hint()
+            self.update()
+
         if event.button() == Qt.RightButton and not self._fixed_domain:
             self._pan_anchor_canvas = event.position()
             self._pan_anchor_viewport = self._viewport
@@ -168,6 +178,14 @@ class PhasePanel(QWidget):
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         if self._fixed_domain:
+            logger.info(
+                "Phase wheel ignored: wall=%s fixed_domain=true delta=%s",
+                self.wall,
+                event.angleDelta().y(),
+            )
+            self._last_click.setText("zoom disabled: uncheck fixed domain")
+            self._update_hint()
+            self.update()
             return
 
         plot = self._plot_rect()
@@ -295,6 +313,11 @@ class PhasePanel(QWidget):
     def _is_inside_domain(self, d_value: float, tau_value: float) -> bool:
         return (1.0 - d_value) ** 2 + tau_value**2 < 1.0
 
+    def _domain_canvas_rect(self) -> QRectF:
+        top_left = self._to_canvas(0.0, 1.0)
+        bottom_right = self._to_canvas(2.0, -1.0)
+        return QRectF(top_left, bottom_right).normalized()
+
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
         painter = QPainter(self)
@@ -305,6 +328,9 @@ class PhasePanel(QWidget):
         painter.drawRect(self.rect().adjusted(0, 0, -1, -1))
         painter.drawRect(plot)
 
+        painter.save()
+        painter.setClipRect(plot)
+
         painter.setPen(QPen(QColor("#c8c8c8"), 1))
         tau_zero_left = self._to_canvas(0.0, 0.0)
         tau_zero_right = self._to_canvas(2.0, 0.0)
@@ -313,10 +339,32 @@ class PhasePanel(QWidget):
         d_one_bottom = self._to_canvas(1.0, -1.0)
         painter.drawLine(d_one_top, d_one_bottom)
 
-        domain_rect = QRectF(plot.left(), plot.top(), plot.width(), plot.height())
+        domain_rect = self._domain_canvas_rect()
         painter.setPen(QPen(QColor("#8fb9e8"), 2))
         painter.setBrush(QColor(214, 231, 248, 80))
         painter.drawEllipse(domain_rect)
+
+        badge_rect = QRectF(plot.left() + 8.0, plot.top() + 8.0, 172.0, 26.0)
+        if self._fixed_domain:
+            painter.setPen(QPen(QColor("#7a1f1f"), 1))
+            painter.setBrush(QColor(255, 235, 235, 220))
+            painter.drawRoundedRect(badge_rect, 6.0, 6.0)
+            painter.setPen(QColor("#7a1f1f"))
+            painter.drawText(
+                badge_rect.adjusted(8.0, 0.0, -8.0, 0.0),
+                Qt.AlignVCenter | Qt.AlignLeft,
+                "fixed domain: zoom off",
+            )
+        else:
+            painter.setPen(QPen(QColor("#1f5f2a"), 1))
+            painter.setBrush(QColor(231, 247, 234, 220))
+            painter.drawRoundedRect(badge_rect, 6.0, 6.0)
+            painter.setPen(QColor("#1f5f2a"))
+            painter.drawText(
+                badge_rect.adjusted(8.0, 0.0, -8.0, 0.0),
+                Qt.AlignVCenter | Qt.AlignLeft,
+                "free zoom: on",
+            )
 
         if self._zoom_rect_canvas is not None:
             selection = self._zoom_rect_canvas.intersected(plot)
@@ -375,6 +423,8 @@ class PhasePanel(QWidget):
             active_radius = self._view_config.phase_point_radius + 2
             painter.drawEllipse(active_canvas_point, active_radius, active_radius)
 
+        painter.restore()
+
     def _apply_zoom_rect(self) -> None:
         plot = self._plot_rect()
         zoom_rect = self._zoom_rect_canvas
@@ -425,7 +475,7 @@ class PhasePanel(QWidget):
 
     def _update_hint(self) -> None:
         if self._fixed_domain:
-            self._hint.setText("fixed domain")
+            self._hint.setText("fixed domain | disable in Parameters for zoom/pan")
             return
 
         d_min, d_max, tau_min, tau_max = self._viewport

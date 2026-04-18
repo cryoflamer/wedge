@@ -37,7 +37,7 @@ class ControlsPanel(QWidget):
         self._beta_edit = QLineEdit()
         self._n_phase_edit = QLineEdit()
         self._n_geom_edit = QLineEdit()
-        self._fixed_domain_checkbox = QCheckBox("Fixed domain")
+        self._fixed_domain_checkbox = QCheckBox("Fixed domain (disable for zoom/pan)")
         self._trajectory_info = QLabel("selected: -")
         self._parameter_status = QLabel("")
 
