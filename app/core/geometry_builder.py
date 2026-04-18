@@ -45,8 +45,8 @@ def build_wedge_geometry(
         )
 
     for orbit_point, state, left, right in zip(
-        segment_points,
-        states[:segment_count],
+        reflection_points[1 : segment_count + 1],
+        states[1 : segment_count + 1],
         geometry.reflections,
         geometry.reflections[1 : segment_count + 1],
     ):
