@@ -60,6 +60,7 @@ def build_wedge_geometry(
             )
         )
 
+    _sync_reflection_points_with_segments(geometry)
     return geometry
 
 
@@ -355,6 +356,31 @@ def _closest_point(
         candidates,
         key=lambda point: math.hypot(point.x - fallback.x, point.y - fallback.y),
     )
+
+
+def _sync_reflection_points_with_segments(geometry: WedgeGeometry) -> None:
+    if not geometry.segments:
+        return
+
+    first_segment = geometry.segments[0]
+    if first_segment.valid and first_segment.start_point is not None:
+        first_reflection = geometry.reflections[0]
+        first_reflection.point = first_segment.start_point
+        first_reflection.valid = True
+        first_reflection.invalid_reason = None
+
+    for index, segment in enumerate(geometry.segments):
+        if (
+            not segment.valid
+            or segment.end_point is None
+            or index + 1 >= len(geometry.reflections)
+        ):
+            continue
+
+        reflection = geometry.reflections[index + 1]
+        reflection.point = segment.end_point
+        reflection.valid = True
+        reflection.invalid_reason = None
 
 
 def _wall_angle(wall: int, config: SimulationConfig) -> float:
