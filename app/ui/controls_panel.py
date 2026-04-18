@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -158,33 +159,53 @@ class ControlsPanel(QWidget):
 
     def _build_parameters_box(self) -> QGroupBox:
         box = QGroupBox("Parameters")
-        layout = QFormLayout(box)
-        layout.addRow("Units", self._angle_units_combo)
-        layout.addRow("alpha", self._alpha_edit)
-        layout.addRow("beta", self._beta_edit)
-        layout.addRow("N_phase", self._n_phase_edit)
-        layout.addRow("N_geom", self._n_geom_edit)
-        layout.addRow(self._symmetric_mode_checkbox)
-        layout.addRow(self._fixed_domain_checkbox)
-        layout.addRow(self._show_regions_checkbox)
-        layout.addRow(self._show_region_labels_checkbox)
-        layout.addRow(self._show_region_legend_checkbox)
-        layout.addRow(self._show_branch_markers_checkbox)
-        layout.addRow(self._show_heatmap_checkbox)
-        layout.addRow("Heatmap mode", self._heatmap_mode_combo)
-        layout.addRow("Heatmap bins", self._heatmap_resolution_combo)
-        layout.addRow("Heatmap norm", self._heatmap_normalization_combo)
-        layout.addRow(self._parameter_status)
+        outer_layout = QVBoxLayout(box)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(6)
+
+        left_layout = QFormLayout()
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.addRow("Units", self._angle_units_combo)
+        left_layout.addRow("alpha", self._alpha_edit)
+        left_layout.addRow("beta", self._beta_edit)
+        left_layout.addRow("N_phase", self._n_phase_edit)
+        left_layout.addRow("N_geom", self._n_geom_edit)
+        left_layout.addRow("Heatmap mode", self._heatmap_mode_combo)
+        left_layout.addRow("Heatmap bins", self._heatmap_resolution_combo)
+        left_layout.addRow("Heatmap norm", self._heatmap_normalization_combo)
+
+        right_layout = QVBoxLayout()
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(4)
+        right_layout.addWidget(self._symmetric_mode_checkbox)
+        right_layout.addWidget(self._fixed_domain_checkbox)
+        right_layout.addWidget(self._show_regions_checkbox)
+        right_layout.addWidget(self._show_region_labels_checkbox)
+        right_layout.addWidget(self._show_region_legend_checkbox)
+        right_layout.addWidget(self._show_branch_markers_checkbox)
+        right_layout.addWidget(self._show_heatmap_checkbox)
+        right_layout.addStretch(1)
+
+        grid.addLayout(left_layout, 0, 0)
+        grid.addLayout(right_layout, 0, 1)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        outer_layout.addLayout(grid)
+        outer_layout.addWidget(self._parameter_status)
 
         apply_button = QPushButton("Apply")
         apply_button.clicked.connect(self._emit_parameters)
-        layout.addRow(apply_button)
-
         reset_phase_view_button = QPushButton("Reset phase view")
         reset_phase_view_button.clicked.connect(
             self.reset_phase_view_requested.emit
         )
-        layout.addRow(reset_phase_view_button)
+
+        button_row = QGridLayout()
+        button_row.setHorizontalSpacing(8)
+        button_row.addWidget(apply_button, 0, 0)
+        button_row.addWidget(reset_phase_view_button, 0, 1)
+        outer_layout.addLayout(button_row)
         return box
 
     def _build_controls_box(self) -> QGroupBox:
@@ -197,7 +218,11 @@ class ControlsPanel(QWidget):
         export_form.addRow("Data format", self._data_export_format_combo)
         layout.addLayout(export_form)
 
-        for action_name in (
+        actions_grid = QGridLayout()
+        actions_grid.setHorizontalSpacing(8)
+        actions_grid.setVerticalSpacing(6)
+
+        for index, action_name in enumerate((
             "replay_selected",
             "replay_all",
             "pause",
@@ -207,12 +232,14 @@ class ControlsPanel(QWidget):
             "export_png",
             "save_session",
             "load_session",
-        ):
+        )):
             button = QPushButton(action_name.replace("_", " ").title())
             button.clicked.connect(
                 lambda checked=False, name=action_name: self.replay_action_requested.emit(name)
             )
-            layout.addWidget(button)
+            actions_grid.addWidget(button, index // 2, index % 2)
+
+        layout.addLayout(actions_grid)
 
         footer = QHBoxLayout()
         footer.addWidget(QLabel("UI skeleton"))
