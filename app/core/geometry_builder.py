@@ -242,23 +242,23 @@ def _build_parabola_samples(
     if start_point is None or end_point is None:
         return []
 
-    parabola_parameter = (1.0 - focus.y) / 2.0
-    if parabola_parameter <= config.eps:
-        return []
-
-    vertex = GeometryPoint(
-        x=focus.x,
-        y=(1.0 + focus.y) / 2.0,
-    )
-    t_start = _parabola_t_from_point(start_point, vertex, parabola_parameter)
-    t_end = _parabola_t_from_point(end_point, vertex, parabola_parameter)
-
+    u_start = start_point.x - focus.x
+    u_end = end_point.x - focus.x
     samples: list[GeometryPoint] = []
     for index in range(num_samples + 1):
         t_value = index / num_samples
-        t_sample = t_start + (t_end - t_start) * t_value
-        x_coord = vertex.x + 2.0 * parabola_parameter * t_sample
-        y_coord = vertex.y - parabola_parameter * t_sample * t_sample
+        y_coord = start_point.y + (end_point.y - start_point.y) * t_value
+        radicand = 1.0 - focus.y * focus.y + 2.0 * y_coord * (focus.y - 1.0)
+        if radicand < -config.eps:
+            continue
+        radicand = max(radicand, 0.0)
+        root = math.sqrt(radicand)
+        target_u = u_start + (u_end - u_start) * t_value
+        candidate_u = min(
+            (-root, root),
+            key=lambda value: abs(value - target_u),
+        )
+        x_coord = focus.x + candidate_u
 
         if not math.isfinite(x_coord) or not math.isfinite(y_coord):
             continue
@@ -268,14 +268,6 @@ def _build_parabola_samples(
         samples[0] = start_point
         samples[-1] = end_point
     return samples
-
-
-def _parabola_t_from_point(
-    point: GeometryPoint,
-    vertex: GeometryPoint,
-    parabola_parameter: float,
-) -> float:
-    return (point.x - vertex.x) / (2.0 * parabola_parameter)
 
 
 def _wall_angle(wall: int, config: SimulationConfig) -> float:
