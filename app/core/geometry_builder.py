@@ -166,6 +166,7 @@ def _build_segment(
         focus=focus,
         start_point=start_point,
         end_point=end_point,
+        wall_to=right.wall,
         config=config,
     )
     if not samples:
@@ -241,6 +242,7 @@ def _build_parabola_samples(
     focus: GeometryPoint,
     start_point: GeometryPoint | None,
     end_point: GeometryPoint | None,
+    wall_to: int,
     config: SimulationConfig,
     num_samples: int = 48,
 ) -> list[GeometryPoint]:
@@ -270,11 +272,26 @@ def _build_parabola_samples(
     if not start_candidates or not end_candidates:
         return []
 
+    start_candidates = _filter_t_candidates_by_x(
+        point=start_point,
+        candidates=start_candidates,
+        vertex=vertex,
+        parabola_parameter=parabola_parameter,
+        config=config,
+    )
+    end_candidates = _filter_t_candidates_by_x(
+        point=end_point,
+        candidates=end_candidates,
+        vertex=vertex,
+        parabola_parameter=parabola_parameter,
+        config=config,
+    )
     t_start, t_end = _select_segment_parameters(
         start_point=start_point,
         end_point=end_point,
         start_candidates=start_candidates,
         end_candidates=end_candidates,
+        wall_to=wall_to,
         vertex=vertex,
         parabola_parameter=parabola_parameter,
         config=config,
@@ -329,6 +346,7 @@ def _select_segment_parameters(
     end_point: GeometryPoint,
     start_candidates: tuple[float, ...],
     end_candidates: tuple[float, ...],
+    wall_to: int,
     vertex: GeometryPoint,
     parabola_parameter: float,
     config: SimulationConfig,
@@ -341,7 +359,11 @@ def _select_segment_parameters(
         for t_end in end_candidates:
             end_error = abs(_x_from_t(vertex, parabola_parameter, t_end) - end_point.x)
             mismatch_penalty = 0.0
-            if end_point.y > start_point.y + config.eps and abs(t_end) <= abs(t_start) + config.eps:
+            if (
+                wall_to == 2
+                and len(end_candidates) > 1
+                and abs(t_end) <= abs(t_start) + config.eps
+            ):
                 mismatch_penalty = 1.0
 
             score = (
@@ -356,6 +378,29 @@ def _select_segment_parameters(
     if best_pair is None:
         return 0.0, 0.0
     return best_pair
+
+
+def _filter_t_candidates_by_x(
+    point: GeometryPoint,
+    candidates: tuple[float, ...],
+    vertex: GeometryPoint,
+    parabola_parameter: float,
+    config: SimulationConfig,
+) -> tuple[float, ...]:
+    if len(candidates) <= 1:
+        return candidates
+
+    errors = [
+        abs(_x_from_t(vertex, parabola_parameter, candidate) - point.x)
+        for candidate in candidates
+    ]
+    best_error = min(errors)
+    filtered = tuple(
+        candidate
+        for candidate, error in zip(candidates, errors)
+        if abs(error - best_error) <= config.eps
+    )
+    return filtered or candidates
 
 
 def _x_from_t(
