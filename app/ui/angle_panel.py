@@ -4,17 +4,23 @@ import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QToolTip, QVBoxLayout, QWidget
 
 from app.core.region_eval import evaluate_region_predicate
+from app.models.config import ViewConfig
 from app.models.region import RegionDescription
 
 
 class AnglePanel(QWidget):
     point_selected = Signal(float, float)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        view_config: ViewConfig,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
+        self._view_config = view_config
         self._title = QLabel("Alpha / Beta")
         self._hint = QLabel("parameter space")
         self._point_label = QLabel("point: -")
@@ -43,6 +49,7 @@ class AnglePanel(QWidget):
         layout.addStretch(1)
 
         self.setMinimumHeight(220)
+        self.setMouseTracking(True)
         self.setStyleSheet(
             "AnglePanel { background: #ffffff; border: 1px solid #a0a0a0; }"
         )
@@ -67,6 +74,24 @@ class AnglePanel(QWidget):
 
         self._point_label.setText(f"point: alpha={alpha:.6f}, beta={beta:.6f}")
         self.point_selected.emit(alpha, beta)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        if not self._view_config.angle_hover_tooltip:
+            return
+
+        alpha, beta = self._map_click(event.position())
+        if self._is_inside_domain(alpha, beta):
+            QToolTip.showText(
+                event.globalPosition().toPoint(),
+                f"alpha={alpha:.6f}\nbeta={beta:.6f}",
+                self,
+            )
+        else:
+            QToolTip.hideText()
+
+    def leaveEvent(self, event) -> None:
+        QToolTip.hideText()
+        super().leaveEvent(event)
 
     def _map_click(self, point: QPointF) -> tuple[float, float]:
         plot = self._plot_rect()

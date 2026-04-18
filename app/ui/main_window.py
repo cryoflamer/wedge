@@ -73,7 +73,7 @@ class MainWindow(QMainWindow):
             view_config=config.view,
         )
         self.wedge_panel = WedgePanel(view_config=config.view)
-        self.angle_panel = AnglePanel()
+        self.angle_panel = AnglePanel(view_config=config.view)
         self.controls_panel = ControlsPanel()
         self.replay_controller = ReplayController(
             delay_ms=config.replay.delay_ms,

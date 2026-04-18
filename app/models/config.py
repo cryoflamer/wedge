@@ -42,6 +42,7 @@ class ViewConfig:
     show_reflection_points: bool = True
     phase_point_radius: int = 2
     geometry_point_radius: int = 2
+    angle_hover_tooltip: bool = True
 
 
 @dataclass

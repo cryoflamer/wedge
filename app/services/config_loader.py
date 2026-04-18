@@ -68,6 +68,9 @@ def load_config(path: str | Path) -> Config:
             ),
             phase_point_radius=int(view_data.get("phase_point_radius", 2)),
             geometry_point_radius=int(view_data.get("geometry_point_radius", 2)),
+            angle_hover_tooltip=bool(
+                view_data.get("angle_hover_tooltip", True)
+            ),
         ),
         window=WindowConfig(
             width=int(window_data.get("width", 1360)),
