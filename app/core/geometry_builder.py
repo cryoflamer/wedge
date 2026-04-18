@@ -142,10 +142,37 @@ def _build_segment(
             invalid_reason=left.invalid_reason or right.invalid_reason or "segment_reconstruction_failed",
         )
 
+    start_point = _resolve_segment_boundary_point(
+        focus=focus,
+        wall=left.wall,
+        other_point=right.point,
+        fallback=left.point,
+        config=config,
+    )
+    end_point = _resolve_segment_boundary_point(
+        focus=focus,
+        wall=right.wall,
+        other_point=start_point,
+        fallback=right.point,
+        config=config,
+    )
+    if start_point is None or end_point is None:
+        return ParabolicSegment(
+            step_index=step_index,
+            wall_from=left.wall,
+            wall_to=right.wall,
+            focus=focus,
+            start_point=start_point,
+            end_point=end_point,
+            samples=[],
+            valid=False,
+            invalid_reason="segment_boundary_resolution_failed",
+        )
+
     samples = _build_parabola_samples(
         focus=focus,
-        start_point=left.point,
-        end_point=right.point,
+        start_point=start_point,
+        end_point=end_point,
         config=config,
     )
     if not samples:
@@ -154,8 +181,8 @@ def _build_segment(
             wall_from=left.wall,
             wall_to=right.wall,
             focus=focus,
-            start_point=left.point,
-            end_point=right.point,
+            start_point=start_point,
+            end_point=end_point,
             samples=[],
             valid=False,
             invalid_reason="segment_sampling_failed",
@@ -166,8 +193,8 @@ def _build_segment(
         wall_from=left.wall,
         wall_to=right.wall,
         focus=focus,
-        start_point=left.point,
-        end_point=right.point,
+        start_point=start_point,
+        end_point=end_point,
         samples=samples,
         valid=True,
     )
@@ -249,6 +276,85 @@ def _build_parabola_samples(
         samples[0] = start_point
         samples[-1] = end_point
     return samples
+
+
+def _resolve_segment_boundary_point(
+    focus: GeometryPoint,
+    wall: int,
+    other_point: GeometryPoint | None,
+    fallback: GeometryPoint | None,
+    config: SimulationConfig,
+) -> GeometryPoint | None:
+    candidates = _wall_intersections_from_focus(focus, wall, config)
+    if not candidates:
+        return fallback
+    if len(candidates) == 1 or other_point is None:
+        return _closest_point(candidates, fallback)
+
+    other_side = other_point.x - focus.x
+    if abs(other_side) > config.eps:
+        same_side = [
+            candidate
+            for candidate in candidates
+            if (candidate.x - focus.x) * other_side >= -config.eps
+        ]
+        if same_side:
+            return _closest_point(same_side, fallback)
+
+    return _closest_point(candidates, fallback)
+
+
+def _wall_intersections_from_focus(
+    focus: GeometryPoint,
+    wall: int,
+    config: SimulationConfig,
+) -> list[GeometryPoint]:
+    angle = _wall_angle(wall, config)
+    tangent = math.tan(angle)
+    if abs(tangent) <= config.eps:
+        return []
+
+    slope = 1.0 / tangent
+    a_coef = slope * slope
+    b_coef = -2.0 * (slope * focus.x + focus.y - 1.0)
+    c_coef = focus.x * focus.x + focus.y * focus.y - 1.0
+    discriminant = b_coef * b_coef - 4.0 * a_coef * c_coef
+    if discriminant < -config.eps:
+        return []
+    discriminant = max(discriminant, 0.0)
+
+    points: list[GeometryPoint] = []
+    sqrt_discriminant = math.sqrt(discriminant)
+    for sign in (-1.0, 1.0):
+        y_coord = (-b_coef + sign * sqrt_discriminant) / (2.0 * a_coef)
+        x_coord = slope * y_coord
+        if not math.isfinite(x_coord) or not math.isfinite(y_coord):
+            continue
+        if y_coord < -config.eps:
+            continue
+        point = GeometryPoint(x=x_coord, y=y_coord)
+        if not any(
+            abs(existing.x - point.x) <= config.eps
+            and abs(existing.y - point.y) <= config.eps
+            for existing in points
+        ):
+            points.append(point)
+
+    points.sort(key=lambda point: point.y)
+    return points
+
+
+def _closest_point(
+    candidates: list[GeometryPoint],
+    fallback: GeometryPoint | None,
+) -> GeometryPoint:
+    if fallback is None:
+        return candidates[-1]
+
+    return min(
+        candidates,
+        key=lambda point: math.hypot(point.x - fallback.x, point.y - fallback.y),
+    )
 
 
 def _wall_angle(wall: int, config: SimulationConfig) -> float:
