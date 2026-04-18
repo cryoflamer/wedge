@@ -30,10 +30,21 @@ class PhasePanel(QWidget):
         self._selected_trajectory_id: int | None = None
         self._active_frames: dict[int, int] = {}
         self._padding = 24
+        self._top_margin = 16
+        self._bottom_margin = 16
+        self._header_spacing = 4
+
+        for label in (self._title, self._hint, self._last_click):
+            label.setFixedHeight(label.sizeHint().height())
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(self._padding, 16, self._padding, 16)
-        layout.setSpacing(4)
+        layout.setContentsMargins(
+            self._padding,
+            self._top_margin,
+            self._padding,
+            self._bottom_margin,
+        )
+        layout.setSpacing(self._header_spacing)
         layout.addWidget(self._title)
         layout.addWidget(self._hint)
         layout.addWidget(self._last_click)
@@ -84,16 +95,21 @@ class PhasePanel(QWidget):
 
     def _plot_rect(self) -> QRectF:
         available_width = max(self.width() - 2 * self._padding, 1)
-        top = self._header_bottom() + 12.0
-        available_height = max(self.height() - top - 16.0, 1)
+        top = self._header_height() + 12.0
+        available_height = max(self.height() - top - self._bottom_margin, 1)
         side = min(available_width, available_height)
         left = self._padding + (available_width - side) / 2.0
         plot_top = top + (available_height - side) / 2.0
         return QRectF(left, plot_top, side, side)
 
-    def _header_bottom(self) -> float:
-        labels = [self._title, self._hint, self._last_click]
-        return max((label.geometry().bottom() for label in labels), default=0) + 1.0
+    def _header_height(self) -> float:
+        return (
+            self._top_margin
+            + self._title.height()
+            + self._hint.height()
+            + self._last_click.height()
+            + 2 * self._header_spacing
+        )
 
     def _to_canvas(self, d_value: float, tau_value: float) -> QPointF:
         plot = self._plot_rect()

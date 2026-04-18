@@ -22,10 +22,21 @@ class AnglePanel(QWidget):
         self._beta = 0.0
         self._regions: list[RegionDescription] = []
         self._padding = 24
+        self._top_margin = 16
+        self._bottom_margin = 16
+        self._header_spacing = 4
+
+        for label in (self._title, self._hint, self._point_label):
+            label.setFixedHeight(label.sizeHint().height())
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(self._padding, 16, self._padding, 16)
-        layout.setSpacing(4)
+        layout.setContentsMargins(
+            self._padding,
+            self._top_margin,
+            self._padding,
+            self._bottom_margin,
+        )
+        layout.setSpacing(self._header_spacing)
         layout.addWidget(self._title)
         layout.addWidget(self._hint)
         layout.addWidget(self._point_label)
@@ -65,21 +76,26 @@ class AnglePanel(QWidget):
         x_ratio = min(max((point.x() - plot.left()) / plot.width(), 0.0), 1.0)
         y_ratio = min(max((point.y() - plot.top()) / plot.height(), 0.0), 1.0)
         alpha = x_ratio * (math.pi / 2.0)
-        beta = y_ratio * math.pi
+        beta = (1.0 - y_ratio) * math.pi
         return alpha, beta
 
     def _plot_rect(self) -> QRectF:
-        top = self._header_bottom() + 12.0
+        top = self._header_height() + 12.0
         return QRectF(
             self._padding,
             top,
             max(self.width() - 2 * self._padding, 1),
-            max(self.height() - top - 16.0, 1),
+            max(self.height() - top - self._bottom_margin, 1),
         )
 
-    def _header_bottom(self) -> float:
-        labels = [self._title, self._hint, self._point_label]
-        return max((label.geometry().bottom() for label in labels), default=0) + 1.0
+    def _header_height(self) -> float:
+        return (
+            self._top_margin
+            + self._title.height()
+            + self._hint.height()
+            + self._point_label.height()
+            + 2 * self._header_spacing
+        )
 
     def _to_canvas(self, alpha: float, beta: float) -> QPointF:
         plot = self._plot_rect()
