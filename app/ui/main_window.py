@@ -255,7 +255,10 @@ class MainWindow(QMainWindow):
     def _on_symmetric_mode_changed(self, enabled: bool) -> None:
         self._symmetric_mode = enabled
         if enabled:
-            self._config.simulation.beta = math.pi - self._config.simulation.alpha
+            self._config.simulation.beta = math.nextafter(
+                math.pi - self._config.simulation.alpha,
+                self._config.simulation.alpha,
+            )
             self._rebuild_orbits()
             self._reset_replay_views()
             self._autosave_session()

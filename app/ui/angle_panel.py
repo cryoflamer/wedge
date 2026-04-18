@@ -154,8 +154,11 @@ class AnglePanel(QWidget):
         if not self._symmetric_mode:
             return alpha, beta
 
-        projected_alpha = min(max(alpha, 0.0), math.pi / 2.0)
-        projected_beta = math.pi - projected_alpha
+        projected_alpha = min(
+            max(alpha, math.nextafter(0.0, 1.0)),
+            math.nextafter(math.pi / 2.0, 0.0),
+        )
+        projected_beta = math.nextafter(math.pi - projected_alpha, projected_alpha)
         return projected_alpha, projected_beta
 
     def _format_angle(self, value: float) -> str:

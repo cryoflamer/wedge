@@ -272,7 +272,7 @@ class ControlsPanel(QWidget):
         try:
             alpha = self._parse_angle(self._alpha_edit.text())
             if self.symmetric_mode():
-                beta = math.pi - alpha
+                beta = self._symmetric_beta(alpha)
             else:
                 beta = self._parse_angle(self._beta_edit.text())
             n_phase = int(self._n_phase_edit.text())
@@ -328,6 +328,9 @@ class ControlsPanel(QWidget):
             return math.radians(value)
         return value
 
+    def _symmetric_beta(self, alpha: float) -> float:
+        return math.nextafter(math.pi - alpha, alpha)
+
     def _on_angle_units_changed(self, units: str) -> None:
         self._angle_units = units.strip().lower() or "rad"
         self.angle_units_changed.emit(self._angle_units)
@@ -346,7 +349,7 @@ class ControlsPanel(QWidget):
         except (ValueError, SyntaxError, ZeroDivisionError):
             return
 
-        beta = math.pi - alpha
+        beta = self._symmetric_beta(alpha)
         beta_value = math.degrees(beta) if self._angle_units == "deg" else beta
         blocker = QSignalBlocker(self._beta_edit)
         self._beta_edit.setText(f"{beta_value:.6f}")
