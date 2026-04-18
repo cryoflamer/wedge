@@ -25,6 +25,7 @@ from app.models.trajectory import TrajectorySeed
 from app.services.config_loader import save_runtime_config
 from app.services.data_export_service import export_orbit_data
 from app.services.export_service import export_widget_bundle_png
+from app.services.scan_sampler import generate_scan_points
 from app.services.session_service import load_session, save_session
 from app.ui.angle_panel import AnglePanel
 from app.ui.controls_panel import ControlsPanel
@@ -60,6 +61,7 @@ class MainWindow(QMainWindow):
             "#e377c2",
             "#17becf",
         ]
+        self._max_trajectory_count = 300
 
         self.setWindowTitle(config.app.title)
         self.resize(config.window.width, config.window.height)
@@ -175,6 +177,7 @@ class MainWindow(QMainWindow):
         )
         self.controls_panel.clear_all_requested.connect(self._on_clear_all_trajectories)
         self.controls_panel.replay_action_requested.connect(self._on_replay_action)
+        self.controls_panel.scan_requested.connect(self._on_scan_requested)
         self.replay_controller.state_changed.connect(self._on_replay_state_changed)
 
     def update_view(self) -> None:
@@ -430,6 +433,79 @@ class MainWindow(QMainWindow):
             beta,
             normalized_n_phase,
             n_geom,
+        )
+
+    def _on_scan_requested(
+        self,
+        mode: str,
+        count: int,
+        wall: int,
+        d_min: float,
+        d_max: float,
+        tau_min: float,
+        tau_max: float,
+    ) -> None:
+        if wall not in (1, 2):
+            logger.info("Scan skipped: invalid wall=%s", wall)
+            return
+        if count <= 0:
+            logger.info("Scan skipped: non-positive count=%s", count)
+            return
+        if d_min >= d_max or tau_min >= tau_max:
+            logger.info("Scan skipped: invalid bounds")
+            return
+
+        capacity = max(self._max_trajectory_count - len(self._trajectory_seeds), 0)
+        if capacity <= 0:
+            logger.info("Scan skipped: trajectory limit reached")
+            return
+
+        generated_points = generate_scan_points(
+            mode=mode,
+            count=min(count, capacity),
+            d_min=d_min,
+            d_max=d_max,
+            tau_min=tau_min,
+            tau_max=tau_max,
+        )
+
+        added = 0
+        for d_value, tau_value in generated_points:
+            if (1.0 - d_value) ** 2 + tau_value * tau_value >= 1.0:
+                continue
+
+            trajectory_id = self._next_trajectory_id
+            self._next_trajectory_id += 1
+            seed = TrajectorySeed(
+                id=trajectory_id,
+                wall_start=wall,
+                d0=d_value,
+                tau0=tau_value,
+                color=self._palette[(trajectory_id - 1) % len(self._palette)],
+            )
+            self._trajectory_seeds[trajectory_id] = seed
+            self._trajectory_orbits[trajectory_id] = self._build_orbit(seed)
+            self._trajectory_geometries[trajectory_id] = self._build_geometry(
+                self._trajectory_orbits[trajectory_id]
+            )
+            added += 1
+
+        if added == 0:
+            logger.info("Scan finished: no valid seeds inside domain")
+            return
+
+        if self._selected_trajectory_id is None:
+            self._selected_trajectory_id = next(iter(self._trajectory_seeds.keys()), None)
+
+        self._reset_replay_views()
+        self._autosave_session()
+        self.update_view()
+        logger.info(
+            "Scan finished: mode=%s wall=%s requested=%s added=%s",
+            mode,
+            wall,
+            count,
+            added,
         )
 
     def _on_trajectory_selected(self, trajectory_id: int) -> None:

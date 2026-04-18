@@ -41,6 +41,7 @@ class ControlsPanel(QWidget):
     reset_phase_view_requested = Signal()
     phase_view_mode_changed = Signal(bool)
     replay_action_requested = Signal(str)
+    scan_requested = Signal(str, int, int, float, float, float, float)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -64,6 +65,13 @@ class ControlsPanel(QWidget):
         self._export_mode_combo = QComboBox()
         self._export_preset_combo = QComboBox()
         self._data_export_format_combo = QComboBox()
+        self._scan_mode_combo = QComboBox()
+        self._scan_wall_combo = QComboBox()
+        self._scan_count_edit = QLineEdit("25")
+        self._scan_d_min_edit = QLineEdit("0.0")
+        self._scan_d_max_edit = QLineEdit("2.0")
+        self._scan_tau_min_edit = QLineEdit("-1.0")
+        self._scan_tau_max_edit = QLineEdit("1.0")
         self._trajectory_info = QLabel("selected: -")
         self._lyapunov_status = QLabel("Lyapunov: not computed")
         self._lyapunov_steps = QLabel("Lyapunov steps: -")
@@ -125,6 +133,8 @@ class ControlsPanel(QWidget):
             self._on_export_mode_changed
         )
         self._data_export_format_combo.addItems(["csv", "json"])
+        self._scan_mode_combo.addItems(["grid", "random"])
+        self._scan_wall_combo.addItems(["1", "2"])
         self._sync_export_preset_state()
 
     def _build_trajectory_box(self) -> QGroupBox:
@@ -155,6 +165,10 @@ class ControlsPanel(QWidget):
         export_data_button = QPushButton("Export Data")
         export_data_button.clicked.connect(self.export_data_requested.emit)
         layout.addWidget(export_data_button)
+
+        scan_button = QPushButton("Scan")
+        scan_button.clicked.connect(self._emit_scan_request)
+        layout.addWidget(scan_button)
         return box
 
     def _build_parameters_box(self) -> QGroupBox:
@@ -216,6 +230,13 @@ class ControlsPanel(QWidget):
         export_form.addRow("Export mode", self._export_mode_combo)
         export_form.addRow("Mono preset", self._export_preset_combo)
         export_form.addRow("Data format", self._data_export_format_combo)
+        export_form.addRow("Scan mode", self._scan_mode_combo)
+        export_form.addRow("Scan wall", self._scan_wall_combo)
+        export_form.addRow("Scan count", self._scan_count_edit)
+        export_form.addRow("Scan d min", self._scan_d_min_edit)
+        export_form.addRow("Scan d max", self._scan_d_max_edit)
+        export_form.addRow("Scan tau min", self._scan_tau_min_edit)
+        export_form.addRow("Scan tau max", self._scan_tau_max_edit)
         layout.addLayout(export_form)
 
         actions_grid = QGridLayout()
@@ -581,3 +602,19 @@ class ControlsPanel(QWidget):
             self._heatmap_normalization_combo.currentText().strip().lower()
             or "linear",
         )
+
+    def _emit_scan_request(self) -> None:
+        self._clear_parameter_error()
+        try:
+            mode = self._scan_mode_combo.currentText().strip().lower() or "grid"
+            wall = int(self._scan_wall_combo.currentText().strip() or "1")
+            count = int(self._scan_count_edit.text().strip())
+            d_min = parse_real_expression(self._scan_d_min_edit.text())
+            d_max = parse_real_expression(self._scan_d_max_edit.text())
+            tau_min = parse_real_expression(self._scan_tau_min_edit.text())
+            tau_max = parse_real_expression(self._scan_tau_max_edit.text())
+        except (ValueError, SyntaxError, ZeroDivisionError):
+            self._set_parameter_error("Invalid scan parameter")
+            return
+
+        self.scan_requested.emit(mode, count, wall, d_min, d_max, tau_min, tau_max)
