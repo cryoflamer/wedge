@@ -46,6 +46,13 @@ class ControlsPanel(QWidget):
         self._trajectory_list.currentItemChanged.connect(
             self._on_current_item_changed
         )
+        for line_edit in (
+            self._alpha_edit,
+            self._beta_edit,
+            self._n_phase_edit,
+            self._n_geom_edit,
+        ):
+            line_edit.returnPressed.connect(self._emit_parameters)
 
     def _build_trajectory_box(self) -> QGroupBox:
         box = QGroupBox("Trajectories")
