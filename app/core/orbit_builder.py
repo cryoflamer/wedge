@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.core.lyapunov import compute_finite_time_lyapunov
 from app.core.math_engine import PhaseState, next_state, validate_state
 from app.models.config import SimulationConfig
 from app.models.orbit import Orbit, OrbitPoint, ReplayFrame
@@ -38,6 +39,7 @@ def build_orbit(
 
     if not initial_validation.valid or steps <= 1:
         orbit.completed_steps = len(orbit.points)
+        _attach_lyapunov(orbit, seed, config, steps)
         return orbit
 
     current_state = initial_state
@@ -47,6 +49,7 @@ def build_orbit(
             orbit.valid = False
             orbit.invalid_reason = step_result.reason
             orbit.completed_steps = len(orbit.points)
+            _attach_lyapunov(orbit, seed, config, steps)
             return orbit
 
         orbit.points.append(
@@ -71,9 +74,24 @@ def build_orbit(
             orbit.valid = False
             orbit.invalid_reason = step_result.reason
             orbit.completed_steps = len(orbit.points)
+            _attach_lyapunov(orbit, seed, config, steps)
             return orbit
 
         current_state = step_result.state
 
     orbit.completed_steps = len(orbit.points)
+    _attach_lyapunov(orbit, seed, config, steps)
     return orbit
+
+
+def _attach_lyapunov(
+    orbit: Orbit,
+    seed: TrajectorySeed,
+    config: SimulationConfig,
+    steps: int,
+) -> None:
+    result = compute_finite_time_lyapunov(seed, config, steps)
+    orbit.lyapunov_estimate = result.estimate
+    orbit.lyapunov_running = result.running_estimate
+    orbit.lyapunov_valid = result.valid
+    orbit.lyapunov_invalid_reason = result.reason
