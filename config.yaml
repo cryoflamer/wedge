@@ -31,4 +31,7 @@ window:
   height: 1074
   x: 210
   y: 256
+autosave:
+  enabled: true
+  path: autosave/session.yaml
 regions: []

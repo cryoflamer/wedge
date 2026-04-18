@@ -10,6 +10,7 @@ from app.models.trajectory import TrajectorySeed
 
 def save_session(session: Session, output_path: str | Path) -> Path:
     path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "alpha": session.alpha,
         "beta": session.beta,

@@ -6,6 +6,7 @@ import yaml
 
 from app.models.config import (
     AppConfig,
+    AutosaveConfig,
     Config,
     ExportConfig,
     ReplayConfig,
@@ -28,6 +29,7 @@ def load_config(path: str | Path) -> Config:
     export_data = data.get("export", {})
     view_data = data.get("view", {})
     window_data = data.get("window", {})
+    autosave_data = data.get("autosave", {})
     regions_data = data.get("regions", [])
 
     return Config(
@@ -80,6 +82,10 @@ def load_config(path: str | Path) -> Config:
                 if window_data.get("y") is not None
                 else None
             ),
+        ),
+        autosave=AutosaveConfig(
+            enabled=bool(autosave_data.get("enabled", True)),
+            path=str(autosave_data.get("path", "autosave/session.yaml")),
         ),
         regions=[
             RegionDescription(
@@ -139,6 +145,10 @@ def save_config(config: Config, path: str | Path) -> Path:
             "height": config.window.height,
             "x": config.window.x,
             "y": config.window.y,
+        },
+        "autosave": {
+            "enabled": config.autosave.enabled,
+            "path": config.autosave.path,
         },
         "regions": [
             {

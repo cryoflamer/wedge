@@ -53,6 +53,12 @@ class WindowConfig:
 
 
 @dataclass
+class AutosaveConfig:
+    enabled: bool = True
+    path: str = "autosave/session.yaml"
+
+
+@dataclass
 class Config:
     app: AppConfig
     simulation: SimulationConfig
@@ -60,4 +66,5 @@ class Config:
     export: ExportConfig
     view: ViewConfig
     window: WindowConfig = field(default_factory=WindowConfig)
+    autosave: AutosaveConfig = field(default_factory=AutosaveConfig)
     regions: list[RegionDescription] = field(default_factory=list)

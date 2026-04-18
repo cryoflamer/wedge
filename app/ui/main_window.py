@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from pathlib import Path
 
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
@@ -82,6 +83,7 @@ class MainWindow(QMainWindow):
         self._build_layout()
         self._connect_signals()
         self.update_view()
+        self._restore_autosave_session()
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -104,6 +106,7 @@ class MainWindow(QMainWindow):
         self._config.window.height = self.height()
         self._config.window.x = self.x()
         self._config.window.y = self.y()
+        self._autosave_session()
         save_config(self._config, self._config_path)
         super().closeEvent(event)
 
@@ -217,6 +220,7 @@ class MainWindow(QMainWindow):
             tau_value,
             trajectory_id,
         )
+        self._autosave_session()
         self.update_view()
 
     def _on_angle_click(self, alpha: float, beta: float) -> None:
@@ -241,6 +245,7 @@ class MainWindow(QMainWindow):
         self._config.simulation.n_geom_default = n_geom
         self._rebuild_orbits()
         self._reset_replay_views()
+        self._autosave_session()
         self.update_view()
         logger.info(
             "Parameters updated: alpha=%.6f beta=%.6f n_phase=%s n_geom=%s",
@@ -255,6 +260,7 @@ class MainWindow(QMainWindow):
             return
         self._selected_trajectory_id = trajectory_id
         self._reset_replay_views()
+        self._autosave_session()
         self.update_view()
 
     def _rebuild_orbits(self) -> None:
@@ -280,6 +286,7 @@ class MainWindow(QMainWindow):
         if seed is None:
             return
         seed.visible = not seed.visible
+        self._autosave_session()
         self.update_view()
         logger.info(
             "Trajectory visibility toggled: id=%s visible=%s",
@@ -300,6 +307,7 @@ class MainWindow(QMainWindow):
             else None
         )
         self._reset_replay_views()
+        self._autosave_session()
         self.update_view()
         logger.info("Trajectory cleared: id=%s", trajectory_id)
 
@@ -309,6 +317,7 @@ class MainWindow(QMainWindow):
         self._trajectory_geometries.clear()
         self._selected_trajectory_id = None
         self._reset_replay_views()
+        self._autosave_session()
         self.update_view()
         logger.info("All trajectories cleared")
 
@@ -439,6 +448,7 @@ class MainWindow(QMainWindow):
 
         session = load_session(input_path)
         self._apply_session(session)
+        self._autosave_session()
         logger.info("Session loaded: %s", input_path)
 
     def _build_session(self) -> Session:
@@ -486,6 +496,33 @@ class MainWindow(QMainWindow):
         self.replay_controller.reset()
         self._reset_replay_views()
         self.update_view()
+
+    def _autosave_session(self) -> None:
+        if not self._config.autosave.enabled:
+            return
+
+        save_session(
+            self._build_session(),
+            self._autosave_path(),
+        )
+
+    def _restore_autosave_session(self) -> None:
+        if not self._config.autosave.enabled:
+            return
+
+        autosave_path = self._autosave_path()
+        if not autosave_path.exists():
+            return
+
+        session = load_session(autosave_path)
+        self._apply_session(session)
+        logger.info("Autosave restored: %s", autosave_path)
+
+    def _autosave_path(self) -> Path:
+        path = Path(self._config.autosave.path)
+        if path.is_absolute():
+            return path
+        return Path(self._config_path).resolve().parent / path
 
 
 def run_app(config: Config, config_path: str) -> None:
