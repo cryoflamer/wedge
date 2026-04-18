@@ -16,8 +16,10 @@ from app.core.orbit_builder import build_orbit
 from app.models.config import Config
 from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
+from app.models.session import Session
 from app.models.trajectory import TrajectorySeed
 from app.services.export_service import export_widget_bundle_png
+from app.services.session_service import load_session, save_session
 from app.ui.angle_panel import AnglePanel
 from app.ui.controls_panel import ControlsPanel
 from app.ui.phase_panel import PhasePanel
@@ -298,6 +300,10 @@ class MainWindow(QMainWindow):
             self.update_view()
         elif action_name == "export_png":
             self._export_png()
+        elif action_name == "save_session":
+            self._save_session()
+        elif action_name == "load_session":
+            self._load_session()
         else:
             logger.info("Replay/control action requested: %s", action_name)
 
@@ -375,6 +381,80 @@ class MainWindow(QMainWindow):
             mode or "color",
             ", ".join(str(path) for path in exported_paths),
         )
+
+    def _save_session(self) -> None:
+        output_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Session",
+            "wedge_session.yaml",
+            "YAML Files (*.yaml *.yml)",
+        )
+        if not output_path:
+            return
+
+        session = self._build_session()
+        saved_path = save_session(session, output_path)
+        logger.info("Session saved: %s", saved_path)
+
+    def _load_session(self) -> None:
+        input_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load Session",
+            "",
+            "YAML Files (*.yaml *.yml)",
+        )
+        if not input_path:
+            return
+
+        session = load_session(input_path)
+        self._apply_session(session)
+        logger.info("Session loaded: %s", input_path)
+
+    def _build_session(self) -> Session:
+        return Session(
+            alpha=self._config.simulation.alpha,
+            beta=self._config.simulation.beta,
+            n_phase=self._config.simulation.n_phase_default,
+            n_geom=self._config.simulation.n_geom_default,
+            replay_delay_ms=self._config.replay.delay_ms,
+            replay_selected_only=self._config.replay.selected_only_by_default,
+            selected_trajectory_id=self._selected_trajectory_id,
+            trajectories=list(self._trajectory_seeds.values()),
+        )
+
+    def _apply_session(self, session: Session) -> None:
+        self._config.simulation.alpha = session.alpha
+        self._config.simulation.beta = session.beta
+        self._config.simulation.n_phase_default = session.n_phase
+        self._config.simulation.n_geom_default = session.n_geom
+        self._config.replay.delay_ms = session.replay_delay_ms
+        self._config.replay.selected_only_by_default = session.replay_selected_only
+
+        self._trajectory_seeds = {
+            seed.id: TrajectorySeed(
+                id=seed.id,
+                wall_start=seed.wall_start,
+                d0=seed.d0,
+                tau0=seed.tau0,
+                visible=seed.visible,
+                color=seed.color,
+            )
+            for seed in session.trajectories
+        }
+        self._selected_trajectory_id = session.selected_trajectory_id
+        if self._selected_trajectory_id not in self._trajectory_seeds:
+            self._selected_trajectory_id = next(
+                iter(self._trajectory_seeds.keys()),
+                None,
+            )
+
+        self._next_trajectory_id = (
+            max(self._trajectory_seeds.keys(), default=0) + 1
+        )
+        self._rebuild_orbits()
+        self.replay_controller.reset()
+        self._reset_replay_views()
+        self.update_view()
 
 
 def run_app(config: Config) -> None:
