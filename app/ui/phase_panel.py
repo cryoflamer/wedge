@@ -538,7 +538,7 @@ class PhasePanel(QWidget):
         painter.drawLine(QPointF(plot.left(), point.y()), QPointF(plot.right(), point.y()))
         painter.drawLine(QPointF(point.x(), plot.top()), QPointF(point.x(), plot.bottom()))
 
-        label_rect = QRectF(plot.left() + 8.0, plot.bottom() - 28.0, 138.0, 20.0)
+        label_rect = QRectF(plot.left() + 8.0, plot.bottom() - 28.0, 176.0, 20.0)
         painter.setPen(QPen(QColor("#666666"), 1))
         painter.setBrush(QColor(255, 255, 255, 220))
         painter.drawRoundedRect(label_rect, 4.0, 4.0)
