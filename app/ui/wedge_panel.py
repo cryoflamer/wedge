@@ -16,7 +16,7 @@ class WedgePanel(QWidget):
         self._geometries: dict[int, WedgeGeometry] = {}
         self._seeds: dict[int, TrajectorySeed] = {}
         self._selected_trajectory_id: int | None = None
-        self._active_segment_index = 0
+        self._active_segment_indices: dict[int, int] = {}
 
         layout = QVBoxLayout(self)
         layout.addWidget(self._title)
@@ -33,12 +33,12 @@ class WedgePanel(QWidget):
         seeds: dict[int, TrajectorySeed],
         geometries: dict[int, WedgeGeometry],
         selected_trajectory_id: int | None,
-        active_segment_index: int = 0,
+        active_segment_indices: dict[int, int] | None = None,
     ) -> None:
         self._seeds = seeds
         self._geometries = geometries
         self._selected_trajectory_id = selected_trajectory_id
-        self._active_segment_index = active_segment_index
+        self._active_segment_indices = active_segment_indices or {}
         self.update()
 
     def _plot_rect(self) -> QRectF:
@@ -128,7 +128,8 @@ class WedgePanel(QWidget):
                     (midpoint.y() + focus.y()) / 2.0,
                 )
 
-                if is_selected and index == self._active_segment_index:
+                active_index = self._active_segment_indices.get(trajectory_id)
+                if active_index is not None and index == active_index:
                     painter.setPen(QPen(QColor("#111111"), 4))
                 else:
                     painter.setPen(pen)

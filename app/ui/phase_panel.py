@@ -20,6 +20,7 @@ class PhasePanel(QWidget):
         self._seeds: dict[int, TrajectorySeed] = {}
         self._orbits: dict[int, Orbit] = {}
         self._selected_trajectory_id: int | None = None
+        self._active_frames: dict[int, int] = {}
         self._padding = 24
 
         layout = QVBoxLayout(self)
@@ -52,10 +53,12 @@ class PhasePanel(QWidget):
         seeds: dict[int, TrajectorySeed],
         orbits: dict[int, Orbit],
         selected_trajectory_id: int | None,
+        active_frames: dict[int, int] | None = None,
     ) -> None:
         self._seeds = seeds
         self._orbits = orbits
         self._selected_trajectory_id = selected_trajectory_id
+        self._active_frames = active_frames or {}
         self.update()
 
     def _map_click(self, point: QPointF) -> tuple[float, float]:
@@ -135,3 +138,29 @@ class PhasePanel(QWidget):
                 painter.setBrush(color)
                 radius = 4 if is_selected else 3
                 painter.drawEllipse(point, radius, radius)
+
+            active_index = self._active_frames.get(trajectory_id)
+            if active_index is None:
+                continue
+
+            wall_points = [
+                point for point in orbit.points if point.wall == self.wall
+            ]
+            if not wall_points:
+                continue
+
+            active_point = next(
+                (
+                    point
+                    for point in wall_points
+                    if point.step_index == active_index
+                ),
+                None,
+            )
+            if active_point is None:
+                continue
+
+            active_canvas_point = self._to_canvas(active_point.d, active_point.tau)
+            painter.setPen(QPen(QColor("#111111"), 2))
+            painter.setBrush(QColor("#ffffff"))
+            painter.drawEllipse(active_canvas_point, 6, 6)
