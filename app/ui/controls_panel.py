@@ -104,8 +104,8 @@ class ControlsPanel(QWidget):
         return box
 
     def load_config(self, config: Config) -> None:
-        self._alpha_edit.setText(str(config.simulation.alpha))
-        self._beta_edit.setText(str(config.simulation.beta))
+        self._alpha_edit.setText(f"{config.simulation.alpha:.6f}")
+        self._beta_edit.setText(f"{config.simulation.beta:.6f}")
         self._n_phase_edit.setText(str(config.simulation.n_phase_default))
         self._n_geom_edit.setText(str(config.simulation.n_geom_default))
 
