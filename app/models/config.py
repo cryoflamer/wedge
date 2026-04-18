@@ -28,6 +28,15 @@ class ReplayConfig:
 
 
 @dataclass
+class LyapunovConfig:
+    delta0: float = 1.0e-6
+    transient_steps: int = 10
+    max_steps: int = 200
+    renormalization_interval: int = 1
+    eps: float = 1.0e-12
+
+
+@dataclass
 class ExportConfig:
     dpi: int
     default_mode: str
@@ -67,6 +76,7 @@ class Config:
     app: AppConfig
     simulation: SimulationConfig
     replay: ReplayConfig
+    lyapunov: LyapunovConfig
     export: ExportConfig
     view: ViewConfig
     window: WindowConfig = field(default_factory=WindowConfig)

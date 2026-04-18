@@ -4,147 +4,180 @@ import math
 from dataclasses import dataclass, field
 
 from app.core.math_engine import PhaseState, next_state, validate_state
-from app.models.config import SimulationConfig
+from app.models.config import LyapunovConfig, SimulationConfig
 from app.models.trajectory import TrajectorySeed
-
-
-@dataclass(frozen=True)
-class LyapunovConfig:
-    delta0: float = 1.0e-6
-    transient_steps: int = 10
-    renormalize_every: int = 1
-    max_projection_attempts: int = 12
 
 
 @dataclass
 class LyapunovResult:
     estimate: float | None
     running_estimate: list[float] = field(default_factory=list)
-    valid: bool = False
+    status: str = "failed"
     reason: str | None = None
     steps_used: int = 0
+    wall_divergence_count: int = 0
 
 
 def compute_finite_time_lyapunov(
     seed: TrajectorySeed,
-    config: SimulationConfig,
-    steps: int,
-    lyapunov_config: LyapunovConfig | None = None,
+    simulation_config: SimulationConfig,
+    lyapunov_config: LyapunovConfig,
 ) -> LyapunovResult:
-    options = lyapunov_config or LyapunovConfig()
-    if steps <= 1:
+    if lyapunov_config.max_steps <= 1:
         return LyapunovResult(
             estimate=None,
-            valid=False,
-            reason="insufficient_steps",
+            status="failed",
+            reason="insufficient_max_steps",
         )
 
-    base_state = PhaseState(d=seed.d0, tau=seed.tau0, wall=seed.wall_start)
-    base_validation = validate_state(base_state, config)
-    if not base_validation.valid:
+    base_state = PhaseState(
+        d=seed.d0,
+        tau=seed.tau0,
+        wall=seed.wall_start,
+    )
+    validation = validate_state(base_state, simulation_config)
+    if not validation.valid:
         return LyapunovResult(
             estimate=None,
-            valid=False,
-            reason=base_validation.reason,
+            status="failed",
+            reason=validation.reason,
         )
 
-    companion_state = _build_initial_companion(base_state, config, options.delta0)
+    companion_state = _build_initial_companion(
+        base_state=base_state,
+        simulation_config=simulation_config,
+        delta0=lyapunov_config.delta0,
+        eps=lyapunov_config.eps,
+    )
     if companion_state is None:
         return LyapunovResult(
             estimate=None,
-            valid=False,
+            status="failed",
             reason="companion_initialization_failed",
         )
 
     sum_log = 0.0
     steps_used = 0
     running_estimate: list[float] = []
+    wall_divergence_count = 0
 
-    for step_index in range(1, steps):
-        base_step = next_state(base_state, config)
-        companion_step = next_state(companion_state, config)
-        if base_step.state is None:
-            return LyapunovResult(
-                estimate=None,
-                running_estimate=running_estimate,
-                valid=False,
-                reason=base_step.reason or "base_step_failed",
+    for step_index in range(1, lyapunov_config.max_steps + 1):
+        base_step = next_state(base_state, simulation_config)
+        companion_step = next_state(companion_state, simulation_config)
+
+        if base_step.state is None or companion_step.state is None:
+            return _finish_result(
+                sum_log=sum_log,
                 steps_used=steps_used,
-            )
-        if companion_step.state is None:
-            return LyapunovResult(
-                estimate=None,
                 running_estimate=running_estimate,
-                valid=False,
-                reason=companion_step.reason or "companion_step_failed",
-                steps_used=steps_used,
+                wall_divergence_count=wall_divergence_count,
+                reason=(base_step.reason or companion_step.reason or "step_failed"),
             )
 
         base_state = base_step.state
         companion_state = companion_step.state
+
+        if base_state.wall != companion_state.wall:
+            wall_divergence_count += 1
+
         delta = _phase_distance(base_state, companion_state)
-        if not math.isfinite(delta) or delta <= 0.0:
-            return LyapunovResult(
-                estimate=None,
-                running_estimate=running_estimate,
-                valid=False,
-                reason="degenerate_separation",
+        if not math.isfinite(delta):
+            return _finish_result(
+                sum_log=sum_log,
                 steps_used=steps_used,
+                running_estimate=running_estimate,
+                wall_divergence_count=wall_divergence_count,
+                reason="non_finite_delta",
             )
 
-        if step_index > options.transient_steps:
-            sum_log += math.log(delta / options.delta0)
+        if delta <= lyapunov_config.eps:
+            return _finish_result(
+                sum_log=sum_log,
+                steps_used=steps_used,
+                running_estimate=running_estimate,
+                wall_divergence_count=wall_divergence_count,
+                reason="delta_too_small",
+            )
+
+        if step_index > lyapunov_config.transient_steps:
+            sum_log += math.log(delta / lyapunov_config.delta0)
             steps_used += 1
             running_estimate.append(sum_log / steps_used)
 
-        if step_index % max(options.renormalize_every, 1) == 0:
-            renormalized_state = _renormalize_companion(
+        if step_index % max(lyapunov_config.renormalization_interval, 1) == 0:
+            renormalized = _renormalize_companion(
                 base_state=base_state,
                 companion_state=companion_state,
-                config=config,
-                delta0=options.delta0,
-                max_attempts=options.max_projection_attempts,
+                simulation_config=simulation_config,
+                delta0=lyapunov_config.delta0,
+                eps=lyapunov_config.eps,
             )
-            if renormalized_state is None:
-                return LyapunovResult(
-                    estimate=None,
-                    running_estimate=running_estimate,
-                    valid=False,
-                    reason="renormalization_failed",
+            if renormalized is None:
+                return _finish_result(
+                    sum_log=sum_log,
                     steps_used=steps_used,
+                    running_estimate=running_estimate,
+                    wall_divergence_count=wall_divergence_count,
+                    reason="renormalization_failed",
                 )
-            companion_state = renormalized_state
+            companion_state = renormalized
 
-    if steps_used == 0:
+    return LyapunovResult(
+        estimate=(sum_log / steps_used) if steps_used > 0 else None,
+        running_estimate=running_estimate,
+        status="done" if steps_used > 0 else "failed",
+        reason=None if steps_used > 0 else "insufficient_post_transient_steps",
+        steps_used=steps_used,
+        wall_divergence_count=wall_divergence_count,
+    )
+
+
+def _finish_result(
+    sum_log: float,
+    steps_used: int,
+    running_estimate: list[float],
+    wall_divergence_count: int,
+    reason: str,
+) -> LyapunovResult:
+    if steps_used > 0:
         return LyapunovResult(
-            estimate=None,
+            estimate=sum_log / steps_used,
             running_estimate=running_estimate,
-            valid=False,
-            reason="insufficient_post_transient_steps",
-            steps_used=0,
+            status="partial",
+            reason=reason,
+            steps_used=steps_used,
+            wall_divergence_count=wall_divergence_count,
         )
 
     return LyapunovResult(
-        estimate=sum_log / steps_used,
+        estimate=None,
         running_estimate=running_estimate,
-        valid=True,
-        steps_used=steps_used,
+        status="failed",
+        reason=reason,
+        steps_used=0,
+        wall_divergence_count=wall_divergence_count,
     )
 
 
 def _build_initial_companion(
     base_state: PhaseState,
-    config: SimulationConfig,
+    simulation_config: SimulationConfig,
     delta0: float,
+    eps: float,
 ) -> PhaseState | None:
-    candidates = (
-        PhaseState(base_state.d + delta0, base_state.tau, base_state.wall),
-        PhaseState(base_state.d - delta0, base_state.tau, base_state.wall),
-        PhaseState(base_state.d, base_state.tau + delta0, base_state.wall),
-        PhaseState(base_state.d, base_state.tau - delta0, base_state.wall),
+    offsets = (
+        (delta0, 0.0),
+        (-delta0, 0.0),
+        (0.0, delta0),
+        (0.0, -delta0),
     )
-    for candidate in candidates:
-        if validate_state(candidate, config).valid:
+    for delta_d, delta_tau in offsets:
+        candidate = PhaseState(
+            d=base_state.d + delta_d,
+            tau=base_state.tau + delta_tau,
+            wall=base_state.wall,
+        )
+        if _is_usable_state(candidate, simulation_config, eps):
             return candidate
     return None
 
@@ -152,31 +185,41 @@ def _build_initial_companion(
 def _renormalize_companion(
     base_state: PhaseState,
     companion_state: PhaseState,
-    config: SimulationConfig,
+    simulation_config: SimulationConfig,
     delta0: float,
-    max_attempts: int,
+    eps: float,
 ) -> PhaseState | None:
-    dd = companion_state.d - base_state.d
-    dtau = companion_state.tau - base_state.tau
-    norm = math.hypot(dd, dtau)
-    if not math.isfinite(norm) or norm <= 0.0:
-        return _build_initial_companion(base_state, config, delta0)
+    delta_d = companion_state.d - base_state.d
+    delta_tau = companion_state.tau - base_state.tau
+    norm = math.hypot(delta_d, delta_tau)
+    if not math.isfinite(norm) or norm <= eps:
+        return _build_initial_companion(base_state, simulation_config, delta0, eps)
 
-    direction_d = dd / norm
-    direction_tau = dtau / norm
+    direction_d = delta_d / norm
+    direction_tau = delta_tau / norm
     scale = delta0
 
-    for _ in range(max_attempts):
+    for _ in range(16):
         candidate = PhaseState(
             d=base_state.d + direction_d * scale,
             tau=base_state.tau + direction_tau * scale,
             wall=base_state.wall,
         )
-        if validate_state(candidate, config).valid:
+        if _is_usable_state(candidate, simulation_config, eps):
             return candidate
         scale *= 0.5
 
-    return _build_initial_companion(base_state, config, delta0 * 0.5)
+    return _build_initial_companion(base_state, simulation_config, delta0 * 0.5, eps)
+
+
+def _is_usable_state(
+    state: PhaseState,
+    simulation_config: SimulationConfig,
+    eps: float,
+) -> bool:
+    del eps
+    validation = validate_state(state, simulation_config)
+    return validation.valid
 
 
 def _phase_distance(first: PhaseState, second: PhaseState) -> float:

@@ -28,6 +28,7 @@ class ControlsPanel(QWidget):
     symmetric_mode_changed = Signal(bool)
     export_mode_changed = Signal(str)
     region_visibility_changed = Signal(bool, bool, bool)
+    compute_lyapunov_requested = Signal()
     trajectory_selected = Signal(int)
     trajectory_visibility_toggled = Signal(int)
     clear_selected_requested = Signal()
@@ -53,6 +54,9 @@ class ControlsPanel(QWidget):
         self._export_mode_combo = QComboBox()
         self._export_preset_combo = QComboBox()
         self._trajectory_info = QLabel("selected: -")
+        self._lyapunov_status = QLabel("Lyapunov: not computed")
+        self._lyapunov_steps = QLabel("Lyapunov steps: -")
+        self._lyapunov_value = QLabel("Lyapunov λ: -")
         self._parameter_status = QLabel("")
         self._angle_units = "rad"
 
@@ -112,6 +116,13 @@ class ControlsPanel(QWidget):
         clear_all_button = QPushButton("Clear all trajectories")
         clear_all_button.clicked.connect(self.clear_all_requested.emit)
         layout.addWidget(clear_all_button)
+
+        lyapunov_button = QPushButton("Compute Lyapunov")
+        lyapunov_button.clicked.connect(self.compute_lyapunov_requested.emit)
+        layout.addWidget(lyapunov_button)
+        layout.addWidget(self._lyapunov_status)
+        layout.addWidget(self._lyapunov_steps)
+        layout.addWidget(self._lyapunov_value)
         return box
 
     def _build_parameters_box(self) -> QGroupBox:
@@ -300,6 +311,26 @@ class ControlsPanel(QWidget):
             trajectory_id = current.data(Qt.UserRole)
             if trajectory_id is not None:
                 self._trajectory_info.setText(f"selected: #{int(trajectory_id)}")
+
+    def set_lyapunov_status(
+        self,
+        status: str,
+        steps_used: int,
+        estimate: float | None,
+        reason: str | None = None,
+        wall_divergence_count: int = 0,
+    ) -> None:
+        status_text = status
+        if reason:
+            status_text = f"{status} ({reason})"
+        if wall_divergence_count > 0:
+            status_text = f"{status_text}, wall div={wall_divergence_count}"
+        self._lyapunov_status.setText(f"Lyapunov: {status_text}")
+        self._lyapunov_steps.setText(f"Lyapunov steps: {steps_used}")
+        if estimate is None:
+            self._lyapunov_value.setText("Lyapunov λ: -")
+        else:
+            self._lyapunov_value.setText(f"Lyapunov λ: {estimate:.6f}")
 
     def _emit_parameters(self) -> None:
         self._clear_parameter_error()

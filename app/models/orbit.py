@@ -32,3 +32,6 @@ class Orbit:
     lyapunov_running: list[float] = field(default_factory=list)
     lyapunov_valid: bool = False
     lyapunov_invalid_reason: str | None = None
+    lyapunov_status: str = "not_computed"
+    lyapunov_steps_used: int = 0
+    lyapunov_wall_divergence_count: int = 0

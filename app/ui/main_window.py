@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.geometry_builder import build_wedge_geometry
+from app.core.lyapunov import compute_finite_time_lyapunov
 from app.core.orbit_builder import build_orbit
 from app.models.config import Config
 from app.models.geometry import WedgeGeometry
@@ -148,6 +149,9 @@ class MainWindow(QMainWindow):
         self.controls_panel.region_visibility_changed.connect(
             self._on_region_visibility_changed
         )
+        self.controls_panel.compute_lyapunov_requested.connect(
+            self._on_compute_lyapunov
+        )
         self.controls_panel.trajectory_selected.connect(self._on_trajectory_selected)
         self.controls_panel.trajectory_visibility_toggled.connect(
             self._on_trajectory_visibility_toggled
@@ -199,6 +203,21 @@ class MainWindow(QMainWindow):
             trajectory_items,
             self._selected_trajectory_id,
         )
+        selected_orbit = (
+            self._trajectory_orbits.get(self._selected_trajectory_id)
+            if self._selected_trajectory_id is not None
+            else None
+        )
+        if selected_orbit is None:
+            self.controls_panel.set_lyapunov_status("not computed", 0, None)
+        else:
+            self.controls_panel.set_lyapunov_status(
+                status=selected_orbit.lyapunov_status,
+                steps_used=selected_orbit.lyapunov_steps_used,
+                estimate=selected_orbit.lyapunov_estimate,
+                reason=selected_orbit.lyapunov_invalid_reason,
+                wall_divergence_count=selected_orbit.lyapunov_wall_divergence_count,
+            )
         self.phase_panel_wall_1.set_trajectories(
             self._trajectory_seeds,
             self._trajectory_orbits,
@@ -287,6 +306,38 @@ class MainWindow(QMainWindow):
         self._config.view.show_region_labels = show_labels
         self._config.view.show_region_legend = show_legend
         self.update_view()
+
+    def _on_compute_lyapunov(self) -> None:
+        if self._selected_trajectory_id is None:
+            self.controls_panel.set_lyapunov_status("failed", 0, None, "no_selection")
+            return
+
+        seed = self._trajectory_seeds.get(self._selected_trajectory_id)
+        orbit = self._trajectory_orbits.get(self._selected_trajectory_id)
+        if seed is None or orbit is None:
+            self.controls_panel.set_lyapunov_status("failed", 0, None, "missing_orbit")
+            return
+
+        result = compute_finite_time_lyapunov(
+            seed=seed,
+            simulation_config=self._config.simulation,
+            lyapunov_config=self._config.lyapunov,
+        )
+        orbit.lyapunov_estimate = result.estimate
+        orbit.lyapunov_running = result.running_estimate
+        orbit.lyapunov_valid = result.status in ("done", "partial")
+        orbit.lyapunov_invalid_reason = result.reason
+        orbit.lyapunov_status = result.status
+        orbit.lyapunov_steps_used = result.steps_used
+        orbit.lyapunov_wall_divergence_count = result.wall_divergence_count
+        self.update_view()
+        logger.info(
+            "Lyapunov computed: id=%s status=%s steps=%s estimate=%s",
+            self._selected_trajectory_id,
+            result.status,
+            result.steps_used,
+            result.estimate,
+        )
 
     def _on_parameters_changed(
         self,

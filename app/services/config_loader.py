@@ -9,6 +9,7 @@ from app.models.config import (
     AutosaveConfig,
     Config,
     ExportConfig,
+    LyapunovConfig,
     ReplayConfig,
     SimulationConfig,
     ViewConfig,
@@ -26,6 +27,7 @@ def load_config(path: str | Path) -> Config:
     app_data = data.get("app", {})
     simulation_data = data.get("simulation", {})
     replay_data = data.get("replay", {})
+    lyapunov_data = data.get("lyapunov", {})
     export_data = data.get("export", {})
     view_data = data.get("view", {})
     window_data = data.get("window", {})
@@ -50,6 +52,15 @@ def load_config(path: str | Path) -> Config:
             selected_only_by_default=bool(
                 replay_data.get("selected_only_by_default", True)
             ),
+        ),
+        lyapunov=LyapunovConfig(
+            delta0=float(lyapunov_data.get("delta0", 1.0e-6)),
+            transient_steps=int(lyapunov_data.get("transient_steps", 10)),
+            max_steps=int(lyapunov_data.get("max_steps", 200)),
+            renormalization_interval=int(
+                lyapunov_data.get("renormalization_interval", 1)
+            ),
+            eps=float(lyapunov_data.get("eps", 1.0e-12)),
         ),
         export=ExportConfig(
             dpi=int(export_data.get("dpi", 200)),
