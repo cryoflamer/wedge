@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 
 from app.core.math_engine import PhaseState
@@ -12,6 +13,10 @@ from app.models.geometry import (
     WedgeWall,
 )
 from app.models.orbit import Orbit
+
+logger = logging.getLogger(__name__)
+_DEBUG_SEGMENT_LOG_LIMIT = 8
+_debug_segment_logs_emitted = 0
 
 
 def build_wedge_geometry(
@@ -242,23 +247,56 @@ def _build_parabola_samples(
     if start_point is None or end_point is None:
         return []
 
-    u_start = start_point.x - focus.x
-    u_end = end_point.x - focus.x
+    parabola_parameter = (1.0 - focus.y) / 2.0
+    if parabola_parameter <= config.eps:
+        return []
+
+    vertex = GeometryPoint(
+        x=focus.x,
+        y=(1.0 + focus.y) / 2.0,
+    )
+    start_candidates = _parabola_t_candidates_from_point(
+        start_point,
+        vertex,
+        parabola_parameter,
+        config,
+    )
+    end_candidates = _parabola_t_candidates_from_point(
+        end_point,
+        vertex,
+        parabola_parameter,
+        config,
+    )
+    if not start_candidates or not end_candidates:
+        return []
+
+    t_start, t_end = _select_segment_parameters(
+        start_point=start_point,
+        end_point=end_point,
+        start_candidates=start_candidates,
+        end_candidates=end_candidates,
+        vertex=vertex,
+        parabola_parameter=parabola_parameter,
+        config=config,
+    )
+    _log_segment_debug(
+        focus=focus,
+        vertex=vertex,
+        parabola_parameter=parabola_parameter,
+        start_point=start_point,
+        end_point=end_point,
+        start_candidates=start_candidates,
+        end_candidates=end_candidates,
+        t_start=t_start,
+        t_end=t_end,
+    )
+
     samples: list[GeometryPoint] = []
     for index in range(num_samples + 1):
-        t_value = index / num_samples
-        y_coord = start_point.y + (end_point.y - start_point.y) * t_value
-        radicand = 1.0 - focus.y * focus.y + 2.0 * y_coord * (focus.y - 1.0)
-        if radicand < -config.eps:
-            continue
-        radicand = max(radicand, 0.0)
-        root = math.sqrt(radicand)
-        target_u = u_start + (u_end - u_start) * t_value
-        candidate_u = min(
-            (-root, root),
-            key=lambda value: abs(value - target_u),
-        )
-        x_coord = focus.x + candidate_u
+        ratio = index / num_samples
+        t_value = t_start + (t_end - t_start) * ratio
+        x_coord = vertex.x + 2.0 * parabola_parameter * t_value
+        y_coord = vertex.y - parabola_parameter * t_value * t_value
 
         if not math.isfinite(x_coord) or not math.isfinite(y_coord):
             continue
@@ -268,6 +306,103 @@ def _build_parabola_samples(
         samples[0] = start_point
         samples[-1] = end_point
     return samples
+
+
+def _parabola_t_candidates_from_point(
+    point: GeometryPoint,
+    vertex: GeometryPoint,
+    parabola_parameter: float,
+    config: SimulationConfig,
+) -> tuple[float, float] | tuple[float]:
+    normalized = (vertex.y - point.y) / parabola_parameter
+    if normalized < -config.eps:
+        return tuple()
+
+    abs_t = math.sqrt(max(normalized, 0.0))
+    if abs_t <= config.eps:
+        return (0.0,)
+    return (-abs_t, abs_t)
+
+
+def _select_segment_parameters(
+    start_point: GeometryPoint,
+    end_point: GeometryPoint,
+    start_candidates: tuple[float, ...],
+    end_candidates: tuple[float, ...],
+    vertex: GeometryPoint,
+    parabola_parameter: float,
+    config: SimulationConfig,
+) -> tuple[float, float]:
+    best_pair: tuple[float, float] | None = None
+    best_score: tuple[float, float, float] | None = None
+
+    for t_start in start_candidates:
+        start_error = abs(_x_from_t(vertex, parabola_parameter, t_start) - start_point.x)
+        for t_end in end_candidates:
+            end_error = abs(_x_from_t(vertex, parabola_parameter, t_end) - end_point.x)
+            mismatch_penalty = 0.0
+            if end_point.y > start_point.y + config.eps and abs(t_end) <= abs(t_start) + config.eps:
+                mismatch_penalty = 1.0
+
+            score = (
+                mismatch_penalty,
+                start_error + end_error,
+                abs(t_end - t_start),
+            )
+            if best_score is None or score < best_score:
+                best_score = score
+                best_pair = (t_start, t_end)
+
+    if best_pair is None:
+        return 0.0, 0.0
+    return best_pair
+
+
+def _x_from_t(
+    vertex: GeometryPoint,
+    parabola_parameter: float,
+    t_value: float,
+) -> float:
+    return vertex.x + 2.0 * parabola_parameter * t_value
+
+
+def _log_segment_debug(
+    focus: GeometryPoint,
+    vertex: GeometryPoint,
+    parabola_parameter: float,
+    start_point: GeometryPoint,
+    end_point: GeometryPoint,
+    start_candidates: tuple[float, ...],
+    end_candidates: tuple[float, ...],
+    t_start: float,
+    t_end: float,
+) -> None:
+    global _debug_segment_logs_emitted
+
+    if _debug_segment_logs_emitted >= _DEBUG_SEGMENT_LOG_LIMIT:
+        return
+
+    logger.info(
+        (
+            "Wedge segment: focus=(%.6f, %.6f) vertex=(%.6f, %.6f) p=%.6f "
+            "start=(%.6f, %.6f) end=(%.6f, %.6f) "
+            "t1_candidates=%s t2_candidates=%s chosen_t1=%.6f chosen_t2=%.6f"
+        ),
+        focus.x,
+        focus.y,
+        vertex.x,
+        vertex.y,
+        parabola_parameter,
+        start_point.x,
+        start_point.y,
+        end_point.x,
+        end_point.y,
+        start_candidates,
+        end_candidates,
+        t_start,
+        t_end,
+    )
+    _debug_segment_logs_emitted += 1
 
 
 def _wall_angle(wall: int, config: SimulationConfig) -> float:
