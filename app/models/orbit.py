@@ -11,11 +11,20 @@ class OrbitPoint:
     wall: int
     valid: bool = True
     invalid_reason: str | None = None
+    branch: str | None = None
+
+
+@dataclass
+class ReplayFrame:
+    frame_index: int
+    orbit_point_index: int
 
 
 @dataclass
 class Orbit:
     trajectory_id: int
     points: list[OrbitPoint] = field(default_factory=list)
+    replay_frames: list[ReplayFrame] = field(default_factory=list)
     valid: bool = True
     invalid_reason: str | None = None
+    completed_steps: int = 0
