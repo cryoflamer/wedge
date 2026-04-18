@@ -414,7 +414,9 @@ class MainWindow(QMainWindow):
         if not output_path:
             return
 
-        mode = self._config.export.default_mode.strip().lower()
+        mode = self.controls_panel.export_mode()
+        self._config.export.default_mode = mode
+        preset = self.controls_panel.export_preset()
         monochrome = mode == "monochrome"
         exported_paths = export_widget_bundle_png(
             widgets={
@@ -429,8 +431,9 @@ class MainWindow(QMainWindow):
             monochrome=monochrome,
         )
         logger.info(
-            "PNG export completed: mode=%s files=%s",
+            "PNG export completed: mode=%s preset=%s files=%s",
             mode or "color",
+            preset or "-",
             ", ".join(str(path) for path in exported_paths),
         )
 

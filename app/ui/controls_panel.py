@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -38,6 +39,8 @@ class ControlsPanel(QWidget):
         self._n_phase_edit = QLineEdit()
         self._n_geom_edit = QLineEdit()
         self._fixed_domain_checkbox = QCheckBox("Fixed domain (disable for zoom/pan)")
+        self._export_mode_combo = QComboBox()
+        self._export_preset_combo = QComboBox()
         self._trajectory_info = QLabel("selected: -")
         self._parameter_status = QLabel("")
 
@@ -60,6 +63,11 @@ class ControlsPanel(QWidget):
         self._fixed_domain_checkbox.toggled.connect(
             self.phase_view_mode_changed.emit
         )
+        self._export_mode_combo.addItems(["color", "monochrome"])
+        self._export_mode_combo.currentTextChanged.connect(
+            self._sync_export_preset_state
+        )
+        self._sync_export_preset_state()
 
     def _build_trajectory_box(self) -> QGroupBox:
         box = QGroupBox("Trajectories")
@@ -104,6 +112,12 @@ class ControlsPanel(QWidget):
     def _build_controls_box(self) -> QGroupBox:
         box = QGroupBox("Controls")
         layout = QVBoxLayout(box)
+
+        export_form = QFormLayout()
+        export_form.addRow("Export mode", self._export_mode_combo)
+        export_form.addRow("Mono preset", self._export_preset_combo)
+        layout.addLayout(export_form)
+
         for action_name in (
             "replay_selected",
             "replay_all",
@@ -128,15 +142,56 @@ class ControlsPanel(QWidget):
         return box
 
     def load_config(self, config: Config) -> None:
+        current_mode = self.export_mode()
+        current_preset = self.export_preset()
         self._alpha_edit.setText(f"{config.simulation.alpha:.6f}")
         self._beta_edit.setText(f"{config.simulation.beta:.6f}")
         self._n_phase_edit.setText(str(config.simulation.n_phase_default))
         self._n_geom_edit.setText(str(config.simulation.n_geom_default))
+        self.set_export_options(
+            mode=current_mode or config.export.default_mode,
+            presets=config.export.monochrome_line_styles,
+            selected_preset=current_preset,
+        )
 
     def set_phase_view_mode(self, fixed_domain: bool) -> None:
         blocker = QSignalBlocker(self._fixed_domain_checkbox)
         self._fixed_domain_checkbox.setChecked(fixed_domain)
         del blocker
+
+    def set_export_options(
+        self,
+        mode: str,
+        presets: list[str],
+        selected_preset: str,
+    ) -> None:
+        mode_blocker = QSignalBlocker(self._export_mode_combo)
+        preset_blocker = QSignalBlocker(self._export_preset_combo)
+
+        normalized_mode = mode.strip().lower() if mode.strip() else "color"
+        mode_index = self._export_mode_combo.findText(normalized_mode)
+        if mode_index >= 0:
+            self._export_mode_combo.setCurrentIndex(mode_index)
+        else:
+            self._export_mode_combo.setCurrentText("color")
+
+        self._export_preset_combo.clear()
+        self._export_preset_combo.addItems(presets)
+        if presets:
+            preset_index = self._export_preset_combo.findText(selected_preset)
+            self._export_preset_combo.setCurrentIndex(
+                preset_index if preset_index >= 0 else 0
+            )
+
+        del preset_blocker
+        del mode_blocker
+        self._sync_export_preset_state()
+
+    def export_mode(self) -> str:
+        return self._export_mode_combo.currentText().strip().lower() or "color"
+
+    def export_preset(self) -> str:
+        return self._export_preset_combo.currentText().strip()
 
     def set_trajectory_items(
         self,
@@ -214,3 +269,9 @@ class ControlsPanel(QWidget):
         self._parameter_status.setStyleSheet("")
         self._alpha_edit.setStyleSheet("")
         self._beta_edit.setStyleSheet("")
+
+    def _sync_export_preset_state(self) -> None:
+        is_monochrome = self._export_mode_combo.currentText().strip().lower() == "monochrome"
+        self._export_preset_combo.setEnabled(
+            is_monochrome and self._export_preset_combo.count() > 0
+        )
