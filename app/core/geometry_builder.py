@@ -242,21 +242,25 @@ def _build_parabola_samples(
     if start_point is None or end_point is None:
         return []
 
-    denominator = 2.0 * (focus.y - 1.0)
-    if abs(denominator) <= config.eps:
-        return []
-
-    x_start = start_point.x
-    x_end = end_point.x
+    u_start = start_point.x - focus.x
+    u_end = end_point.x - focus.x
     samples: list[GeometryPoint] = []
     for index in range(num_samples + 1):
-        ratio = index / num_samples
-        x_coord = x_start + (x_end - x_start) * ratio
-        y_coord = (
-            (x_coord - focus.x) * (x_coord - focus.x) + focus.y * focus.y - 1.0
-        ) / denominator
+        t_value = index / num_samples
+        y_coord = start_point.y + (end_point.y - start_point.y) * t_value
+        radicand = 1.0 - focus.y * focus.y + 2.0 * y_coord * (focus.y - 1.0)
+        if radicand < -config.eps:
+            continue
+        radicand = max(radicand, 0.0)
+        root = math.sqrt(radicand)
+        target_u = u_start + (u_end - u_start) * t_value
+        candidate_u = min(
+            (-root, root),
+            key=lambda value: abs(value - target_u),
+        )
+        x_coord = focus.x + candidate_u
 
-        if not math.isfinite(y_coord):
+        if not math.isfinite(x_coord) or not math.isfinite(y_coord):
             continue
         samples.append(GeometryPoint(x=x_coord, y=y_coord))
 
