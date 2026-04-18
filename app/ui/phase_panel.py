@@ -148,10 +148,12 @@ class PhasePanel(QWidget):
             if seed is None or not seed.visible:
                 continue
 
+            active_index = self._active_frames.get(trajectory_id)
             points = [
                 self._to_canvas(point.d, point.tau)
                 for point in orbit.points
                 if point.wall == self.wall
+                and (active_index is None or point.step_index <= active_index)
             ]
             if not points:
                 continue
@@ -165,7 +167,6 @@ class PhasePanel(QWidget):
                 radius = self._view_config.phase_point_radius + (1 if is_selected else 0)
                 painter.drawEllipse(point, radius, radius)
 
-            active_index = self._active_frames.get(trajectory_id)
             if active_index is None:
                 continue
 

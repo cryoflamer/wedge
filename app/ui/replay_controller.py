@@ -26,7 +26,7 @@ class ReplayController(QObject):
     def start(self, mode: str, max_frame: int) -> None:
         self._max_frame = max(max_frame, 0)
         self._state.mode = mode
-        self._state.active_frame = 0
+        self._state.active_frame = -1
         self._state.running = self._max_frame > 0
         if self._state.running:
             self._timer.start()
@@ -53,7 +53,7 @@ class ReplayController(QObject):
 
     def reset(self) -> None:
         self._timer.stop()
-        self._state.active_frame = 0
+        self._state.active_frame = -1
         self._state.running = False
         self._emit_state()
 

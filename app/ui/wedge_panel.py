@@ -78,19 +78,42 @@ class WedgePanel(QWidget):
                     points.append((segment.start_point.x, segment.start_point.y))
                 if segment.end_point is not None:
                     points.append((segment.end_point.x, segment.end_point.y))
+                for sample in segment.samples:
+                    points.append((sample.x, sample.y))
         return points
 
     def _to_canvas(self, x_value: float, y_value: float) -> QPointF:
         plot = self._plot_rect()
+        min_x, max_x, min_y, max_y = self._geometry_bounds()
+        data_width = max(max_x - min_x, 1.0e-6)
+        data_height = max(max_y - min_y, 1.0e-6)
+        inner_margin = 16.0
+        available_width = max(plot.width() - 2.0 * inner_margin, 1.0)
+        available_height = max(plot.height() - 2.0 * inner_margin, 1.0)
+        scale = min(available_width / data_width, available_height / data_height)
+
+        used_width = data_width * scale
+        used_height = data_height * scale
+        offset_x = plot.left() + (plot.width() - used_width) / 2.0
+        offset_y = plot.top() + (plot.height() - used_height) / 2.0
+
+        canvas_x = offset_x + (x_value - min_x) * scale
+        canvas_y = offset_y + (max_y - y_value) * scale
+        return QPointF(canvas_x, canvas_y)
+
+    def _geometry_bounds(self) -> tuple[float, float, float, float]:
         points = self._all_points()
+        min_x = min((point[0] for point in points), default=0.0)
         max_x = max((point[0] for point in points), default=1.0)
+        min_y = min((point[1] for point in points), default=0.0)
         max_y = max((point[1] for point in points), default=1.0)
-        scale_x = plot.width() / max(max_x, 1.0e-6)
-        scale_y = plot.height() / max(max_y, 1.0e-6)
-        scale = min(scale_x, scale_y) * 0.9
-        origin_x = plot.left() + 20.0
-        origin_y = plot.bottom() - 12.0
-        return QPointF(origin_x + x_value * scale, origin_y - y_value * scale)
+
+        if abs(max_x - min_x) <= 1.0e-9:
+            max_x = min_x + 1.0
+        if abs(max_y - min_y) <= 1.0e-9:
+            max_y = min_y + 1.0
+
+        return min_x, max_x, min_y, max_y
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
@@ -125,6 +148,7 @@ class WedgePanel(QWidget):
             pen = QPen(color, 3 if is_selected else 2)
             painter.setPen(pen)
 
+            active_index = self._active_segment_indices.get(trajectory_id)
             for index, segment in enumerate(geometry.segments):
                 if (
                     not segment.valid
@@ -133,8 +157,9 @@ class WedgePanel(QWidget):
                     or not segment.samples
                 ):
                     continue
+                if active_index is not None and index > active_index:
+                    continue
 
-                active_index = self._active_segment_indices.get(trajectory_id)
                 if active_index is not None and index == active_index:
                     painter.setPen(QPen(QColor("#111111"), 4))
                 else:
@@ -155,6 +180,7 @@ class WedgePanel(QWidget):
             if seed is None or not seed.visible:
                 continue
 
+            active_index = self._active_segment_indices.get(trajectory_id)
             color = QColor(seed.color)
             painter.setPen(QPen(color, 1))
             painter.setBrush(color)
@@ -164,6 +190,8 @@ class WedgePanel(QWidget):
 
             for reflection in geometry.reflections:
                 if not reflection.valid or reflection.point is None:
+                    continue
+                if active_index is not None and reflection.step_index > active_index + 1:
                     continue
                 point = self._to_canvas(reflection.point.x, reflection.point.y)
                 painter.drawEllipse(point, radius, radius)
