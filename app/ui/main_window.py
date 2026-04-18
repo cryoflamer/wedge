@@ -150,6 +150,9 @@ class MainWindow(QMainWindow):
         self.controls_panel.region_visibility_changed.connect(
             self._on_region_visibility_changed
         )
+        self.controls_panel.branch_markers_changed.connect(
+            self._on_branch_markers_changed
+        )
         self.controls_panel.compute_lyapunov_requested.connect(
             self._on_compute_lyapunov
         )
@@ -182,6 +185,9 @@ class MainWindow(QMainWindow):
             show_regions=self._config.view.show_regions,
             show_labels=self._config.view.show_region_labels,
             show_legend=self._config.view.show_region_legend,
+        )
+        self.controls_panel.set_branch_markers_enabled(
+            self._config.view.show_branch_markers
         )
         self.angle_panel.set_angle_units(self._angle_units)
         self.angle_panel.set_symmetric_mode(self._symmetric_mode)
@@ -309,6 +315,10 @@ class MainWindow(QMainWindow):
         self._config.view.show_regions = show_regions
         self._config.view.show_region_labels = show_labels
         self._config.view.show_region_legend = show_legend
+        self.update_view()
+
+    def _on_branch_markers_changed(self, enabled: bool) -> None:
+        self._config.view.show_branch_markers = enabled
         self.update_view()
 
     def _on_compute_lyapunov(self) -> None:

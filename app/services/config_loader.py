@@ -80,6 +80,9 @@ def load_config(path: str | Path) -> Config:
             show_regions=bool(view_data.get("show_regions", True)),
             show_region_labels=bool(view_data.get("show_region_labels", True)),
             show_region_legend=bool(view_data.get("show_region_legend", True)),
+            show_branch_markers=bool(
+                view_data.get("show_branch_markers", False)
+            ),
             phase_point_radius=int(view_data.get("phase_point_radius", 2)),
             geometry_point_radius=int(view_data.get("geometry_point_radius", 2)),
             angle_hover_tooltip=bool(

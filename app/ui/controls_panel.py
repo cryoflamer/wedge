@@ -29,6 +29,7 @@ class ControlsPanel(QWidget):
     symmetric_mode_changed = Signal(bool)
     export_mode_changed = Signal(str)
     region_visibility_changed = Signal(bool, bool, bool)
+    branch_markers_changed = Signal(bool)
     compute_lyapunov_requested = Signal()
     export_data_requested = Signal()
     trajectory_selected = Signal(int)
@@ -52,6 +53,7 @@ class ControlsPanel(QWidget):
         self._show_regions_checkbox = QCheckBox("Show regions")
         self._show_region_labels_checkbox = QCheckBox("Show region labels")
         self._show_region_legend_checkbox = QCheckBox("Show legend")
+        self._show_branch_markers_checkbox = QCheckBox("Show branch markers")
         self._angle_units_combo = QComboBox()
         self._export_mode_combo = QComboBox()
         self._export_preset_combo = QComboBox()
@@ -89,6 +91,9 @@ class ControlsPanel(QWidget):
         self._show_regions_checkbox.toggled.connect(self._emit_region_visibility)
         self._show_region_labels_checkbox.toggled.connect(self._emit_region_visibility)
         self._show_region_legend_checkbox.toggled.connect(self._emit_region_visibility)
+        self._show_branch_markers_checkbox.toggled.connect(
+            self.branch_markers_changed.emit
+        )
         self._angle_units_combo.addItems(["rad", "deg"])
         self._angle_units_combo.currentTextChanged.connect(
             self._on_angle_units_changed
@@ -146,6 +151,7 @@ class ControlsPanel(QWidget):
         layout.addRow(self._show_regions_checkbox)
         layout.addRow(self._show_region_labels_checkbox)
         layout.addRow(self._show_region_legend_checkbox)
+        layout.addRow(self._show_branch_markers_checkbox)
         layout.addRow(self._parameter_status)
 
         apply_button = QPushButton("Apply")
@@ -212,6 +218,7 @@ class ControlsPanel(QWidget):
             show_labels=config.view.show_region_labels,
             show_legend=config.view.show_region_legend,
         )
+        self.set_branch_markers_enabled(config.view.show_branch_markers)
 
     def set_angle_units(self, units: str) -> None:
         normalized_units = units.strip().lower() if units.strip() else "rad"
@@ -256,6 +263,11 @@ class ControlsPanel(QWidget):
         self._show_region_labels_checkbox.setChecked(show_labels)
         self._show_region_legend_checkbox.setChecked(show_legend)
         del blockers
+
+    def set_branch_markers_enabled(self, enabled: bool) -> None:
+        blocker = QSignalBlocker(self._show_branch_markers_checkbox)
+        self._show_branch_markers_checkbox.setChecked(enabled)
+        del blocker
 
     def set_export_options(
         self,

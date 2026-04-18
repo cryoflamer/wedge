@@ -52,6 +52,7 @@ class ViewConfig:
     show_regions: bool = True
     show_region_labels: bool = True
     show_region_legend: bool = True
+    show_branch_markers: bool = False
     phase_point_radius: int = 2
     geometry_point_radius: int = 2
     angle_hover_tooltip: bool = True

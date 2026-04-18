@@ -3,11 +3,11 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen, QWheelEvent
+from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QPen, QWheelEvent
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from app.models.config import ViewConfig
-from app.models.orbit import Orbit
+from app.models.orbit import Orbit, OrbitPoint
 from app.models.trajectory import TrajectorySeed
 
 logger = logging.getLogger(__name__)
@@ -410,11 +410,15 @@ class PhasePanel(QWidget):
                 continue
 
             active_index = self._active_frames.get(trajectory_id)
-            points = [
-                self._to_canvas(point.d, point.tau)
+            wall_points = [
+                point
                 for point in orbit.points
                 if point.wall == self.wall
                 and (active_index is None or point.step_index <= active_index)
+            ]
+            points = [
+                self._to_canvas(point.d, point.tau)
+                for point in wall_points
             ]
             if not points:
                 continue
@@ -422,19 +426,18 @@ class PhasePanel(QWidget):
             is_selected = trajectory_id == self._selected_trajectory_id
             color = QColor(seed.color)
             painter.setPen(QPen(color, 1))
+            painter.setBrush(color)
+            radius = self._view_config.phase_point_radius + (1 if is_selected else 0)
 
-            for point in points:
-                painter.setBrush(color)
-                radius = self._view_config.phase_point_radius + (1 if is_selected else 0)
-                painter.drawEllipse(point, radius, radius)
+            for orbit_point, canvas_point in zip(wall_points, points):
+                self._draw_point_marker(
+                    painter,
+                    orbit_point,
+                    canvas_point,
+                    radius,
+                )
 
             if active_index is None:
-                continue
-
-            wall_points = [
-                point for point in orbit.points if point.wall == self.wall
-            ]
-            if not wall_points:
                 continue
 
             active_point = next(
@@ -457,6 +460,53 @@ class PhasePanel(QWidget):
         painter.restore()
         if hover_label_text is not None:
             self._draw_hover_label(painter, plot, hover_label_text)
+
+    def _draw_point_marker(
+        self,
+        painter: QPainter,
+        orbit_point: OrbitPoint,
+        canvas_point: QPointF,
+        radius: int,
+    ) -> None:
+        if not self._view_config.show_branch_markers:
+            painter.drawEllipse(canvas_point, radius, radius)
+            return
+
+        branch = (orbit_point.branch or "").strip().lower()
+        if branch == "cross_wall":
+            painter.drawRect(
+                QRectF(
+                    canvas_point.x() - radius,
+                    canvas_point.y() - radius,
+                    2.0 * radius,
+                    2.0 * radius,
+                )
+            )
+            return
+
+        if branch == "same_wall":
+            self._draw_diamond(painter, canvas_point, radius)
+            return
+
+        if branch == "seed":
+            painter.drawEllipse(canvas_point, radius + 1, radius + 1)
+            return
+
+        painter.drawEllipse(canvas_point, radius, radius)
+
+    def _draw_diamond(
+        self,
+        painter: QPainter,
+        center: QPointF,
+        radius: int,
+    ) -> None:
+        path = QPainterPath()
+        path.moveTo(center.x(), center.y() - radius)
+        path.lineTo(center.x() + radius, center.y())
+        path.lineTo(center.x(), center.y() + radius)
+        path.lineTo(center.x() - radius, center.y())
+        path.closeSubpath()
+        painter.drawPath(path)
 
     def _apply_zoom_rect(self) -> None:
         plot = self._plot_rect()
