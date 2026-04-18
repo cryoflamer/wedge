@@ -74,6 +74,10 @@ def _cross_wall_target(wall: int) -> int:
     return 2 if wall == 1 else 1
 
 
+def _same_wall_allowed(state: PhaseState, config: SimulationConfig) -> bool:
+    return state.wall == 2 and config.beta >= math.pi / 2.0
+
+
 def _compute_cross_wall_d(
     state: PhaseState,
     source_angle: float,
@@ -148,31 +152,31 @@ def next_state(state: PhaseState, config: SimulationConfig) -> StepResult:
     target_angle = _wall_angle(target_wall, config)
     eps = config.eps
 
-    d_candidate = _compute_cross_wall_d(
-        state=state,
-        source_angle=source_angle,
-        target_angle=target_angle,
-        eps=eps,
-    )
-
-    if not math.isfinite(d_candidate):
-        logger.warning("Cross-wall transition is non-finite")
-        return StepResult(
-            state=None,
-            valid=False,
-            reason="non_finite_cross_wall",
-        )
-
     same_wall_state = PhaseState(
         d=state.d,
         tau=state.tau - 2.0 * state.d * math.tan(source_angle),
         wall=state.wall,
     )
-
-    if d_candidate <= eps:
+    same_wall_validation = validate_state(same_wall_state, config)
+    if _same_wall_allowed(state, config) and same_wall_validation.valid:
         next_phase_state = same_wall_state
         branch = "same_wall"
+        d_candidate = math.nan
     else:
+        d_candidate = _compute_cross_wall_d(
+            state=state,
+            source_angle=source_angle,
+            target_angle=target_angle,
+            eps=eps,
+        )
+        if not math.isfinite(d_candidate):
+            logger.warning("Cross-wall transition is non-finite")
+            return StepResult(
+                state=None,
+                valid=False,
+                reason="non_finite_cross_wall",
+            )
+
         tau_candidate = _compute_cross_wall_tau(
             state=state,
             d_next=d_candidate,
@@ -188,21 +192,12 @@ def next_state(state: PhaseState, config: SimulationConfig) -> StepResult:
                 reason="non_finite_cross_wall_tau",
             )
 
-        cross_wall_state = PhaseState(
+        next_phase_state = PhaseState(
             d=d_candidate,
             tau=tau_candidate,
             wall=target_wall,
         )
-        cross_wall_residual = domain_residual(
-            cross_wall_state.d,
-            cross_wall_state.tau,
-        )
-        if cross_wall_residual < -eps:
-            next_phase_state = cross_wall_state
-            branch = "cross_wall"
-        else:
-            next_phase_state = same_wall_state
-            branch = "same_wall"
+        branch = "cross_wall"
 
     _log_step_debug(
         current_state=state,
