@@ -166,7 +166,6 @@ def _build_segment(
         focus=focus,
         start_point=start_point,
         end_point=end_point,
-        wall_from=left.wall,
         wall_to=right.wall,
         config=config,
     )
@@ -244,7 +243,6 @@ def _build_parabola_samples(
     focus: GeometryPoint,
     start_point: GeometryPoint | None,
     end_point: GeometryPoint | None,
-    wall_from: int,
     wall_to: int,
     config: SimulationConfig,
     num_samples: int = 48,
@@ -273,10 +271,7 @@ def _build_parabola_samples(
         y=(1.0 + focus.y) / 2.0,
     )
     t_start = coefficient_b / coefficient_a
-    if wall_to == wall_from:
-        t_end = -2.0 * tangent - t_start
-    else:
-        t_end = (end_point.x - vertex.x) / (2.0 * parabola_parameter)
+    t_end = (end_point.x - vertex.x) / (2.0 * parabola_parameter)
 
     _log_segment_debug(
         focus=focus,
