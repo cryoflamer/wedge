@@ -19,6 +19,9 @@ def save_session(session: Session, output_path: str | Path) -> Path:
         "replay_delay_ms": session.replay_delay_ms,
         "replay_selected_only": session.replay_selected_only,
         "selected_trajectory_id": session.selected_trajectory_id,
+        "angle_units": session.angle_units,
+        "symmetric_mode": session.symmetric_mode,
+        "export_mode": session.export_mode,
         "phase_fixed_domain": session.phase_fixed_domain,
         "trajectories": [
             {
@@ -70,6 +73,9 @@ def load_session(input_path: str | Path) -> Session:
             if data.get("selected_trajectory_id") is not None
             else None
         ),
+        angle_units=str(data.get("angle_units", "rad")),
+        symmetric_mode=bool(data.get("symmetric_mode", False)),
+        export_mode=str(data.get("export_mode", "color")),
         phase_fixed_domain=bool(data.get("phase_fixed_domain", True)),
         trajectories=trajectories,
         phase_viewport_wall_1=_as_viewport(data.get("phase_viewport_wall_1")),

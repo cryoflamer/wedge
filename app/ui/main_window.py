@@ -144,6 +144,7 @@ class MainWindow(QMainWindow):
         self.controls_panel.symmetric_mode_changed.connect(
             self._on_symmetric_mode_changed
         )
+        self.controls_panel.export_mode_changed.connect(self._on_export_mode_changed)
         self.controls_panel.trajectory_selected.connect(self._on_trajectory_selected)
         self.controls_panel.trajectory_visibility_toggled.connect(
             self._on_trajectory_visibility_toggled
@@ -264,6 +265,9 @@ class MainWindow(QMainWindow):
             self._autosave_session()
         self.update_view()
         logger.info("Symmetric mode changed: %s", enabled)
+
+    def _on_export_mode_changed(self, mode: str) -> None:
+        self._config.export.default_mode = mode
 
     def _on_parameters_changed(
         self,
@@ -505,6 +509,9 @@ class MainWindow(QMainWindow):
             replay_selected_only=self._config.replay.selected_only_by_default,
             selected_trajectory_id=self._selected_trajectory_id,
             trajectories=list(self._trajectory_seeds.values()),
+            angle_units=self._angle_units,
+            symmetric_mode=self._symmetric_mode,
+            export_mode=self.controls_panel.export_mode(),
             phase_fixed_domain=self.phase_panel_wall_1.is_fixed_domain_mode(),
             phase_viewport_wall_1=self.phase_panel_wall_1.viewport(),
             phase_viewport_wall_2=self.phase_panel_wall_2.viewport(),
@@ -517,6 +524,9 @@ class MainWindow(QMainWindow):
         self._config.simulation.n_geom_default = session.n_geom
         self._config.replay.delay_ms = session.replay_delay_ms
         self._config.replay.selected_only_by_default = session.replay_selected_only
+        self._angle_units = session.angle_units
+        self._symmetric_mode = session.symmetric_mode
+        self._config.export.default_mode = session.export_mode
 
         self._trajectory_seeds = {
             seed.id: TrajectorySeed(

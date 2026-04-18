@@ -26,6 +26,7 @@ class ControlsPanel(QWidget):
     parameters_changed = Signal(float, float, int, int)
     angle_units_changed = Signal(str)
     symmetric_mode_changed = Signal(bool)
+    export_mode_changed = Signal(str)
     trajectory_selected = Signal(int)
     trajectory_visibility_toggled = Signal(int)
     clear_selected_requested = Signal()
@@ -81,6 +82,9 @@ class ControlsPanel(QWidget):
         self._export_mode_combo.addItems(["color", "monochrome"])
         self._export_mode_combo.currentTextChanged.connect(
             self._sync_export_preset_state
+        )
+        self._export_mode_combo.currentTextChanged.connect(
+            self._on_export_mode_changed
         )
         self._sync_export_preset_state()
 
@@ -159,7 +163,6 @@ class ControlsPanel(QWidget):
         return box
 
     def load_config(self, config: Config) -> None:
-        current_mode = self.export_mode()
         current_preset = self.export_preset()
         alpha_value, beta_value = self._display_angles(
             config.simulation.alpha,
@@ -170,7 +173,7 @@ class ControlsPanel(QWidget):
         self._n_phase_edit.setText(str(config.simulation.n_phase_default))
         self._n_geom_edit.setText(str(config.simulation.n_geom_default))
         self.set_export_options(
-            mode=current_mode or config.export.default_mode,
+            mode=config.export.default_mode,
             presets=config.export.monochrome_line_styles,
             selected_preset=current_preset,
         )
@@ -360,3 +363,6 @@ class ControlsPanel(QWidget):
         self._export_preset_combo.setEnabled(
             is_monochrome and self._export_preset_combo.count() > 0
         )
+
+    def _on_export_mode_changed(self, mode: str) -> None:
+        self.export_mode_changed.emit(mode.strip().lower() or "color")
