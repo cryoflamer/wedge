@@ -243,23 +243,12 @@ def _build_parabola_samples(
 
         if not math.isfinite(y_coord):
             continue
-        point = GeometryPoint(x=x_coord, y=y_coord)
-        if _is_inside_wedge(point, config):
-            samples.append(point)
+        samples.append(GeometryPoint(x=x_coord, y=y_coord))
 
     if samples:
         samples[0] = start_point
         samples[-1] = end_point
     return samples
-
-
-def _is_inside_wedge(point: GeometryPoint, config: SimulationConfig) -> bool:
-    if point.y < -config.eps:
-        return False
-
-    x_min = point.y / math.tan(config.beta)
-    x_max = point.y / math.tan(config.alpha)
-    return x_min - config.eps <= point.x <= x_max + config.eps
 
 
 def _wall_angle(wall: int, config: SimulationConfig) -> float:
