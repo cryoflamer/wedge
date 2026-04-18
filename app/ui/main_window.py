@@ -197,17 +197,10 @@ class MainWindow(QMainWindow):
             tau0=tau_value,
             color=self._palette[(trajectory_id - 1) % len(self._palette)],
         )
-        orbit = build_orbit(
-            seed=seed,
-            config=self._config.simulation,
-            steps=self._config.simulation.n_phase_default,
-        )
         self._trajectory_seeds[trajectory_id] = seed
-        self._trajectory_orbits[trajectory_id] = orbit
-        self._trajectory_geometries[trajectory_id] = build_wedge_geometry(
-            orbit=orbit,
-            config=self._config.simulation,
-            max_reflections=self._config.simulation.n_geom_default,
+        self._trajectory_orbits[trajectory_id] = self._build_orbit(seed)
+        self._trajectory_geometries[trajectory_id] = self._build_geometry(
+            self._trajectory_orbits[trajectory_id]
         )
         if self._selected_trajectory_id is None:
             self._selected_trajectory_id = trajectory_id
@@ -265,19 +258,11 @@ class MainWindow(QMainWindow):
 
     def _rebuild_orbits(self) -> None:
         self._trajectory_orbits = {
-            trajectory_id: build_orbit(
-                seed=seed,
-                config=self._config.simulation,
-                steps=self._config.simulation.n_phase_default,
-            )
+            trajectory_id: self._build_orbit(seed)
             for trajectory_id, seed in self._trajectory_seeds.items()
         }
         self._trajectory_geometries = {
-            trajectory_id: build_wedge_geometry(
-                orbit=orbit,
-                config=self._config.simulation,
-                max_reflections=self._config.simulation.n_geom_default,
-            )
+            trajectory_id: self._build_geometry(orbit)
             for trajectory_id, orbit in self._trajectory_orbits.items()
         }
 
@@ -523,6 +508,20 @@ class MainWindow(QMainWindow):
         if path.is_absolute():
             return path
         return Path(self._config_path).resolve().parent / path
+
+    def _build_orbit(self, seed: TrajectorySeed) -> Orbit:
+        return build_orbit(
+            seed=seed,
+            config=self._config.simulation,
+            steps=self._config.simulation.n_phase_default,
+        )
+
+    def _build_geometry(self, orbit: Orbit) -> WedgeGeometry:
+        return build_wedge_geometry(
+            orbit=orbit,
+            config=self._config.simulation,
+            max_reflections=self._config.simulation.n_geom_default,
+        )
 
 
 def run_app(config: Config, config_path: str) -> None:

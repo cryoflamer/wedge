@@ -3,8 +3,8 @@ app:
   theme: light
   log_level: INFO
 simulation:
-  alpha: 0.5235987756
-  beta: 1.0471975512
+  alpha: 0.6610687244040299
+  beta: 1.0100816886225412
   n_phase_default: 100
   n_geom_default: 25
   eps: 1.0e-09
