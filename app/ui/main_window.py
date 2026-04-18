@@ -23,6 +23,7 @@ from app.models.orbit import Orbit
 from app.models.session import Session
 from app.models.trajectory import TrajectorySeed
 from app.services.config_loader import save_runtime_config
+from app.services.data_export_service import export_orbit_data
 from app.services.export_service import export_widget_bundle_png
 from app.services.session_service import load_session, save_session
 from app.ui.angle_panel import AnglePanel
@@ -152,6 +153,7 @@ class MainWindow(QMainWindow):
         self.controls_panel.compute_lyapunov_requested.connect(
             self._on_compute_lyapunov
         )
+        self.controls_panel.export_data_requested.connect(self._on_export_data)
         self.controls_panel.trajectory_selected.connect(self._on_trajectory_selected)
         self.controls_panel.trajectory_visibility_toggled.connect(
             self._on_trajectory_visibility_toggled
@@ -337,6 +339,39 @@ class MainWindow(QMainWindow):
             result.status,
             result.steps_used,
             result.estimate,
+        )
+
+    def _on_export_data(self) -> None:
+        if self._selected_trajectory_id is None:
+            logger.info("Data export skipped: no selected trajectory")
+            return
+
+        orbit = self._trajectory_orbits.get(self._selected_trajectory_id)
+        if orbit is None:
+            logger.info("Data export skipped: selected orbit is missing")
+            return
+
+        export_format = self.controls_panel.data_export_format()
+        suggested_name = f"wedge_trajectory_{self._selected_trajectory_id}.{export_format}"
+        output_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Data",
+            suggested_name,
+            "CSV Files (*.csv);;JSON Files (*.json)",
+        )
+        if not output_path:
+            return
+
+        exported_path = export_orbit_data(
+            orbit=orbit,
+            output_path=output_path,
+            export_format=export_format,
+        )
+        logger.info(
+            "Trajectory data exported: id=%s format=%s path=%s",
+            self._selected_trajectory_id,
+            export_format,
+            exported_path,
         )
 
     def _on_parameters_changed(

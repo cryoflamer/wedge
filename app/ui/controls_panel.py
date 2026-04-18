@@ -29,6 +29,7 @@ class ControlsPanel(QWidget):
     export_mode_changed = Signal(str)
     region_visibility_changed = Signal(bool, bool, bool)
     compute_lyapunov_requested = Signal()
+    export_data_requested = Signal()
     trajectory_selected = Signal(int)
     trajectory_visibility_toggled = Signal(int)
     clear_selected_requested = Signal()
@@ -53,6 +54,7 @@ class ControlsPanel(QWidget):
         self._angle_units_combo = QComboBox()
         self._export_mode_combo = QComboBox()
         self._export_preset_combo = QComboBox()
+        self._data_export_format_combo = QComboBox()
         self._trajectory_info = QLabel("selected: -")
         self._lyapunov_status = QLabel("Lyapunov: not computed")
         self._lyapunov_steps = QLabel("Lyapunov steps: -")
@@ -97,6 +99,7 @@ class ControlsPanel(QWidget):
         self._export_mode_combo.currentTextChanged.connect(
             self._on_export_mode_changed
         )
+        self._data_export_format_combo.addItems(["csv", "json"])
         self._sync_export_preset_state()
 
     def _build_trajectory_box(self) -> QGroupBox:
@@ -123,6 +126,10 @@ class ControlsPanel(QWidget):
         layout.addWidget(self._lyapunov_status)
         layout.addWidget(self._lyapunov_steps)
         layout.addWidget(self._lyapunov_value)
+
+        export_data_button = QPushButton("Export Data")
+        export_data_button.clicked.connect(self.export_data_requested.emit)
+        layout.addWidget(export_data_button)
         return box
 
     def _build_parameters_box(self) -> QGroupBox:
@@ -158,6 +165,7 @@ class ControlsPanel(QWidget):
         export_form = QFormLayout()
         export_form.addRow("Export mode", self._export_mode_combo)
         export_form.addRow("Mono preset", self._export_preset_combo)
+        export_form.addRow("Data format", self._data_export_format_combo)
         layout.addLayout(export_form)
 
         for action_name in (
@@ -281,6 +289,9 @@ class ControlsPanel(QWidget):
 
     def export_preset(self) -> str:
         return self._export_preset_combo.currentText().strip()
+
+    def data_export_format(self) -> str:
+        return self._data_export_format_combo.currentText().strip().lower() or "csv"
 
     def set_trajectory_items(
         self,
