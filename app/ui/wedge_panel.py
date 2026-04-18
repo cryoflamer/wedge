@@ -4,13 +4,19 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
+from app.models.config import ViewConfig
 from app.models.geometry import WedgeGeometry
 from app.models.trajectory import TrajectorySeed
 
 
 class WedgePanel(QWidget):
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        view_config: ViewConfig,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
+        self._view_config = view_config
         self._title = QLabel("Wedge View")
         self._hint = QLabel("geometry view")
         self._geometries: dict[int, WedgeGeometry] = {}
@@ -112,21 +118,9 @@ class WedgePanel(QWidget):
                     not segment.valid
                     or segment.start_point is None
                     or segment.end_point is None
-                    or segment.focus is None
+                    or not segment.samples
                 ):
                     continue
-
-                start = self._to_canvas(segment.start_point.x, segment.start_point.y)
-                end = self._to_canvas(segment.end_point.x, segment.end_point.y)
-                focus = self._to_canvas(segment.focus.x, segment.focus.y)
-                midpoint = QPointF(
-                    (start.x() + end.x()) / 2.0,
-                    (start.y() + end.y()) / 2.0,
-                )
-                control = QPointF(
-                    (midpoint.x() + focus.x()) / 2.0,
-                    (midpoint.y() + focus.y()) / 2.0,
-                )
 
                 active_index = self._active_segment_indices.get(trajectory_id)
                 if active_index is not None and index == active_index:
@@ -134,8 +128,13 @@ class WedgePanel(QWidget):
                 else:
                     painter.setPen(pen)
 
-                path = QPainterPath(start)
-                path.quadTo(control, end)
+                first_point = self._to_canvas(
+                    segment.samples[0].x,
+                    segment.samples[0].y,
+                )
+                path = QPainterPath(first_point)
+                for sample in segment.samples[1:]:
+                    path.lineTo(self._to_canvas(sample.x, sample.y))
                 painter.drawPath(path)
 
     def _draw_reflections(self, painter: QPainter) -> None:
@@ -147,7 +146,9 @@ class WedgePanel(QWidget):
             color = QColor(seed.color)
             painter.setPen(QPen(color, 1))
             painter.setBrush(color)
-            radius = 4 if trajectory_id == self._selected_trajectory_id else 3
+            radius = self._view_config.geometry_point_radius + (
+                1 if trajectory_id == self._selected_trajectory_id else 0
+            )
 
             for reflection in geometry.reflections:
                 if not reflection.valid or reflection.point is None:

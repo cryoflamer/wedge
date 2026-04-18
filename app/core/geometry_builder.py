@@ -100,17 +100,7 @@ def _build_reflection_point(
             invalid_reason=invalid_reason,
         )
 
-    focus = _focus_from_state(state, config)
-    if focus is None:
-        return ReflectionPoint(
-            step_index=step_index,
-            wall=state.wall,
-            point=None,
-            valid=False,
-            invalid_reason="focus_reconstruction_failed",
-        )
-
-    point = _intersection_with_wall(focus, _wall_angle(state.wall, config), config.eps)
+    point = _reflection_point_from_state(state, config)
     if point is None:
         return ReflectionPoint(
             step_index=step_index,
@@ -144,8 +134,28 @@ def _build_segment(
             focus=focus,
             start_point=left.point,
             end_point=right.point,
+            samples=[],
             valid=False,
             invalid_reason=left.invalid_reason or right.invalid_reason or "segment_reconstruction_failed",
+        )
+
+    samples = _build_parabola_samples(
+        focus=focus,
+        start_point=left.point,
+        end_point=right.point,
+        config=config,
+    )
+    if not samples:
+        return ParabolicSegment(
+            step_index=step_index,
+            wall_from=left.wall,
+            wall_to=right.wall,
+            focus=focus,
+            start_point=left.point,
+            end_point=right.point,
+            samples=[],
+            valid=False,
+            invalid_reason="segment_sampling_failed",
         )
 
     return ParabolicSegment(
@@ -155,6 +165,7 @@ def _build_segment(
         focus=focus,
         start_point=left.point,
         end_point=right.point,
+        samples=samples,
         valid=True,
     )
 
@@ -168,7 +179,10 @@ def _focus_from_state(
     if abs(sin_2_angle) <= config.eps or state.d <= config.eps:
         return None
 
-    y = 1.0 - ((state.tau * math.cos(angle) + state.d * math.sin(angle)) ** 2) / state.d
+    y = 1.0 - (
+        (state.d * math.sin(angle) - state.tau * math.cos(angle)) ** 2
+        / state.d
+    )
     x = (1.0 + y * math.cos(2.0 * angle) - state.d) / sin_2_angle
     if not math.isfinite(x) or not math.isfinite(y):
         return None
@@ -176,32 +190,73 @@ def _focus_from_state(
     return GeometryPoint(x=x, y=y)
 
 
-def _intersection_with_wall(
-    focus: GeometryPoint,
-    angle: float,
-    eps: float,
+def _reflection_point_from_state(
+    state: PhaseState,
+    config: SimulationConfig,
 ) -> GeometryPoint | None:
+    if state.d <= config.eps:
+        return None
+
+    angle = _wall_angle(state.wall, config)
     tangent = math.tan(angle)
-    linear = 2.0 * (tangent * (1.0 - focus.y) - focus.x)
-    constant = focus.x * focus.x + focus.y * focus.y - 1.0
-    discriminant = linear * linear - 4.0 * constant
-
-    if discriminant < -eps:
-        return None
-    discriminant = max(discriminant, 0.0)
-    root = math.sqrt(discriminant)
-
-    candidates = []
-    for sign in (-1.0, 1.0):
-        x = (-linear + sign * root) / 2.0
-        y = tangent * x
-        if x >= -eps and y >= -eps and y <= 1.0 + eps:
-            candidates.append(GeometryPoint(x=x, y=y))
-
-    if not candidates:
+    if abs(tangent) <= config.eps:
         return None
 
-    return min(candidates, key=lambda point: point.y)
+    y_coord = 1.0 - (state.d * state.d + state.tau * state.tau) / (2.0 * state.d)
+    x_coord = y_coord / tangent
+    if (
+        not math.isfinite(x_coord)
+        or not math.isfinite(y_coord)
+        or y_coord < -config.eps
+    ):
+        return None
+
+    return GeometryPoint(x=x_coord, y=y_coord)
+
+
+def _build_parabola_samples(
+    focus: GeometryPoint,
+    start_point: GeometryPoint | None,
+    end_point: GeometryPoint | None,
+    config: SimulationConfig,
+    num_samples: int = 48,
+) -> list[GeometryPoint]:
+    if start_point is None or end_point is None:
+        return []
+
+    denominator = 2.0 * (focus.y - 1.0)
+    if abs(denominator) <= config.eps:
+        return []
+
+    x_start = start_point.x
+    x_end = end_point.x
+    samples: list[GeometryPoint] = []
+    for index in range(num_samples + 1):
+        ratio = index / num_samples
+        x_coord = x_start + (x_end - x_start) * ratio
+        y_coord = (
+            (x_coord - focus.x) * (x_coord - focus.x) + focus.y * focus.y - 1.0
+        ) / denominator
+
+        if not math.isfinite(y_coord):
+            continue
+        point = GeometryPoint(x=x_coord, y=y_coord)
+        if _is_inside_wedge(point, config):
+            samples.append(point)
+
+    if samples:
+        samples[0] = start_point
+        samples[-1] = end_point
+    return samples
+
+
+def _is_inside_wedge(point: GeometryPoint, config: SimulationConfig) -> bool:
+    if point.y < -config.eps:
+        return False
+
+    x_min = point.y / math.tan(config.beta)
+    x_max = point.y / math.tan(config.alpha)
+    return x_min - config.eps <= point.x <= x_max + config.eps
 
 
 def _wall_angle(wall: int, config: SimulationConfig) -> float:

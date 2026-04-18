@@ -8,6 +8,9 @@ from app.models.config import SimulationConfig
 
 logger = logging.getLogger(__name__)
 
+_DEBUG_STEP_LOG_LIMIT = 8
+_debug_step_logs_emitted = 0
+
 
 @dataclass(frozen=True)
 class PhaseState:
@@ -106,9 +109,7 @@ def _compute_cross_wall_tau(
         else:
             return math.nan
 
-    return -d_next * math.tan(target_angle) + (
-        math.copysign(math.sqrt(radicand), numerator) / cos_target
-    )
+    return -d_next * math.tan(target_angle) + (math.sqrt(radicand) / cos_target)
 
 
 def _reconstruct_focus(
@@ -192,13 +193,24 @@ def next_state(state: PhaseState, config: SimulationConfig) -> StepResult:
             tau=tau_candidate,
             wall=target_wall,
         )
-        cross_wall_validation = validate_state(cross_wall_state, config)
-        if cross_wall_validation.valid:
+        cross_wall_residual = domain_residual(
+            cross_wall_state.d,
+            cross_wall_state.tau,
+        )
+        if cross_wall_residual < -eps:
             next_phase_state = cross_wall_state
             branch = "cross_wall"
         else:
             next_phase_state = same_wall_state
             branch = "same_wall"
+
+    _log_step_debug(
+        current_state=state,
+        next_state=next_phase_state,
+        d_next=d_candidate,
+        tau_next=next_phase_state.tau,
+        branch=branch,
+    )
 
     next_validation = validate_state(next_phase_state, config)
     if not next_validation.valid:
@@ -215,3 +227,31 @@ def next_state(state: PhaseState, config: SimulationConfig) -> StepResult:
         valid=True,
         branch=branch,
     )
+
+
+def _log_step_debug(
+    current_state: PhaseState,
+    next_state: PhaseState,
+    d_next: float,
+    tau_next: float,
+    branch: str,
+) -> None:
+    global _debug_step_logs_emitted
+
+    if _debug_step_logs_emitted >= _DEBUG_STEP_LOG_LIMIT:
+        return
+
+    logger.info(
+        (
+            "Phase step: current=(d=%.6f, tau=%.6f, wall=%d) "
+            "d_next=%.6f tau_next=%.6f branch=%s next_wall=%d"
+        ),
+        current_state.d,
+        current_state.tau,
+        current_state.wall,
+        d_next,
+        tau_next,
+        branch,
+        next_state.wall,
+    )
+    _debug_step_logs_emitted += 1

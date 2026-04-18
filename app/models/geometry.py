@@ -34,6 +34,7 @@ class ParabolicSegment:
     focus: GeometryPoint | None
     start_point: GeometryPoint | None
     end_point: GeometryPoint | None
+    samples: list[GeometryPoint] = field(default_factory=list)
     valid: bool = True
     invalid_reason: str | None = None
 

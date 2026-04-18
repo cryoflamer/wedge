@@ -43,11 +43,19 @@ class MainWindow(QMainWindow):
         ]
 
         self.setWindowTitle(config.app.title)
-        self.resize(1440, 900)
+        self.resize(1360, 980)
 
-        self.phase_panel_wall_1 = PhasePanel(wall=1, title="Phase Panel 1")
-        self.phase_panel_wall_2 = PhasePanel(wall=2, title="Phase Panel 2")
-        self.wedge_panel = WedgePanel()
+        self.phase_panel_wall_1 = PhasePanel(
+            wall=1,
+            title="Phase Panel 1",
+            view_config=config.view,
+        )
+        self.phase_panel_wall_2 = PhasePanel(
+            wall=2,
+            title="Phase Panel 2",
+            view_config=config.view,
+        )
+        self.wedge_panel = WedgePanel(view_config=config.view)
         self.angle_panel = AnglePanel()
         self.controls_panel = ControlsPanel()
         self.replay_controller = ReplayController(

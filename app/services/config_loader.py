@@ -62,6 +62,8 @@ def load_config(path: str | Path) -> Config:
             show_reflection_points=bool(
                 view_data.get("show_reflection_points", True)
             ),
+            phase_point_radius=int(view_data.get("phase_point_radius", 2)),
+            geometry_point_radius=int(view_data.get("geometry_point_radius", 2)),
         ),
         regions=[
             RegionDescription(

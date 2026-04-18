@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
+from app.models.config import ViewConfig
 from app.models.orbit import Orbit
 from app.models.trajectory import TrajectorySeed
 
@@ -11,9 +12,16 @@ from app.models.trajectory import TrajectorySeed
 class PhasePanel(QWidget):
     clicked = Signal(int, float, float)
 
-    def __init__(self, wall: int, title: str, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        wall: int,
+        title: str,
+        view_config: ViewConfig,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.wall = wall
+        self._view_config = view_config
         self._title = QLabel(title)
         self._hint = QLabel("phase space")
         self._last_click = QLabel("click: -")
@@ -73,12 +81,12 @@ class PhasePanel(QWidget):
         return d_value, tau_value
 
     def _plot_rect(self) -> QRectF:
-        return QRectF(
-            self._padding,
-            52.0,
-            max(self.width() - 2 * self._padding, 1),
-            max(self.height() - 88.0, 1),
-        )
+        available_width = max(self.width() - 2 * self._padding, 1)
+        available_height = max(self.height() - 88.0, 1)
+        side = min(available_width, available_height)
+        left = self._padding + (available_width - side) / 2.0
+        top = 52.0 + (available_height - side) / 2.0
+        return QRectF(left, top, side, side)
 
     def _to_canvas(self, d_value: float, tau_value: float) -> QPointF:
         plot = self._plot_rect()
@@ -127,16 +135,11 @@ class PhasePanel(QWidget):
 
             is_selected = trajectory_id == self._selected_trajectory_id
             color = QColor(seed.color)
-            pen = QPen(color, 3 if is_selected else 2)
-            painter.setPen(pen)
-            path = QPainterPath(points[0])
-            for point in points[1:]:
-                path.lineTo(point)
-            painter.drawPath(path)
+            painter.setPen(QPen(color, 1))
 
             for point in points:
                 painter.setBrush(color)
-                radius = 4 if is_selected else 3
+                radius = self._view_config.phase_point_radius + (1 if is_selected else 0)
                 painter.drawEllipse(point, radius, radius)
 
             active_index = self._active_frames.get(trajectory_id)
@@ -163,4 +166,5 @@ class PhasePanel(QWidget):
             active_canvas_point = self._to_canvas(active_point.d, active_point.tau)
             painter.setPen(QPen(QColor("#111111"), 2))
             painter.setBrush(QColor("#ffffff"))
-            painter.drawEllipse(active_canvas_point, 6, 6)
+            active_radius = self._view_config.phase_point_radius + 2
+            painter.drawEllipse(active_canvas_point, active_radius, active_radius)

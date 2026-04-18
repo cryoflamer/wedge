@@ -40,6 +40,8 @@ class ViewConfig:
     show_labels: bool = True
     show_directrix: bool = False
     show_reflection_points: bool = True
+    phase_point_radius: int = 2
+    geometry_point_radius: int = 2
 
 
 @dataclass

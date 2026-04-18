@@ -28,5 +28,7 @@ view:
   show_labels: true
   show_directrix: false
   show_reflection_points: true
+  phase_point_radius: 2
+  geometry_point_radius: 2
 
 regions: []
