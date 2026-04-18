@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import sys
 
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -19,6 +20,7 @@ from app.models.orbit import Orbit
 from app.models.session import Session
 from app.models.trajectory import TrajectorySeed
 from app.services.export_service import export_widget_bundle_png
+from app.services.config_loader import save_config
 from app.services.session_service import load_session, save_session
 from app.ui.angle_panel import AnglePanel
 from app.ui.controls_panel import ControlsPanel
@@ -30,9 +32,11 @@ logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, config_path: str) -> None:
         super().__init__()
         self._config = config
+        self._config_path = config_path
+        self._window_position_restored = False
         self._next_trajectory_id = 1
         self._selected_trajectory_id: int | None = None
         self._trajectory_seeds: dict[int, TrajectorySeed] = {}
@@ -52,7 +56,10 @@ class MainWindow(QMainWindow):
         ]
 
         self.setWindowTitle(config.app.title)
-        self.resize(1360, 980)
+        self.resize(config.window.width, config.window.height)
+        if config.window.x is not None and config.window.y is not None:
+            self.move(config.window.x, config.window.y)
+            self._window_position_restored = True
 
         self.phase_panel_wall_1 = PhasePanel(
             wall=1,
@@ -75,6 +82,30 @@ class MainWindow(QMainWindow):
         self._build_layout()
         self._connect_signals()
         self.update_view()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._window_position_restored:
+            return
+
+        frame = self.frameGeometry()
+        screen = self.screen()
+        if screen is None:
+            screen = QApplication.primaryScreen()
+        if screen is None:
+            return
+
+        frame.moveCenter(screen.availableGeometry().center())
+        self.move(frame.topLeft())
+        self._window_position_restored = True
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        self._config.window.width = self.width()
+        self._config.window.height = self.height()
+        self._config.window.x = self.x()
+        self._config.window.y = self.y()
+        save_config(self._config, self._config_path)
+        super().closeEvent(event)
 
     def _build_layout(self) -> None:
         central = QWidget()
@@ -457,8 +488,8 @@ class MainWindow(QMainWindow):
         self.update_view()
 
 
-def run_app(config: Config) -> None:
+def run_app(config: Config, config_path: str) -> None:
     app = QApplication.instance() or QApplication(sys.argv)
-    window = MainWindow(config)
+    window = MainWindow(config, config_path)
     window.show()
     app.exec()

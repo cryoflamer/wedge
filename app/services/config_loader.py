@@ -11,6 +11,7 @@ from app.models.config import (
     ReplayConfig,
     SimulationConfig,
     ViewConfig,
+    WindowConfig,
 )
 from app.models.region import RegionDescription, RegionStyle
 
@@ -26,6 +27,7 @@ def load_config(path: str | Path) -> Config:
     replay_data = data.get("replay", {})
     export_data = data.get("export", {})
     view_data = data.get("view", {})
+    window_data = data.get("window", {})
     regions_data = data.get("regions", [])
 
     return Config(
@@ -65,6 +67,20 @@ def load_config(path: str | Path) -> Config:
             phase_point_radius=int(view_data.get("phase_point_radius", 2)),
             geometry_point_radius=int(view_data.get("geometry_point_radius", 2)),
         ),
+        window=WindowConfig(
+            width=int(window_data.get("width", 1360)),
+            height=int(window_data.get("height", 980)),
+            x=(
+                int(window_data["x"])
+                if window_data.get("x") is not None
+                else None
+            ),
+            y=(
+                int(window_data["y"])
+                if window_data.get("y") is not None
+                else None
+            ),
+        ),
         regions=[
             RegionDescription(
                 name=str(region["name"]),
@@ -84,3 +100,65 @@ def load_config(path: str | Path) -> Config:
             for region in regions_data
         ],
     )
+
+
+def save_config(config: Config, path: str | Path) -> Path:
+    config_path = Path(path)
+    payload = {
+        "app": {
+            "title": config.app.title,
+            "theme": config.app.theme,
+            "log_level": config.app.log_level,
+        },
+        "simulation": {
+            "alpha": config.simulation.alpha,
+            "beta": config.simulation.beta,
+            "n_phase_default": config.simulation.n_phase_default,
+            "n_geom_default": config.simulation.n_geom_default,
+            "eps": config.simulation.eps,
+        },
+        "replay": {
+            "delay_ms": config.replay.delay_ms,
+            "selected_only_by_default": config.replay.selected_only_by_default,
+        },
+        "export": {
+            "dpi": config.export.dpi,
+            "default_mode": config.export.default_mode,
+            "monochrome_line_styles": list(config.export.monochrome_line_styles),
+        },
+        "view": {
+            "show_grid": config.view.show_grid,
+            "show_labels": config.view.show_labels,
+            "show_directrix": config.view.show_directrix,
+            "show_reflection_points": config.view.show_reflection_points,
+            "phase_point_radius": config.view.phase_point_radius,
+            "geometry_point_radius": config.view.geometry_point_radius,
+        },
+        "window": {
+            "width": config.window.width,
+            "height": config.window.height,
+            "x": config.window.x,
+            "y": config.window.y,
+        },
+        "regions": [
+            {
+                "name": region.name,
+                "label": region.label,
+                "predicate": region.predicate,
+                "style": {
+                    "fill": region.style.fill,
+                    "alpha": region.style.alpha,
+                    "hatch": region.style.hatch,
+                    "border": region.style.border,
+                    "line_style": region.style.line_style,
+                },
+                "priority": region.priority,
+            }
+            for region in config.regions
+        ],
+    }
+
+    with config_path.open("w", encoding="utf-8") as file:
+        yaml.safe_dump(payload, file, sort_keys=False)
+
+    return config_path

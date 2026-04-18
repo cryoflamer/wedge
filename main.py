@@ -47,7 +47,7 @@ def main() -> None:
         logger.error("Install project requirements before running the GUI.")
         return
 
-    run_app(config)
+    run_app(config, str(args.config))
 
 
 if __name__ == "__main__":

@@ -45,10 +45,19 @@ class ViewConfig:
 
 
 @dataclass
+class WindowConfig:
+    width: int = 1360
+    height: int = 980
+    x: int | None = None
+    y: int | None = None
+
+
+@dataclass
 class Config:
     app: AppConfig
     simulation: SimulationConfig
     replay: ReplayConfig
     export: ExportConfig
     view: ViewConfig
+    window: WindowConfig = field(default_factory=WindowConfig)
     regions: list[RegionDescription] = field(default_factory=list)

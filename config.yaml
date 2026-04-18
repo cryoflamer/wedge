@@ -2,27 +2,23 @@ app:
   title: Wedge Field Billiard Explorer
   theme: light
   log_level: INFO
-
 simulation:
   alpha: 0.5235987756
   beta: 1.0471975512
   n_phase_default: 100
   n_geom_default: 25
-  eps: 1.0e-9
-
+  eps: 1.0e-09
 replay:
   delay_ms: 120
   selected_only_by_default: true
-
 export:
   dpi: 200
   default_mode: color
   monochrome_line_styles:
-    - solid
-    - dashed
-    - dotted
-    - dashdot
-
+  - solid
+  - dashed
+  - dotted
+  - dashdot
 view:
   show_grid: true
   show_labels: true
@@ -30,5 +26,9 @@ view:
   show_reflection_points: true
   phase_point_radius: 2
   geometry_point_radius: 2
-
+window:
+  width: 1559
+  height: 1074
+  x: 210
+  y: 256
 regions: []
