@@ -1,0 +1,5 @@
+alpha: 0.5235987756
+beta: 1.0471975512
+n_phase: 100
+n_geom: 25
+log_level: INFO

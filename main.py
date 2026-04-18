@@ -1,0 +1,41 @@
+from __future__ import annotations
+
+import argparse
+import logging
+from pathlib import Path
+
+from app.services.config_loader import load_config
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="wedge billiard phase-space explorer"
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("config.yaml"),
+        help="Path to YAML config file.",
+    )
+    return parser.parse_args()
+
+
+def setup_logging(level: str) -> None:
+    logging.basicConfig(
+        level=getattr(logging, level.upper(), logging.INFO),
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
+
+
+def main() -> None:
+    args = parse_args()
+    config = load_config(args.config)
+    setup_logging(config.log_level)
+
+    logger = logging.getLogger(__name__)
+    logger.info("Application initialized")
+    logger.info("Config loaded from %s", args.config.resolve())
+
+
+if __name__ == "__main__":
+    main()
