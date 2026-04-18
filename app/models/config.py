@@ -74,6 +74,7 @@ class WindowConfig:
 class AutosaveConfig:
     enabled: bool = True
     path: str = "autosave/session.yaml"
+    restore_simulation_parameters: bool = False
 
 
 @dataclass

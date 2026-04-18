@@ -112,6 +112,9 @@ def load_config(path: str | Path) -> Config:
         autosave=AutosaveConfig(
             enabled=bool(autosave_data.get("enabled", True)),
             path=str(autosave_data.get("path", "autosave/session.yaml")),
+            restore_simulation_parameters=bool(
+                autosave_data.get("restore_simulation_parameters", False)
+            ),
         ),
         regions=[
             RegionDescription(

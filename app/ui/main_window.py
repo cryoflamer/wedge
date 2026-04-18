@@ -733,9 +733,14 @@ class MainWindow(QMainWindow):
             phase_viewport_wall_2=self.phase_panel_wall_2.viewport(),
         )
 
-    def _apply_session(self, session: Session) -> None:
-        self._config.simulation.alpha = session.alpha
-        self._config.simulation.beta = session.beta
+    def _apply_session(
+        self,
+        session: Session,
+        restore_simulation_parameters: bool = True,
+    ) -> None:
+        if restore_simulation_parameters:
+            self._config.simulation.alpha = session.alpha
+            self._config.simulation.beta = session.beta
         self._config.simulation.n_geom_default = session.n_geom
         self._config.simulation.n_phase_default = self._normalized_phase_steps(
             session.n_phase,
@@ -776,6 +781,11 @@ class MainWindow(QMainWindow):
         self.replay_controller.reset()
         self._reset_replay_views()
         self.update_view()
+        logger.info(
+            "Session applied: runtime alpha=%.10f beta=%.10f",
+            self._config.simulation.alpha,
+            self._config.simulation.beta,
+        )
 
     def _autosave_session(self) -> None:
         if not self._config.autosave.enabled:
@@ -795,8 +805,18 @@ class MainWindow(QMainWindow):
             return
 
         session = load_session(autosave_path)
-        self._apply_session(session)
-        logger.info("Autosave restored: %s", autosave_path)
+        self._apply_session(
+            session,
+            restore_simulation_parameters=(
+                self._config.autosave.restore_simulation_parameters
+            ),
+        )
+        logger.info(
+            "Autosave restored: %s runtime alpha=%.10f beta=%.10f",
+            autosave_path,
+            self._config.simulation.alpha,
+            self._config.simulation.beta,
+        )
 
     def _autosave_path(self) -> Path:
         path = Path(self._config.autosave.path)

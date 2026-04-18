@@ -12,7 +12,7 @@ replay:
   delay_ms: 120
   selected_only_by_default: true
 lyapunov:
-  delta0: 1.0e-6
+  delta0: 1.0e-06
   transient_steps: 10
   max_steps: 200
   renormalization_interval: 1
@@ -33,18 +33,19 @@ view:
   show_regions: true
   show_region_labels: true
   show_region_legend: true
-  show_branch_markers: false
+  show_branch_markers: true
   phase_point_radius: 2
   geometry_point_radius: 2
   angle_hover_tooltip: true
 window:
-  width: 1588
-  height: 1328
-  x: 258
-  y: 103
+  width: 1850
+  height: 1543
+  x: 284
+  y: 27
 autosave:
   enabled: true
   path: autosave/session.yaml
+  restore_simulation_parameters: false
 regions:
 - name: upper_sector
   type: predicate
