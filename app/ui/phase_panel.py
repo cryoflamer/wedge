@@ -400,8 +400,9 @@ class PhasePanel(QWidget):
                 painter.setBrush(QColor(214, 39, 40, 35))
                 painter.drawRect(selection)
 
+        hover_label_text: str | None = None
         if self._hover_point is not None:
-            self._draw_crosshair_overlay(painter, plot, self._hover_point)
+            hover_label_text = self._draw_crosshair_overlay(painter, plot, self._hover_point)
 
         for trajectory_id, orbit in self._orbits.items():
             seed = self._seeds.get(trajectory_id)
@@ -454,6 +455,8 @@ class PhasePanel(QWidget):
             painter.drawEllipse(active_canvas_point, active_radius, active_radius)
 
         painter.restore()
+        if hover_label_text is not None:
+            self._draw_hover_label(painter, plot, hover_label_text)
 
     def _apply_zoom_rect(self) -> None:
         plot = self._plot_rect()
@@ -536,13 +539,21 @@ class PhasePanel(QWidget):
         painter: QPainter,
         plot: QRectF,
         point: QPointF,
-    ) -> None:
+    ) -> str:
         d_value, tau_value = self._map_click(point)
         label_text = f"d={d_value:.3f}, tau={tau_value:.3f}"
         painter.setPen(QPen(QColor(60, 60, 60, 120), 1, Qt.DashLine))
         painter.drawLine(QPointF(plot.left(), point.y()), QPointF(plot.right(), point.y()))
         painter.drawLine(QPointF(point.x(), plot.top()), QPointF(point.x(), plot.bottom()))
 
+        return label_text
+
+    def _draw_hover_label(
+        self,
+        painter: QPainter,
+        plot: QRectF,
+        label_text: str,
+    ) -> None:
         metrics = painter.fontMetrics()
         text_width = metrics.horizontalAdvance(label_text)
         label_width = text_width + 16.0
