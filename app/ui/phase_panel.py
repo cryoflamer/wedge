@@ -40,6 +40,7 @@ class PhasePanel(QWidget):
         self._pan_anchor_viewport: tuple[float, float, float, float] | None = None
         self._zoom_anchor_canvas: QPointF | None = None
         self._zoom_rect_canvas: QRectF | None = None
+        self._click_threshold_px = 6.0
         self._padding = 24
         self._top_margin = 16
         self._bottom_margin = 16
@@ -96,15 +97,6 @@ class PhasePanel(QWidget):
             plot = self._plot_rect()
             if plot.contains(event.position()):
                 self._zoom_anchor_canvas = event.position()
-                self._zoom_rect_canvas = QRectF(event.position(), event.position()).normalized()
-                logger.info(
-                    "Phase viewport box-zoom start: wall=%s start=(%.3f, %.3f)",
-                    self.wall,
-                    event.position().x(),
-                    event.position().y(),
-                )
-                self._update_hint()
-                self.update()
                 return
 
         if event.button() != Qt.LeftButton:
@@ -127,11 +119,24 @@ class PhasePanel(QWidget):
         ):
             if (
                 self._zoom_anchor_canvas is not None
-                and self._zoom_rect_canvas is not None
                 and not self._fixed_domain
             ):
                 plot = self._plot_rect()
                 current = self._clamp_to_plot(event.position(), plot)
+                delta = current - self._zoom_anchor_canvas
+                if (
+                    self._zoom_rect_canvas is None
+                    and abs(delta.x()) < self._click_threshold_px
+                    and abs(delta.y()) < self._click_threshold_px
+                ):
+                    return
+                if self._zoom_rect_canvas is None:
+                    logger.info(
+                        "Phase viewport box-zoom start: wall=%s start=(%.3f, %.3f)",
+                        self.wall,
+                        self._zoom_anchor_canvas.x(),
+                        self._zoom_anchor_canvas.y(),
+                    )
                 self._zoom_rect_canvas = QRectF(
                     self._zoom_anchor_canvas,
                     current,
@@ -173,7 +178,11 @@ class PhasePanel(QWidget):
             self._update_hint()
             self.update()
         elif event.button() == Qt.LeftButton and not self._fixed_domain:
-            self._apply_zoom_rect()
+            if self._zoom_rect_canvas is not None:
+                self._apply_zoom_rect()
+            else:
+                self._emit_click(event.position())
+                self._zoom_anchor_canvas = None
         super().mouseReleaseEvent(event)
 
     def wheelEvent(self, event: QWheelEvent) -> None:
@@ -489,3 +498,14 @@ class PhasePanel(QWidget):
             "free zoom | "
             f"d=[{d_min:.3f}, {d_max:.3f}] tau=[{tau_min:.3f}, {tau_max:.3f}]"
         )
+
+    def _emit_click(self, point: QPointF) -> None:
+        d_value, tau_value = self._map_click(point)
+        if not self._is_inside_domain(d_value, tau_value):
+            self._last_click.setText("click: outside domain")
+            self.update()
+            return
+
+        self._last_click.setText(f"click: d={d_value:.3f}, tau={tau_value:.3f}")
+        self.clicked.emit(self.wall, d_value, tau_value)
+        self.update()
