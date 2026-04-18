@@ -45,6 +45,7 @@ class PhasePanel(QWidget):
         self._padding = 24
         self._top_margin = 16
         self._bottom_margin = 16
+        self._hover_label_margin = 30
         self._header_spacing = 4
 
         for label in (self._title, self._hint, self._last_click):
@@ -309,7 +310,10 @@ class PhasePanel(QWidget):
     def _plot_rect(self) -> QRectF:
         available_width = max(self.width() - 2 * self._padding, 1)
         top = self._header_height() + 12.0
-        available_height = max(self.height() - top - self._bottom_margin, 1)
+        available_height = max(
+            self.height() - top - self._bottom_margin - self._hover_label_margin,
+            1,
+        )
         side = min(available_width, available_height)
         left = self._padding + (available_width - side) / 2.0
         plot_top = top + (available_height - side) / 2.0
