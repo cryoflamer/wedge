@@ -203,6 +203,8 @@ class MainWindow(QMainWindow):
         )
 
     def _on_trajectory_selected(self, trajectory_id: int) -> None:
+        if trajectory_id == self._selected_trajectory_id:
+            return
         self._selected_trajectory_id = trajectory_id
         self._reset_replay_views()
         self.update_view()

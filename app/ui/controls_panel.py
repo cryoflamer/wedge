@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
@@ -114,6 +114,7 @@ class ControlsPanel(QWidget):
         items: list[tuple[int, str]],
         selected_trajectory_id: int | None,
     ) -> None:
+        blocker = QSignalBlocker(self._trajectory_list)
         self._trajectory_list.clear()
         selected_item: QListWidgetItem | None = None
 
@@ -130,6 +131,13 @@ class ControlsPanel(QWidget):
             self._trajectory_list.setCurrentRow(0)
         else:
             self._trajectory_info.setText("selected: -")
+        del blocker
+
+        current = self._trajectory_list.currentItem()
+        if current is not None:
+            trajectory_id = current.data(Qt.UserRole)
+            if trajectory_id is not None:
+                self._trajectory_info.setText(f"selected: #{int(trajectory_id)}")
 
     def _emit_parameters(self) -> None:
         self.parameters_changed.emit(
