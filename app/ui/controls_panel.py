@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
+from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -295,16 +296,17 @@ class ControlsPanel(QWidget):
 
     def set_trajectory_items(
         self,
-        items: list[tuple[int, str]],
+        items: list[tuple[int, str, str]],
         selected_trajectory_id: int | None,
     ) -> None:
         blocker = QSignalBlocker(self._trajectory_list)
         self._trajectory_list.clear()
         selected_item: QListWidgetItem | None = None
 
-        for trajectory_id, label in items:
+        for trajectory_id, label, color in items:
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, trajectory_id)
+            item.setIcon(self._color_icon(color))
             self._trajectory_list.addItem(item)
             if trajectory_id == selected_trajectory_id:
                 selected_item = item
@@ -322,6 +324,15 @@ class ControlsPanel(QWidget):
             trajectory_id = current.data(Qt.UserRole)
             if trajectory_id is not None:
                 self._trajectory_info.setText(f"selected: #{int(trajectory_id)}")
+
+    def _color_icon(self, color: str) -> QIcon:
+        pixmap = QPixmap(12, 12)
+        pixmap.fill(Qt.transparent)
+        qcolor = QColor(color)
+        for x in range(12):
+            for y in range(12):
+                pixmap.setPixelColor(x, y, qcolor)
+        return QIcon(pixmap)
 
     def set_lyapunov_status(
         self,

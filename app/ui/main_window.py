@@ -198,6 +198,7 @@ class MainWindow(QMainWindow):
                     f"d0={seed.d0:.3f} tau0={seed.tau0:.3f} "
                     f"{'visible' if seed.visible else 'hidden'}"
                 ),
+                seed.color,
             )
             for seed in self._trajectory_seeds.values()
         ]
