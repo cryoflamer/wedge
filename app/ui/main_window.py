@@ -415,9 +415,10 @@ class MainWindow(QMainWindow):
         n_phase: int,
         n_geom: int,
     ) -> None:
+        normalized_n_phase = self._normalized_phase_steps(n_phase, n_geom)
         self._config.simulation.alpha = alpha
         self._config.simulation.beta = beta
-        self._config.simulation.n_phase_default = n_phase
+        self._config.simulation.n_phase_default = normalized_n_phase
         self._config.simulation.n_geom_default = n_geom
         self._rebuild_orbits()
         self._reset_replay_views()
@@ -427,7 +428,7 @@ class MainWindow(QMainWindow):
             "Parameters updated: alpha=%.6f beta=%.6f n_phase=%s n_geom=%s",
             alpha,
             beta,
-            n_phase,
+            normalized_n_phase,
             n_geom,
         )
 
@@ -659,8 +660,11 @@ class MainWindow(QMainWindow):
     def _apply_session(self, session: Session) -> None:
         self._config.simulation.alpha = session.alpha
         self._config.simulation.beta = session.beta
-        self._config.simulation.n_phase_default = session.n_phase
         self._config.simulation.n_geom_default = session.n_geom
+        self._config.simulation.n_phase_default = self._normalized_phase_steps(
+            session.n_phase,
+            session.n_geom,
+        )
         self._config.replay.delay_ms = session.replay_delay_ms
         self._config.replay.selected_only_by_default = session.replay_selected_only
         self._angle_units = session.angle_units
@@ -728,7 +732,10 @@ class MainWindow(QMainWindow):
         return build_orbit(
             seed=seed,
             config=self._config.simulation,
-            steps=self._config.simulation.n_phase_default,
+            steps=self._normalized_phase_steps(
+                self._config.simulation.n_phase_default,
+                self._config.simulation.n_geom_default,
+            ),
         )
 
     def _build_geometry(self, orbit: Orbit) -> WedgeGeometry:
@@ -737,6 +744,9 @@ class MainWindow(QMainWindow):
             config=self._config.simulation,
             max_reflections=self._config.simulation.n_geom_default,
         )
+
+    def _normalized_phase_steps(self, n_phase: int, n_geom: int) -> int:
+        return max(n_phase, n_geom + 1)
 
 
 def run_app(config: Config, config_path: str) -> None:
