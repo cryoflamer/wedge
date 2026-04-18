@@ -3,10 +3,10 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QBrush, QColor, QMouseEvent, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QLabel, QToolTip, QVBoxLayout, QWidget
 
-from app.core.region_eval import evaluate_region_predicate
+from app.core.region_eval import evaluate_region, evaluate_region_boundary
 from app.models.config import ViewConfig
 from app.models.region import RegionDescription
 
@@ -189,10 +189,14 @@ class AnglePanel(QWidget):
         return path
 
     def _draw_regions(self, painter: QPainter) -> None:
-        if not self._regions:
+        if not self._regions or not self._view_config.show_regions:
             return
 
+        legend_items: list[tuple[QColor, str, str]] = []
         for region in self._regions:
+            if not region.visible:
+                continue
+
             sample_points: list[QPointF] = []
             for alpha_step in range(0, 41):
                 alpha = (math.pi / 2.0) * alpha_step / 40.0
@@ -200,7 +204,13 @@ class AnglePanel(QWidget):
                     beta = math.pi * beta_step / 80.0
                     if not self._is_inside_domain(alpha, beta):
                         continue
-                    if evaluate_region_predicate(region, alpha, beta):
+                    if (
+                        region.region_type == "boundary"
+                        and evaluate_region_boundary(region, alpha, beta)
+                    ) or (
+                        region.region_type != "boundary"
+                        and evaluate_region(region, alpha, beta)
+                    ):
                         sample_points.append(self._to_canvas(alpha, beta))
 
             if not sample_points:
@@ -208,10 +218,91 @@ class AnglePanel(QWidget):
 
             color = QColor(region.style.fill)
             color.setAlphaF(max(0.0, min(region.style.alpha, 1.0)))
-            painter.setPen(QPen(QColor(region.style.border), 1))
-            painter.setBrush(color)
+            border_pen = QPen(QColor(region.style.border), 1)
+            border_pen.setStyle(self._pen_style(region.style.line_style))
+            painter.setPen(border_pen)
+            painter.setBrush(self._region_brush(color, region.style.hatch))
+
+            point_radius = 1 if region.region_type == "boundary" else 2
             for point in sample_points:
-                painter.drawEllipse(point, 2, 2)
+                painter.drawEllipse(point, point_radius, point_radius)
+
+            if self._view_config.show_region_labels:
+                center_x = sum(point.x() for point in sample_points) / len(sample_points)
+                center_y = sum(point.y() for point in sample_points) / len(sample_points)
+                painter.setPen(QColor(region.style.border))
+                painter.drawText(
+                    QPointF(center_x + 4.0, center_y - 4.0),
+                    region.display_text,
+                )
+
+            legend_items.append((QColor(region.style.border), region.display_text, region.legend_text))
+
+        if self._view_config.show_region_legend and legend_items:
+            self._draw_legend(painter, legend_items)
+
+    def _draw_legend(
+        self,
+        painter: QPainter,
+        legend_items: list[tuple[QColor, str, str]],
+    ) -> None:
+        plot = self._plot_rect()
+        row_height = 18.0
+        legend_width = min(plot.width() * 0.48, 250.0)
+        legend_height = 12.0 + row_height * len(legend_items)
+        legend_rect = QRectF(
+            plot.right() - legend_width - 10.0,
+            plot.top() + 10.0,
+            legend_width,
+            legend_height,
+        )
+        painter.setPen(QPen(QColor("#888888"), 1))
+        painter.setBrush(QColor(255, 255, 255, 220))
+        painter.drawRoundedRect(legend_rect, 6.0, 6.0)
+
+        for index, (color, display_text, legend_text) in enumerate(legend_items):
+            y = legend_rect.top() + 16.0 + row_height * index
+            painter.setPen(QPen(color, 2))
+            painter.drawLine(
+                QPointF(legend_rect.left() + 8.0, y - 4.0),
+                QPointF(legend_rect.left() + 22.0, y - 4.0),
+            )
+            painter.setPen(QColor("#222222"))
+            painter.drawText(
+                QPointF(legend_rect.left() + 28.0, y),
+                f"{display_text}: {legend_text}",
+            )
+
+    def _pen_style(self, line_style: str) -> Qt.PenStyle:
+        normalized = line_style.strip().lower()
+        if normalized == "dashed":
+            return Qt.DashLine
+        if normalized == "dotted":
+            return Qt.DotLine
+        if normalized == "dashdot":
+            return Qt.DashDotLine
+        return Qt.SolidLine
+
+    def _region_brush(self, color: QColor, hatch: str) -> QBrush:
+        brush = QBrush(color)
+        normalized = hatch.strip()
+        if normalized == "/":
+            brush.setStyle(Qt.FDiagPattern)
+        elif normalized == "\\":
+            brush.setStyle(Qt.BDiagPattern)
+        elif normalized == "|":
+            brush.setStyle(Qt.VerPattern)
+        elif normalized == "-":
+            brush.setStyle(Qt.HorPattern)
+        elif normalized == "+":
+            brush.setStyle(Qt.CrossPattern)
+        elif normalized in ("x", "X"):
+            brush.setStyle(Qt.DiagCrossPattern)
+        elif normalized == ".":
+            brush.setStyle(Qt.Dense6Pattern)
+        else:
+            brush.setStyle(Qt.SolidPattern)
+        return brush
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)

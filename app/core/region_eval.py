@@ -5,11 +5,43 @@ import math
 from app.models.region import RegionDescription
 
 
-def evaluate_region_predicate(
+def evaluate_region(
     region: RegionDescription,
     alpha: float,
     beta: float,
 ) -> bool:
+    if region.region_type == "predicate":
+        return bool(_evaluate_expression(region.expression, alpha, beta))
+
+    if region.region_type == "implicit":
+        value = _evaluate_expression(region.expression, alpha, beta)
+        if not isinstance(value, (int, float)) or not math.isfinite(value):
+            return False
+        return _matches_relation(float(value), region.relation or "<=")
+
+    return False
+
+
+def evaluate_region_boundary(
+    region: RegionDescription,
+    alpha: float,
+    beta: float,
+    tolerance: float = 0.02,
+) -> bool:
+    if region.region_type != "boundary":
+        return False
+
+    value = _evaluate_expression(region.expression, alpha, beta)
+    if not isinstance(value, (int, float)) or not math.isfinite(value):
+        return False
+    return abs(float(value)) <= tolerance
+
+
+def _evaluate_expression(
+    expression: str,
+    alpha: float,
+    beta: float,
+) -> object:
     safe_globals = {"__builtins__": {}}
     safe_locals = {
         "alpha": alpha,
@@ -18,11 +50,26 @@ def evaluate_region_predicate(
         "sin": math.sin,
         "cos": math.cos,
         "tan": math.tan,
+        "asin": math.asin,
+        "acos": math.acos,
+        "atan": math.atan,
         "sqrt": math.sqrt,
         "abs": abs,
     }
 
     try:
-        return bool(eval(region.predicate, safe_globals, safe_locals))
+        return eval(expression, safe_globals, safe_locals)
     except Exception:
         return False
+
+
+def _matches_relation(value: float, relation: str) -> bool:
+    if relation == "<":
+        return value < 0.0
+    if relation == "<=":
+        return value <= 0.0
+    if relation == ">":
+        return value > 0.0
+    if relation == ">=":
+        return value >= 0.0
+    return False

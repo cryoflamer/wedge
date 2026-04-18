@@ -24,15 +24,58 @@ view:
   show_labels: true
   show_directrix: false
   show_reflection_points: true
+  show_regions: true
+  show_region_labels: true
+  show_region_legend: true
   phase_point_radius: 2
   geometry_point_radius: 2
   angle_hover_tooltip: true
 window:
-  width: 1559
-  height: 1074
-  x: 210
-  y: 256
+  width: 1588
+  height: 1223
+  x: 263
+  y: 132
 autosave:
   enabled: true
   path: autosave/session.yaml
-regions: []
+regions:
+  - name: upper_sector
+    type: predicate
+    display_text: P
+    legend_text: beta > 2*alpha
+    expression: beta > 2*alpha
+    priority: 10
+    visible: true
+    style:
+      fill: "#ffd166"
+      alpha: 0.25
+      hatch: "/"
+      border: "#c17c00"
+      line_style: solid
+  - name: trig_band
+    type: implicit
+    display_text: I
+    legend_text: sin(beta) - cos(alpha) >= 0
+    expression: sin(beta) - cos(alpha)
+    relation: ">="
+    priority: 20
+    visible: true
+    style:
+      fill: "#80ed99"
+      alpha: 0.2
+      hatch: "."
+      border: "#2d6a4f"
+      line_style: dashed
+  - name: n3_boundary
+    type: boundary
+    display_text: B
+    legend_text: beta - 3*alpha = 0
+    expression: beta - 3*alpha
+    priority: 30
+    visible: true
+    style:
+      fill: "#ffffff"
+      alpha: 0.0
+      hatch: ""
+      border: "#d62828"
+      line_style: dashdot

@@ -40,6 +40,9 @@ class ViewConfig:
     show_labels: bool = True
     show_directrix: bool = False
     show_reflection_points: bool = True
+    show_regions: bool = True
+    show_region_labels: bool = True
+    show_region_legend: bool = True
     phase_point_radius: int = 2
     geometry_point_radius: int = 2
     angle_hover_tooltip: bool = True

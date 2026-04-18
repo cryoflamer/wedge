@@ -66,6 +66,9 @@ def load_config(path: str | Path) -> Config:
             show_reflection_points=bool(
                 view_data.get("show_reflection_points", True)
             ),
+            show_regions=bool(view_data.get("show_regions", True)),
+            show_region_labels=bool(view_data.get("show_region_labels", True)),
+            show_region_legend=bool(view_data.get("show_region_legend", True)),
             phase_point_radius=int(view_data.get("phase_point_radius", 2)),
             geometry_point_radius=int(view_data.get("geometry_point_radius", 2)),
             angle_hover_tooltip=bool(
@@ -93,8 +96,21 @@ def load_config(path: str | Path) -> Config:
         regions=[
             RegionDescription(
                 name=str(region["name"]),
-                label=str(region["label"]),
-                predicate=str(region["predicate"]),
+                display_text=str(
+                    region.get("display_text", region.get("label", region["name"]))
+                ),
+                legend_text=str(
+                    region.get("legend_text", region.get("display_text", region["name"]))
+                ),
+                region_type=str(region.get("type", "predicate")),
+                expression=str(
+                    region.get("expression", region.get("predicate", "False"))
+                ),
+                relation=(
+                    str(region["relation"])
+                    if region.get("relation") is not None
+                    else None
+                ),
                 style=RegionStyle(
                     fill=str(region.get("style", {}).get("fill", "#cccccc")),
                     alpha=float(region.get("style", {}).get("alpha", 0.3)),
@@ -105,6 +121,7 @@ def load_config(path: str | Path) -> Config:
                     ),
                 ),
                 priority=int(region.get("priority", 0)),
+                visible=bool(region.get("visible", True)),
             )
             for region in regions_data
         ],

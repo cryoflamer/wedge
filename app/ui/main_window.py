@@ -145,6 +145,9 @@ class MainWindow(QMainWindow):
             self._on_symmetric_mode_changed
         )
         self.controls_panel.export_mode_changed.connect(self._on_export_mode_changed)
+        self.controls_panel.region_visibility_changed.connect(
+            self._on_region_visibility_changed
+        )
         self.controls_panel.trajectory_selected.connect(self._on_trajectory_selected)
         self.controls_panel.trajectory_visibility_toggled.connect(
             self._on_trajectory_visibility_toggled
@@ -168,6 +171,11 @@ class MainWindow(QMainWindow):
         self.controls_panel.set_symmetric_mode(self._symmetric_mode)
         self.controls_panel.set_phase_view_mode(
             self.phase_panel_wall_1.is_fixed_domain_mode()
+        )
+        self.controls_panel.set_region_view_options(
+            show_regions=self._config.view.show_regions,
+            show_labels=self._config.view.show_region_labels,
+            show_legend=self._config.view.show_region_legend,
         )
         self.angle_panel.set_angle_units(self._angle_units)
         self.angle_panel.set_symmetric_mode(self._symmetric_mode)
@@ -268,6 +276,17 @@ class MainWindow(QMainWindow):
 
     def _on_export_mode_changed(self, mode: str) -> None:
         self._config.export.default_mode = mode
+
+    def _on_region_visibility_changed(
+        self,
+        show_regions: bool,
+        show_labels: bool,
+        show_legend: bool,
+    ) -> None:
+        self._config.view.show_regions = show_regions
+        self._config.view.show_region_labels = show_labels
+        self._config.view.show_region_legend = show_legend
+        self.update_view()
 
     def _on_parameters_changed(
         self,

@@ -15,7 +15,11 @@ class RegionStyle:
 @dataclass
 class RegionDescription:
     name: str
-    label: str
-    predicate: str
+    display_text: str
+    legend_text: str
+    region_type: str
+    expression: str
+    relation: str | None
     style: RegionStyle
     priority: int = 0
+    visible: bool = True

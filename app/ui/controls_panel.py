@@ -27,6 +27,7 @@ class ControlsPanel(QWidget):
     angle_units_changed = Signal(str)
     symmetric_mode_changed = Signal(bool)
     export_mode_changed = Signal(str)
+    region_visibility_changed = Signal(bool, bool, bool)
     trajectory_selected = Signal(int)
     trajectory_visibility_toggled = Signal(int)
     clear_selected_requested = Signal()
@@ -45,6 +46,9 @@ class ControlsPanel(QWidget):
         self._n_geom_edit = QLineEdit()
         self._fixed_domain_checkbox = QCheckBox("Fixed domain (disable for zoom/pan)")
         self._symmetric_mode_checkbox = QCheckBox("Symmetric wedge mode")
+        self._show_regions_checkbox = QCheckBox("Show regions")
+        self._show_region_labels_checkbox = QCheckBox("Show region labels")
+        self._show_region_legend_checkbox = QCheckBox("Show legend")
         self._angle_units_combo = QComboBox()
         self._export_mode_combo = QComboBox()
         self._export_preset_combo = QComboBox()
@@ -75,6 +79,9 @@ class ControlsPanel(QWidget):
         self._symmetric_mode_checkbox.toggled.connect(
             self._on_symmetric_mode_toggled
         )
+        self._show_regions_checkbox.toggled.connect(self._emit_region_visibility)
+        self._show_region_labels_checkbox.toggled.connect(self._emit_region_visibility)
+        self._show_region_legend_checkbox.toggled.connect(self._emit_region_visibility)
         self._angle_units_combo.addItems(["rad", "deg"])
         self._angle_units_combo.currentTextChanged.connect(
             self._on_angle_units_changed
@@ -117,6 +124,9 @@ class ControlsPanel(QWidget):
         layout.addRow("N_geom", self._n_geom_edit)
         layout.addRow(self._symmetric_mode_checkbox)
         layout.addRow(self._fixed_domain_checkbox)
+        layout.addRow(self._show_regions_checkbox)
+        layout.addRow(self._show_region_labels_checkbox)
+        layout.addRow(self._show_region_legend_checkbox)
         layout.addRow(self._parameter_status)
 
         apply_button = QPushButton("Apply")
@@ -177,6 +187,11 @@ class ControlsPanel(QWidget):
             presets=config.export.monochrome_line_styles,
             selected_preset=current_preset,
         )
+        self.set_region_view_options(
+            show_regions=config.view.show_regions,
+            show_labels=config.view.show_region_labels,
+            show_legend=config.view.show_region_legend,
+        )
 
     def set_angle_units(self, units: str) -> None:
         normalized_units = units.strip().lower() if units.strip() else "rad"
@@ -205,6 +220,22 @@ class ControlsPanel(QWidget):
         blocker = QSignalBlocker(self._fixed_domain_checkbox)
         self._fixed_domain_checkbox.setChecked(fixed_domain)
         del blocker
+
+    def set_region_view_options(
+        self,
+        show_regions: bool,
+        show_labels: bool,
+        show_legend: bool,
+    ) -> None:
+        blockers = [
+            QSignalBlocker(self._show_regions_checkbox),
+            QSignalBlocker(self._show_region_labels_checkbox),
+            QSignalBlocker(self._show_region_legend_checkbox),
+        ]
+        self._show_regions_checkbox.setChecked(show_regions)
+        self._show_region_labels_checkbox.setChecked(show_labels)
+        self._show_region_legend_checkbox.setChecked(show_legend)
+        del blockers
 
     def set_export_options(
         self,
@@ -366,3 +397,10 @@ class ControlsPanel(QWidget):
 
     def _on_export_mode_changed(self, mode: str) -> None:
         self.export_mode_changed.emit(mode.strip().lower() or "color")
+
+    def _emit_region_visibility(self) -> None:
+        self.region_visibility_changed.emit(
+            self._show_regions_checkbox.isChecked(),
+            self._show_region_labels_checkbox.isChecked(),
+            self._show_region_legend_checkbox.isChecked(),
+        )
