@@ -153,6 +153,9 @@ class MainWindow(QMainWindow):
         self.controls_panel.branch_markers_changed.connect(
             self._on_branch_markers_changed
         )
+        self.controls_panel.heatmap_settings_changed.connect(
+            self._on_heatmap_settings_changed
+        )
         self.controls_panel.compute_lyapunov_requested.connect(
             self._on_compute_lyapunov
         )
@@ -188,6 +191,12 @@ class MainWindow(QMainWindow):
         )
         self.controls_panel.set_branch_markers_enabled(
             self._config.view.show_branch_markers
+        )
+        self.controls_panel.set_heatmap_settings(
+            show_heatmap=self._config.view.show_heatmap,
+            mode=self._config.view.heatmap_mode,
+            resolution=self._config.view.heatmap_resolution,
+            normalization=self._config.view.heatmap_normalization,
         )
         self.angle_panel.set_angle_units(self._angle_units)
         self.angle_panel.set_symmetric_mode(self._symmetric_mode)
@@ -319,6 +328,19 @@ class MainWindow(QMainWindow):
 
     def _on_branch_markers_changed(self, enabled: bool) -> None:
         self._config.view.show_branch_markers = enabled
+        self.update_view()
+
+    def _on_heatmap_settings_changed(
+        self,
+        enabled: bool,
+        mode: str,
+        resolution: int,
+        normalization: str,
+    ) -> None:
+        self._config.view.show_heatmap = enabled
+        self._config.view.heatmap_mode = mode
+        self._config.view.heatmap_resolution = resolution
+        self._config.view.heatmap_normalization = normalization
         self.update_view()
 
     def _on_compute_lyapunov(self) -> None:

@@ -83,6 +83,12 @@ def load_config(path: str | Path) -> Config:
             show_branch_markers=bool(
                 view_data.get("show_branch_markers", False)
             ),
+            show_heatmap=bool(view_data.get("show_heatmap", False)),
+            heatmap_mode=str(view_data.get("heatmap_mode", "all")),
+            heatmap_resolution=int(view_data.get("heatmap_resolution", 32)),
+            heatmap_normalization=str(
+                view_data.get("heatmap_normalization", "linear")
+            ),
             phase_point_radius=int(view_data.get("phase_point_radius", 2)),
             geometry_point_radius=int(view_data.get("geometry_point_radius", 2)),
             angle_hover_tooltip=bool(

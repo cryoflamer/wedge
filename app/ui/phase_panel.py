@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QPen, QWheelEvent
@@ -371,6 +372,9 @@ class PhasePanel(QWidget):
         painter.setBrush(QColor(214, 231, 248, 80))
         painter.drawEllipse(domain_rect)
 
+        if self._view_config.show_heatmap:
+            self._draw_heatmap_overlay(painter, domain_rect)
+
         badge_rect = QRectF(plot.left() + 8.0, plot.top() + 8.0, 172.0, 26.0)
         if self._fixed_domain:
             painter.setPen(QPen(QColor("#7a1f1f"), 1))
@@ -507,6 +511,97 @@ class PhasePanel(QWidget):
         path.lineTo(center.x() - radius, center.y())
         path.closeSubpath()
         painter.drawPath(path)
+
+    def _draw_heatmap_overlay(
+        self,
+        painter: QPainter,
+        domain_rect: QRectF,
+    ) -> None:
+        points = self._heatmap_points()
+        if not points:
+            return
+
+        resolution = max(int(self._view_config.heatmap_resolution), 4)
+        d_min, d_max, tau_min, tau_max = self._viewport
+        d_span = max(d_max - d_min, 1.0e-12)
+        tau_span = max(tau_max - tau_min, 1.0e-12)
+        bins = [[0 for _ in range(resolution)] for _ in range(resolution)]
+
+        for d_value, tau_value in points:
+            if d_value < d_min or d_value > d_max or tau_value < tau_min or tau_value > tau_max:
+                continue
+            x_ratio = min(max((d_value - d_min) / d_span, 0.0), 0.999999)
+            y_ratio = min(max((tau_value - tau_min) / tau_span, 0.0), 0.999999)
+            ix = min(int(x_ratio * resolution), resolution - 1)
+            iy = min(int(y_ratio * resolution), resolution - 1)
+            bins[iy][ix] += 1
+
+        max_count = max((count for row in bins for count in row), default=0)
+        if max_count <= 0:
+            return
+
+        clip_path = QPainterPath()
+        clip_path.addEllipse(domain_rect)
+        painter.save()
+        painter.setClipPath(clip_path, Qt.IntersectClip)
+        painter.setPen(Qt.NoPen)
+
+        normalization = self._view_config.heatmap_normalization.strip().lower()
+        for iy, row in enumerate(bins):
+            tau_low = tau_min + (iy / resolution) * tau_span
+            tau_high = tau_min + ((iy + 1) / resolution) * tau_span
+            top = self._to_canvas(d_min, tau_high).y()
+            bottom = self._to_canvas(d_min, tau_low).y()
+            for ix, count in enumerate(row):
+                if count <= 0:
+                    continue
+
+                if normalization == "log":
+                    intensity = math.log1p(count) / math.log1p(max_count)
+                else:
+                    intensity = count / max_count
+
+                d_left = d_min + (ix / resolution) * d_span
+                d_right = d_min + ((ix + 1) / resolution) * d_span
+                left = self._to_canvas(d_left, tau_min).x()
+                right = self._to_canvas(d_right, tau_min).x()
+                color = QColor(214, 39, 40, max(18, int(140 * intensity)))
+                painter.fillRect(
+                    QRectF(
+                        min(left, right),
+                        min(top, bottom),
+                        abs(right - left),
+                        abs(bottom - top),
+                    ),
+                    color,
+                )
+
+        painter.restore()
+
+    def _heatmap_points(self) -> list[tuple[float, float]]:
+        if self._view_config.heatmap_mode.strip().lower() == "selected":
+            if self._selected_trajectory_id is None:
+                return []
+            trajectory_ids = [self._selected_trajectory_id]
+        else:
+            trajectory_ids = list(self._orbits.keys())
+
+        points: list[tuple[float, float]] = []
+        for trajectory_id in trajectory_ids:
+            seed = self._seeds.get(trajectory_id)
+            orbit = self._orbits.get(trajectory_id)
+            if seed is None or orbit is None or not seed.visible:
+                continue
+
+            active_index = self._active_frames.get(trajectory_id)
+            for point in orbit.points:
+                if point.wall != self.wall:
+                    continue
+                if active_index is not None and point.step_index > active_index:
+                    continue
+                points.append((point.d, point.tau))
+
+        return points
 
     def _apply_zoom_rect(self) -> None:
         plot = self._plot_rect()

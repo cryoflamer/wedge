@@ -53,6 +53,10 @@ class ViewConfig:
     show_region_labels: bool = True
     show_region_legend: bool = True
     show_branch_markers: bool = False
+    show_heatmap: bool = False
+    heatmap_mode: str = "all"
+    heatmap_resolution: int = 32
+    heatmap_normalization: str = "linear"
     phase_point_radius: int = 2
     geometry_point_radius: int = 2
     angle_hover_tooltip: bool = True

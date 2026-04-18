@@ -30,6 +30,7 @@ class ControlsPanel(QWidget):
     export_mode_changed = Signal(str)
     region_visibility_changed = Signal(bool, bool, bool)
     branch_markers_changed = Signal(bool)
+    heatmap_settings_changed = Signal(bool, str, int, str)
     compute_lyapunov_requested = Signal()
     export_data_requested = Signal()
     trajectory_selected = Signal(int)
@@ -54,6 +55,10 @@ class ControlsPanel(QWidget):
         self._show_region_labels_checkbox = QCheckBox("Show region labels")
         self._show_region_legend_checkbox = QCheckBox("Show legend")
         self._show_branch_markers_checkbox = QCheckBox("Show branch markers")
+        self._show_heatmap_checkbox = QCheckBox("Show heatmap")
+        self._heatmap_mode_combo = QComboBox()
+        self._heatmap_resolution_combo = QComboBox()
+        self._heatmap_normalization_combo = QComboBox()
         self._angle_units_combo = QComboBox()
         self._export_mode_combo = QComboBox()
         self._export_preset_combo = QComboBox()
@@ -93,6 +98,19 @@ class ControlsPanel(QWidget):
         self._show_region_legend_checkbox.toggled.connect(self._emit_region_visibility)
         self._show_branch_markers_checkbox.toggled.connect(
             self.branch_markers_changed.emit
+        )
+        self._show_heatmap_checkbox.toggled.connect(self._emit_heatmap_settings)
+        self._heatmap_mode_combo.addItems(["all", "selected"])
+        self._heatmap_mode_combo.currentTextChanged.connect(
+            self._emit_heatmap_settings
+        )
+        self._heatmap_resolution_combo.addItems(["24", "32", "48", "64"])
+        self._heatmap_resolution_combo.currentTextChanged.connect(
+            self._emit_heatmap_settings
+        )
+        self._heatmap_normalization_combo.addItems(["linear", "log"])
+        self._heatmap_normalization_combo.currentTextChanged.connect(
+            self._emit_heatmap_settings
         )
         self._angle_units_combo.addItems(["rad", "deg"])
         self._angle_units_combo.currentTextChanged.connect(
@@ -152,6 +170,10 @@ class ControlsPanel(QWidget):
         layout.addRow(self._show_region_labels_checkbox)
         layout.addRow(self._show_region_legend_checkbox)
         layout.addRow(self._show_branch_markers_checkbox)
+        layout.addRow(self._show_heatmap_checkbox)
+        layout.addRow("Heatmap mode", self._heatmap_mode_combo)
+        layout.addRow("Heatmap bins", self._heatmap_resolution_combo)
+        layout.addRow("Heatmap norm", self._heatmap_normalization_combo)
         layout.addRow(self._parameter_status)
 
         apply_button = QPushButton("Apply")
@@ -219,6 +241,12 @@ class ControlsPanel(QWidget):
             show_legend=config.view.show_region_legend,
         )
         self.set_branch_markers_enabled(config.view.show_branch_markers)
+        self.set_heatmap_settings(
+            show_heatmap=config.view.show_heatmap,
+            mode=config.view.heatmap_mode,
+            resolution=config.view.heatmap_resolution,
+            normalization=config.view.heatmap_normalization,
+        )
 
     def set_angle_units(self, units: str) -> None:
         normalized_units = units.strip().lower() if units.strip() else "rad"
@@ -268,6 +296,33 @@ class ControlsPanel(QWidget):
         blocker = QSignalBlocker(self._show_branch_markers_checkbox)
         self._show_branch_markers_checkbox.setChecked(enabled)
         del blocker
+
+    def set_heatmap_settings(
+        self,
+        show_heatmap: bool,
+        mode: str,
+        resolution: int,
+        normalization: str,
+    ) -> None:
+        blockers = [
+            QSignalBlocker(self._show_heatmap_checkbox),
+            QSignalBlocker(self._heatmap_mode_combo),
+            QSignalBlocker(self._heatmap_resolution_combo),
+            QSignalBlocker(self._heatmap_normalization_combo),
+        ]
+        self._show_heatmap_checkbox.setChecked(show_heatmap)
+        self._set_combo_value(self._heatmap_mode_combo, mode, "all")
+        self._set_combo_value(
+            self._heatmap_resolution_combo,
+            str(resolution),
+            "32",
+        )
+        self._set_combo_value(
+            self._heatmap_normalization_combo,
+            normalization,
+            "linear",
+        )
+        del blockers
 
     def set_export_options(
         self,
@@ -466,6 +521,21 @@ class ControlsPanel(QWidget):
             is_monochrome and self._export_preset_combo.count() > 0
         )
 
+    def _set_combo_value(
+        self,
+        combo: QComboBox,
+        value: str,
+        fallback: str,
+    ) -> None:
+        normalized_value = value.strip().lower() if value.strip() else fallback
+        index = combo.findText(normalized_value)
+        if index >= 0:
+            combo.setCurrentIndex(index)
+            return
+
+        fallback_index = combo.findText(fallback)
+        combo.setCurrentIndex(fallback_index if fallback_index >= 0 else 0)
+
     def _on_export_mode_changed(self, mode: str) -> None:
         self.export_mode_changed.emit(mode.strip().lower() or "color")
 
@@ -474,4 +544,13 @@ class ControlsPanel(QWidget):
             self._show_regions_checkbox.isChecked(),
             self._show_region_labels_checkbox.isChecked(),
             self._show_region_legend_checkbox.isChecked(),
+        )
+
+    def _emit_heatmap_settings(self) -> None:
+        self.heatmap_settings_changed.emit(
+            self._show_heatmap_checkbox.isChecked(),
+            self._heatmap_mode_combo.currentText().strip().lower() or "all",
+            int(self._heatmap_resolution_combo.currentText().strip() or "32"),
+            self._heatmap_normalization_combo.currentText().strip().lower()
+            or "linear",
         )
