@@ -5,8 +5,10 @@ import sys
 
 from PySide6.QtWidgets import QApplication, QGridLayout, QMainWindow, QWidget
 
+from app.core.geometry_builder import build_wedge_geometry
 from app.core.orbit_builder import build_orbit
 from app.models.config import Config
+from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
 from app.models.trajectory import TrajectorySeed
 from app.ui.angle_panel import AnglePanel
@@ -25,6 +27,8 @@ class MainWindow(QMainWindow):
         self._selected_trajectory_id: int | None = None
         self._trajectory_seeds: dict[int, TrajectorySeed] = {}
         self._trajectory_orbits: dict[int, Orbit] = {}
+        self._trajectory_geometries: dict[int, WedgeGeometry] = {}
+        self._active_segment_index = 0
         self._palette = [
             "#1f77b4",
             "#d62728",
@@ -106,6 +110,12 @@ class MainWindow(QMainWindow):
             self._trajectory_orbits,
             self._selected_trajectory_id,
         )
+        self.wedge_panel.set_geometries(
+            self._trajectory_seeds,
+            self._trajectory_geometries,
+            self._selected_trajectory_id,
+            self._active_segment_index,
+        )
 
     def _on_phase_click(self, wall: int, d_value: float, tau_value: float) -> None:
         trajectory_id = self._next_trajectory_id
@@ -124,6 +134,11 @@ class MainWindow(QMainWindow):
         )
         self._trajectory_seeds[trajectory_id] = seed
         self._trajectory_orbits[trajectory_id] = orbit
+        self._trajectory_geometries[trajectory_id] = build_wedge_geometry(
+            orbit=orbit,
+            config=self._config.simulation,
+            max_reflections=self._config.simulation.n_geom_default,
+        )
         if self._selected_trajectory_id is None:
             self._selected_trajectory_id = trajectory_id
 
@@ -162,6 +177,7 @@ class MainWindow(QMainWindow):
 
     def _on_trajectory_selected(self, trajectory_id: int) -> None:
         self._selected_trajectory_id = trajectory_id
+        self._active_segment_index = 0
         self.update_view()
 
     def _rebuild_orbits(self) -> None:
@@ -172,6 +188,14 @@ class MainWindow(QMainWindow):
                 steps=self._config.simulation.n_phase_default,
             )
             for trajectory_id, seed in self._trajectory_seeds.items()
+        }
+        self._trajectory_geometries = {
+            trajectory_id: build_wedge_geometry(
+                orbit=orbit,
+                config=self._config.simulation,
+                max_reflections=self._config.simulation.n_geom_default,
+            )
+            for trajectory_id, orbit in self._trajectory_orbits.items()
         }
 
 
