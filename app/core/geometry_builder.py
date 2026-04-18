@@ -49,15 +49,17 @@ def build_wedge_geometry(
             )
         )
 
-    for orbit_point, state, left, right in zip(
+    for orbit_point, state, next_state, left, right in zip(
         segment_points,
         states[:segment_count],
+        states[1 : segment_count + 1],
         geometry.reflections,
         geometry.reflections[1 : segment_count + 1],
     ):
         segment = _build_segment(
             step_index=orbit_point.step_index,
             state=state,
+            next_state=next_state,
             left=left,
             right=right,
             config=config,
@@ -128,6 +130,7 @@ def _build_reflection_point(
 def _build_segment(
     step_index: int,
     state: PhaseState,
+    next_state: PhaseState,
     left: ReflectionPoint,
     right: ReflectionPoint,
     config: SimulationConfig,
@@ -163,10 +166,10 @@ def _build_segment(
 
     samples = _build_parabola_samples(
         state=state,
+        next_state=next_state,
         focus=focus,
         start_point=start_point,
         end_point=end_point,
-        wall_to=right.wall,
         config=config,
     )
     if not samples:
@@ -240,10 +243,10 @@ def _reflection_point_from_state(
 
 def _build_parabola_samples(
     state: PhaseState,
+    next_state: PhaseState,
     focus: GeometryPoint,
     start_point: GeometryPoint | None,
     end_point: GeometryPoint | None,
-    wall_to: int,
     config: SimulationConfig,
     num_samples: int = 48,
 ) -> list[GeometryPoint]:
@@ -271,7 +274,18 @@ def _build_parabola_samples(
         y=(1.0 + focus.y) / 2.0,
     )
     t_start = coefficient_b / coefficient_a
-    t_end = (end_point.x - vertex.x) / (2.0 * parabola_parameter)
+    next_theta = _wall_angle(next_state.wall, config)
+    next_sin_theta = math.sin(next_theta)
+    next_cos_theta = math.cos(next_theta)
+    next_coefficient_a = (
+        next_state.d * next_sin_theta - next_state.tau * next_cos_theta
+    )
+    next_coefficient_b = (
+        next_state.d * next_cos_theta + next_state.tau * next_sin_theta
+    )
+    if abs(next_coefficient_a) <= config.eps:
+        return []
+    t_end = next_coefficient_b / next_coefficient_a
 
     _log_segment_debug(
         focus=focus,
@@ -280,6 +294,7 @@ def _build_parabola_samples(
         start_point=start_point,
         end_point=end_point,
         t_start_formula=t_start,
+        t_end_formula=t_end,
         t_start=t_start,
         t_end=t_end,
     )
@@ -308,6 +323,7 @@ def _log_segment_debug(
     start_point: GeometryPoint,
     end_point: GeometryPoint,
     t_start_formula: float,
+    t_end_formula: float,
     t_start: float,
     t_end: float,
 ) -> None:
@@ -320,7 +336,7 @@ def _log_segment_debug(
         (
             "Wedge segment: focus=(%.6f, %.6f) vertex=(%.6f, %.6f) p=%.6f "
             "start=(%.6f, %.6f) end=(%.6f, %.6f) "
-            "t1=%.6f chosen_t1=%.6f chosen_t2=%.6f"
+            "t1=%.6f t2=%.6f chosen_t1=%.6f chosen_t2=%.6f"
         ),
         focus.x,
         focus.y,
@@ -332,6 +348,7 @@ def _log_segment_debug(
         end_point.x,
         end_point.y,
         t_start_formula,
+        t_end_formula,
         t_start,
         t_end,
     )
