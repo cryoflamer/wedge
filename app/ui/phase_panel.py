@@ -70,7 +70,7 @@ class PhasePanel(QWidget):
         self._update_hint()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        if self._fixed_domain and event.button() in (Qt.LeftButton, Qt.RightButton):
+        if self._fixed_domain and event.button() == Qt.RightButton:
             logger.info(
                 "Phase interaction ignored: wall=%s fixed_domain=true button=%s",
                 self.wall,
