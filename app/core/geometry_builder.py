@@ -161,10 +161,12 @@ def _build_segment(
             invalid_reason="segment_boundary_resolution_failed",
         )
 
-    samples, _, _ = _build_parabola_samples(
+    samples = _build_parabola_samples(
+        state=state,
         focus=focus,
         start_point=start_point,
         end_point=end_point,
+        wall_from=left.wall,
         wall_to=right.wall,
         config=config,
     )
@@ -238,53 +240,51 @@ def _reflection_point_from_state(
 
 
 def _build_parabola_samples(
+    state: PhaseState,
     focus: GeometryPoint,
     start_point: GeometryPoint | None,
     end_point: GeometryPoint | None,
+    wall_from: int,
     wall_to: int,
     config: SimulationConfig,
     num_samples: int = 48,
-) -> tuple[list[GeometryPoint], float | None, float | None]:
+) -> list[GeometryPoint]:
     if start_point is None or end_point is None:
-        return [], None, None
+        return []
 
-    parabola_parameter = (1.0 - focus.y) / 2.0
+    theta = _wall_angle(state.wall, config)
+    sin_theta = math.sin(theta)
+    cos_theta = math.cos(theta)
+    tangent = math.tan(theta)
+    if abs(tangent) <= config.eps or state.d <= config.eps:
+        return []
+
+    coefficient_a = state.d * sin_theta - state.tau * cos_theta
+    coefficient_b = state.d * cos_theta + state.tau * sin_theta
+    if abs(coefficient_a) <= config.eps:
+        return []
+
+    parabola_parameter = (coefficient_a * coefficient_a) / (2.0 * state.d)
     if parabola_parameter <= config.eps:
-        return [], None, None
+        return []
 
     vertex = GeometryPoint(
         x=focus.x,
         y=(1.0 + focus.y) / 2.0,
     )
-    start_resolution = _resolve_point_parameter(
-        point=start_point,
-        vertex=vertex,
-        parabola_parameter=parabola_parameter,
-        config=config,
-    )
-    end_resolution = _resolve_point_parameter(
-        point=end_point,
-        vertex=vertex,
-        parabola_parameter=parabola_parameter,
-        config=config,
-    )
-    if not start_resolution or not end_resolution:
-        return [], None, None
+    t_start = coefficient_b / coefficient_a
+    if wall_to == wall_from:
+        t_end = -2.0 * tangent - t_start
+    else:
+        t_end = (end_point.x - vertex.x) / (2.0 * parabola_parameter)
 
-    t_start, t_end = _select_segment_parameters(
-        start_resolution=start_resolution,
-        end_resolution=end_resolution,
-        wall_to=wall_to,
-        config=config,
-    )
     _log_segment_debug(
         focus=focus,
         vertex=vertex,
         parabola_parameter=parabola_parameter,
         start_point=start_point,
         end_point=end_point,
-        start_candidates=start_resolution.candidates,
-        end_candidates=end_resolution.candidates,
+        t_start_formula=t_start,
         t_start=t_start,
         t_end=t_end,
     )
@@ -303,118 +303,7 @@ def _build_parabola_samples(
     if samples:
         samples[0] = start_point
         samples[-1] = end_point
-    return samples, t_start, t_end
-
-
-def _parabola_t_candidates_from_point(
-    point: GeometryPoint,
-    vertex: GeometryPoint,
-    parabola_parameter: float,
-    config: SimulationConfig,
-) -> tuple[float, float] | tuple[float]:
-    normalized = (vertex.y - point.y) / parabola_parameter
-    if normalized < -config.eps:
-        return tuple()
-
-    abs_t = math.sqrt(max(normalized, 0.0))
-    if abs_t <= config.eps:
-        return (0.0,)
-    return (-abs_t, abs_t)
-
-
-class _PointParameterResolution:
-    def __init__(
-        self,
-        candidates: tuple[float, ...],
-        exact_t: float | None,
-        degenerate: bool,
-    ) -> None:
-        self.candidates = candidates
-        self.exact_t = exact_t
-        self.degenerate = degenerate
-
-
-def _resolve_point_parameter(
-    point: GeometryPoint,
-    vertex: GeometryPoint,
-    parabola_parameter: float,
-    config: SimulationConfig,
-) -> _PointParameterResolution | None:
-    candidates = _parabola_t_candidates_from_point(
-        point,
-        vertex,
-        parabola_parameter,
-        config,
-    )
-    if not candidates:
-        return None
-
-    t_from_x = (point.x - vertex.x) / (2.0 * parabola_parameter)
-    abs_t_from_y = abs(candidates[0])
-    tolerance = max(config.eps * 10.0, 1.0e-6)
-    if abs(abs(t_from_x) - abs_t_from_y) <= tolerance:
-        return _PointParameterResolution(
-            candidates=(t_from_x,),
-            exact_t=t_from_x,
-            degenerate=False,
-        )
-
-    return _PointParameterResolution(
-        candidates=candidates,
-        exact_t=None,
-        degenerate=True,
-    )
-
-
-def _select_segment_parameters(
-    start_resolution: _PointParameterResolution,
-    end_resolution: _PointParameterResolution,
-    wall_to: int,
-    config: SimulationConfig,
-) -> tuple[float, float]:
-    if (
-        start_resolution.exact_t is not None
-        and end_resolution.exact_t is not None
-    ):
-        return start_resolution.exact_t, end_resolution.exact_t
-
-    start_candidates = start_resolution.candidates
-    end_candidates = end_resolution.candidates
-
-    if wall_to == 2:
-        for sign in (-1.0, 1.0):
-            signed_start = _pick_signed_candidate(start_candidates, sign, config)
-            signed_end = _pick_signed_candidate(end_candidates, sign, config)
-            if signed_start is None or signed_end is None:
-                continue
-            if abs(signed_end) > abs(signed_start) + config.eps:
-                return signed_start, signed_end
-
-    best_pair: tuple[float, float] | None = None
-    best_span: float | None = None
-    for t_start in start_candidates:
-        for t_end in end_candidates:
-            span = abs(t_end - t_start)
-            if best_span is None or span < best_span:
-                best_span = span
-                best_pair = (t_start, t_end)
-
-    if best_pair is None:
-        return 0.0, 0.0
-    return best_pair
-
-
-def _pick_signed_candidate(
-    candidates: tuple[float, ...],
-    sign: float,
-    config: SimulationConfig,
-) -> float | None:
-    for candidate in candidates:
-        if abs(candidate) <= config.eps and abs(sign) > 0.0:
-            return candidate
-        if math.copysign(1.0, candidate) == sign:
-            return candidate
-    return None
+    return samples
 
 
 def _log_segment_debug(
@@ -423,8 +312,7 @@ def _log_segment_debug(
     parabola_parameter: float,
     start_point: GeometryPoint,
     end_point: GeometryPoint,
-    start_candidates: tuple[float, ...],
-    end_candidates: tuple[float, ...],
+    t_start_formula: float,
     t_start: float,
     t_end: float,
 ) -> None:
@@ -437,7 +325,7 @@ def _log_segment_debug(
         (
             "Wedge segment: focus=(%.6f, %.6f) vertex=(%.6f, %.6f) p=%.6f "
             "start=(%.6f, %.6f) end=(%.6f, %.6f) "
-            "t1_candidates=%s t2_candidates=%s chosen_t1=%.6f chosen_t2=%.6f"
+            "t1=%.6f chosen_t1=%.6f chosen_t2=%.6f"
         ),
         focus.x,
         focus.y,
@@ -448,8 +336,7 @@ def _log_segment_debug(
         start_point.y,
         end_point.x,
         end_point.y,
-        start_candidates,
-        end_candidates,
+        t_start_formula,
         t_start,
         t_end,
     )
