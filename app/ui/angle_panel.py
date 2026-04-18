@@ -29,6 +29,7 @@ class AnglePanel(QWidget):
         self._angle_units = "rad"
         self._symmetric_mode = False
         self._regions: list[RegionDescription] = []
+        self._hover_point: QPointF | None = None
         self._padding = 24
         self._top_margin = 16
         self._bottom_margin = 16
@@ -94,7 +95,17 @@ class AnglePanel(QWidget):
         self.point_selected.emit(alpha, beta)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        plot = self._plot_rect()
+        self._hover_point = (
+            QPointF(
+                min(max(event.position().x(), plot.left()), plot.right()),
+                min(max(event.position().y(), plot.top()), plot.bottom()),
+            )
+            if plot.contains(event.position())
+            else None
+        )
         if not self._view_config.angle_hover_tooltip:
+            self.update()
             return
 
         alpha, beta = self._selection_from_position(event.position())
@@ -106,8 +117,11 @@ class AnglePanel(QWidget):
             )
         else:
             QToolTip.hideText()
+        self.update()
 
     def leaveEvent(self, event) -> None:
+        self._hover_point = None
+        self.update()
         QToolTip.hideText()
         super().leaveEvent(event)
 
@@ -330,8 +344,36 @@ class AnglePanel(QWidget):
                 self._to_canvas(math.pi / 2.0, math.pi / 2.0),
             )
 
+        if self._hover_point is not None:
+            self._draw_crosshair_overlay(painter, plot, self._hover_point)
+
         if self._is_inside_domain(self._alpha, self._beta):
             painter.setPen(QPen(QColor("#111111"), 2))
             painter.setBrush(QColor("#111111"))
             point = self._to_canvas(self._alpha, self._beta)
             painter.drawEllipse(point, 5, 5)
+
+    def _draw_crosshair_overlay(
+        self,
+        painter: QPainter,
+        plot: QRectF,
+        point: QPointF,
+    ) -> None:
+        alpha, beta = self._selection_from_position(point)
+        if not self._is_inside_domain(alpha, beta):
+            return
+
+        painter.setPen(QPen(QColor(60, 60, 60, 120), 1, Qt.DashLine))
+        painter.drawLine(QPointF(plot.left(), point.y()), QPointF(plot.right(), point.y()))
+        painter.drawLine(QPointF(point.x(), plot.top()), QPointF(point.x(), plot.bottom()))
+
+        label_rect = QRectF(plot.left() + 8.0, plot.bottom() - 28.0, 210.0, 20.0)
+        painter.setPen(QPen(QColor("#666666"), 1))
+        painter.setBrush(QColor(255, 255, 255, 220))
+        painter.drawRoundedRect(label_rect, 4.0, 4.0)
+        painter.setPen(QColor("#222222"))
+        painter.drawText(
+            label_rect.adjusted(6.0, 0.0, -6.0, 0.0),
+            Qt.AlignVCenter | Qt.AlignLeft,
+            f"alpha={self._format_angle(alpha)}, beta={self._format_angle(beta)}",
+        )

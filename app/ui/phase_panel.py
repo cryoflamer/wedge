@@ -40,6 +40,7 @@ class PhasePanel(QWidget):
         self._pan_anchor_viewport: tuple[float, float, float, float] | None = None
         self._zoom_anchor_canvas: QPointF | None = None
         self._zoom_rect_canvas: QRectF | None = None
+        self._hover_point: QPointF | None = None
         self._click_threshold_px = 6.0
         self._padding = 24
         self._top_margin = 16
@@ -112,6 +113,12 @@ class PhasePanel(QWidget):
         self.update()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        plot = self._plot_rect()
+        self._hover_point = (
+            self._clamp_to_plot(event.position(), plot)
+            if plot.contains(event.position())
+            else None
+        )
         if (
             self._pan_anchor_canvas is None
             or self._pan_anchor_viewport is None
@@ -121,7 +128,6 @@ class PhasePanel(QWidget):
                 self._zoom_anchor_canvas is not None
                 and not self._fixed_domain
             ):
-                plot = self._plot_rect()
                 current = self._clamp_to_plot(event.position(), plot)
                 delta = current - self._zoom_anchor_canvas
                 if (
@@ -184,6 +190,11 @@ class PhasePanel(QWidget):
                 self._emit_click(event.position())
                 self._zoom_anchor_canvas = None
         super().mouseReleaseEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self._hover_point = None
+        self.update()
+        super().leaveEvent(event)
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         if self._fixed_domain:
@@ -382,6 +393,9 @@ class PhasePanel(QWidget):
                 painter.setBrush(QColor(214, 39, 40, 35))
                 painter.drawRect(selection)
 
+        if self._hover_point is not None:
+            self._draw_crosshair_overlay(painter, plot, self._hover_point)
+
         for trajectory_id, orbit in self._orbits.items():
             seed = self._seeds.get(trajectory_id)
             if seed is None or not seed.visible:
@@ -509,3 +523,25 @@ class PhasePanel(QWidget):
         self._last_click.setText(f"click: d={d_value:.3f}, tau={tau_value:.3f}")
         self.clicked.emit(self.wall, d_value, tau_value)
         self.update()
+
+    def _draw_crosshair_overlay(
+        self,
+        painter: QPainter,
+        plot: QRectF,
+        point: QPointF,
+    ) -> None:
+        d_value, tau_value = self._map_click(point)
+        painter.setPen(QPen(QColor(60, 60, 60, 120), 1, Qt.DashLine))
+        painter.drawLine(QPointF(plot.left(), point.y()), QPointF(plot.right(), point.y()))
+        painter.drawLine(QPointF(point.x(), plot.top()), QPointF(point.x(), plot.bottom()))
+
+        label_rect = QRectF(plot.left() + 8.0, plot.bottom() - 28.0, 138.0, 20.0)
+        painter.setPen(QPen(QColor("#666666"), 1))
+        painter.setBrush(QColor(255, 255, 255, 220))
+        painter.drawRoundedRect(label_rect, 4.0, 4.0)
+        painter.setPen(QColor("#222222"))
+        painter.drawText(
+            label_rect.adjusted(6.0, 0.0, -6.0, 0.0),
+            Qt.AlignVCenter | Qt.AlignLeft,
+            f"d={d_value:.3f}, tau={tau_value:.3f}",
+        )
