@@ -20,6 +20,10 @@ from app.models.config import Config
 class ControlsPanel(QWidget):
     parameters_changed = Signal(float, float, int, int)
     trajectory_selected = Signal(int)
+    trajectory_visibility_toggled = Signal(int)
+    clear_selected_requested = Signal()
+    clear_all_requested = Signal()
+    replay_action_requested = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -29,6 +33,7 @@ class ControlsPanel(QWidget):
         self._beta_edit = QLineEdit()
         self._n_phase_edit = QLineEdit()
         self._n_geom_edit = QLineEdit()
+        self._trajectory_info = QLabel("selected: -")
 
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(self._build_trajectory_box())
@@ -44,6 +49,19 @@ class ControlsPanel(QWidget):
         box = QGroupBox("Trajectories")
         layout = QVBoxLayout(box)
         layout.addWidget(self._trajectory_list)
+        layout.addWidget(self._trajectory_info)
+
+        toggle_button = QPushButton("Toggle visibility")
+        toggle_button.clicked.connect(self._toggle_current_visibility)
+        layout.addWidget(toggle_button)
+
+        clear_selected_button = QPushButton("Clear selected trajectory")
+        clear_selected_button.clicked.connect(self.clear_selected_requested.emit)
+        layout.addWidget(clear_selected_button)
+
+        clear_all_button = QPushButton("Clear all trajectories")
+        clear_all_button.clicked.connect(self.clear_all_requested.emit)
+        layout.addWidget(clear_all_button)
         return box
 
     def _build_parameters_box(self) -> QGroupBox:
@@ -62,20 +80,22 @@ class ControlsPanel(QWidget):
     def _build_controls_box(self) -> QGroupBox:
         box = QGroupBox("Controls")
         layout = QVBoxLayout(box)
-        for label in (
-            "Replay selected",
-            "Replay all",
-            "Pause",
-            "Resume",
-            "Step",
-            "Reset replay",
-            "Export PNG",
-            "Save session",
-            "Load session",
-            "Clear selected trajectory",
-            "Clear all trajectories",
+        for action_name in (
+            "replay_selected",
+            "replay_all",
+            "pause",
+            "resume",
+            "step",
+            "reset_replay",
+            "export_png",
+            "save_session",
+            "load_session",
         ):
-            layout.addWidget(QPushButton(label))
+            button = QPushButton(action_name.replace("_", " ").title())
+            button.clicked.connect(
+                lambda checked=False, name=action_name: self.replay_action_requested.emit(name)
+            )
+            layout.addWidget(button)
 
         footer = QHBoxLayout()
         footer.addWidget(QLabel("UI skeleton"))
@@ -108,6 +128,8 @@ class ControlsPanel(QWidget):
             self._trajectory_list.setCurrentItem(selected_item)
         elif self._trajectory_list.count() > 0:
             self._trajectory_list.setCurrentRow(0)
+        else:
+            self._trajectory_info.setText("selected: -")
 
     def _emit_parameters(self) -> None:
         self.parameters_changed.emit(
@@ -124,7 +146,17 @@ class ControlsPanel(QWidget):
     ) -> None:
         del previous
         if current is None:
+            self._trajectory_info.setText("selected: -")
             return
         trajectory_id = current.data(Qt.UserRole)
         if trajectory_id is not None:
+            self._trajectory_info.setText(f"selected: #{int(trajectory_id)}")
             self.trajectory_selected.emit(int(trajectory_id))
+
+    def _toggle_current_visibility(self) -> None:
+        current = self._trajectory_list.currentItem()
+        if current is None:
+            return
+        trajectory_id = current.data(Qt.UserRole)
+        if trajectory_id is not None:
+            self.trajectory_visibility_toggled.emit(int(trajectory_id))

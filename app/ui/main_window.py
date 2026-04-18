@@ -79,6 +79,14 @@ class MainWindow(QMainWindow):
         self.angle_panel.point_selected.connect(self._on_angle_click)
         self.controls_panel.parameters_changed.connect(self._on_parameters_changed)
         self.controls_panel.trajectory_selected.connect(self._on_trajectory_selected)
+        self.controls_panel.trajectory_visibility_toggled.connect(
+            self._on_trajectory_visibility_toggled
+        )
+        self.controls_panel.clear_selected_requested.connect(
+            self._on_clear_selected_trajectory
+        )
+        self.controls_panel.clear_all_requested.connect(self._on_clear_all_trajectories)
+        self.controls_panel.replay_action_requested.connect(self._on_replay_action)
 
     def update_view(self) -> None:
         self.controls_panel.load_config(self._config)
@@ -92,7 +100,8 @@ class MainWindow(QMainWindow):
                 seed.id,
                 (
                     f"#{seed.id} wall={seed.wall_start} "
-                    f"d0={seed.d0:.3f} tau0={seed.tau0:.3f}"
+                    f"d0={seed.d0:.3f} tau0={seed.tau0:.3f} "
+                    f"{'visible' if seed.visible else 'hidden'}"
                 ),
             )
             for seed in self._trajectory_seeds.values()
@@ -204,6 +213,46 @@ class MainWindow(QMainWindow):
             )
             for trajectory_id, orbit in self._trajectory_orbits.items()
         }
+
+    def _on_trajectory_visibility_toggled(self, trajectory_id: int) -> None:
+        seed = self._trajectory_seeds.get(trajectory_id)
+        if seed is None:
+            return
+        seed.visible = not seed.visible
+        self.update_view()
+        logger.info(
+            "Trajectory visibility toggled: id=%s visible=%s",
+            trajectory_id,
+            seed.visible,
+        )
+
+    def _on_clear_selected_trajectory(self) -> None:
+        if self._selected_trajectory_id is None:
+            return
+        trajectory_id = self._selected_trajectory_id
+        self._trajectory_seeds.pop(trajectory_id, None)
+        self._trajectory_orbits.pop(trajectory_id, None)
+        self._trajectory_geometries.pop(trajectory_id, None)
+        self._selected_trajectory_id = (
+            next(iter(self._trajectory_seeds.keys()))
+            if self._trajectory_seeds
+            else None
+        )
+        self._active_segment_index = 0
+        self.update_view()
+        logger.info("Trajectory cleared: id=%s", trajectory_id)
+
+    def _on_clear_all_trajectories(self) -> None:
+        self._trajectory_seeds.clear()
+        self._trajectory_orbits.clear()
+        self._trajectory_geometries.clear()
+        self._selected_trajectory_id = None
+        self._active_segment_index = 0
+        self.update_view()
+        logger.info("All trajectories cleared")
+
+    def _on_replay_action(self, action_name: str) -> None:
+        logger.info("Replay/control action requested: %s", action_name)
 
 
 def run_app(config: Config) -> None:
