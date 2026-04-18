@@ -472,6 +472,53 @@ project/
 - тестування boundary policy
 - тестування parser для `pi/6` та подібних форм
 
+### Task 15. Реалізувати viewport navigation для фазових панелей
+- zoom колесом миші
+- pan перетягуванням
+- reset view
+- режими:
+  - fixed domain (весь круг завжди видно)
+  - free zoom (довільний масштаб)
+- збереження viewport у session
+
+### Task 16. Доробити PNG export controls у UI
+- selector режиму експорту:
+  - color
+  - monochrome
+- підтримка preset для monochrome (line styles, hatch)
+- використання вибраного режиму при export
+- опційно зберігати в session
+
+### Task 17. Реалізувати перемикач одиниць для кутів
+- режими:
+  - radians
+  - degrees
+- internal storage завжди у радіанах
+- конвертація тільки на рівні UI
+- синхронізація:
+  - input fields
+  - labels
+  - tooltips
+- парсинг `pi/6` тільки в режимі radians
+
+### Task 18. Реалізувати symmetric wedge mode
+- режим із обмеженням:
+  - `beta = pi - alpha`
+- interaction тільки по лінії на `(alpha, beta)` діаграмі
+- при кліку поза лінією:
+  - або projection на лінію
+  - або ігнор
+- поле `beta` read-only
+- автоматичне оновлення `beta` при зміні `alpha`
+- сумісність із regions
+
+### Task 19. Розширити session state
+- зберігати:
+  - viewport фазових панелей
+  - режим одиниць (rad/deg)
+  - symmetric mode
+  - export mode
+
 ## 17. Мінімальний MVP
 
 Перша робоча версія має вміти:
