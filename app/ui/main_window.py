@@ -5,7 +5,10 @@ import sys
 
 from PySide6.QtWidgets import QApplication, QGridLayout, QMainWindow, QWidget
 
+from app.core.orbit_builder import build_orbit
 from app.models.config import Config
+from app.models.orbit import Orbit
+from app.models.trajectory import TrajectorySeed
 from app.ui.angle_panel import AnglePanel
 from app.ui.controls_panel import ControlsPanel
 from app.ui.phase_panel import PhasePanel
@@ -18,6 +21,20 @@ class MainWindow(QMainWindow):
     def __init__(self, config: Config) -> None:
         super().__init__()
         self._config = config
+        self._next_trajectory_id = 1
+        self._selected_trajectory_id: int | None = None
+        self._trajectory_seeds: dict[int, TrajectorySeed] = {}
+        self._trajectory_orbits: dict[int, Orbit] = {}
+        self._palette = [
+            "#1f77b4",
+            "#d62728",
+            "#2ca02c",
+            "#ff7f0e",
+            "#9467bd",
+            "#8c564b",
+            "#e377c2",
+            "#17becf",
+        ]
 
         self.setWindowTitle(config.app.title)
         self.resize(1440, 900)
@@ -57,6 +74,7 @@ class MainWindow(QMainWindow):
         self.phase_panel_wall_2.clicked.connect(self._on_phase_click)
         self.angle_panel.point_selected.connect(self._on_angle_click)
         self.controls_panel.parameters_changed.connect(self._on_parameters_changed)
+        self.controls_panel.trajectory_selected.connect(self._on_trajectory_selected)
 
     def update_view(self) -> None:
         self.controls_panel.load_config(self._config)
@@ -64,17 +82,59 @@ class MainWindow(QMainWindow):
             self._config.simulation.alpha,
             self._config.simulation.beta,
         )
+        trajectory_items = [
+            (
+                seed.id,
+                (
+                    f"#{seed.id} wall={seed.wall_start} "
+                    f"d0={seed.d0:.3f} tau0={seed.tau0:.3f}"
+                ),
+            )
+            for seed in self._trajectory_seeds.values()
+        ]
+        self.controls_panel.set_trajectory_items(
+            trajectory_items,
+            self._selected_trajectory_id,
+        )
+        self.phase_panel_wall_1.set_trajectories(
+            self._trajectory_seeds,
+            self._trajectory_orbits,
+            self._selected_trajectory_id,
+        )
+        self.phase_panel_wall_2.set_trajectories(
+            self._trajectory_seeds,
+            self._trajectory_orbits,
+            self._selected_trajectory_id,
+        )
 
     def _on_phase_click(self, wall: int, d_value: float, tau_value: float) -> None:
+        trajectory_id = self._next_trajectory_id
+        self._next_trajectory_id += 1
+        seed = TrajectorySeed(
+            id=trajectory_id,
+            wall_start=wall,
+            d0=d_value,
+            tau0=tau_value,
+            color=self._palette[(trajectory_id - 1) % len(self._palette)],
+        )
+        orbit = build_orbit(
+            seed=seed,
+            config=self._config.simulation,
+            steps=self._config.simulation.n_phase_default,
+        )
+        self._trajectory_seeds[trajectory_id] = seed
+        self._trajectory_orbits[trajectory_id] = orbit
+        if self._selected_trajectory_id is None:
+            self._selected_trajectory_id = trajectory_id
+
         logger.info(
-            "Phase panel clicked: wall=%s d=%.6f tau=%.6f",
+            "Phase panel clicked: wall=%s d=%.6f tau=%.6f id=%s",
             wall,
             d_value,
             tau_value,
+            trajectory_id,
         )
-        self.controls_panel.add_trajectory_item(
-            f"seed wall={wall} d={d_value:.3f} tau={tau_value:.3f}"
-        )
+        self.update_view()
 
     def _on_angle_click(self, alpha: float, beta: float) -> None:
         logger.info("Angle panel clicked: alpha=%.6f beta=%.6f", alpha, beta)
@@ -90,6 +150,7 @@ class MainWindow(QMainWindow):
         self._config.simulation.beta = beta
         self._config.simulation.n_phase_default = n_phase
         self._config.simulation.n_geom_default = n_geom
+        self._rebuild_orbits()
         self.update_view()
         logger.info(
             "Parameters updated: alpha=%.6f beta=%.6f n_phase=%s n_geom=%s",
@@ -98,6 +159,20 @@ class MainWindow(QMainWindow):
             n_phase,
             n_geom,
         )
+
+    def _on_trajectory_selected(self, trajectory_id: int) -> None:
+        self._selected_trajectory_id = trajectory_id
+        self.update_view()
+
+    def _rebuild_orbits(self) -> None:
+        self._trajectory_orbits = {
+            trajectory_id: build_orbit(
+                seed=seed,
+                config=self._config.simulation,
+                steps=self._config.simulation.n_phase_default,
+            )
+            for trajectory_id, seed in self._trajectory_seeds.items()
+        }
 
 
 def run_app(config: Config) -> None:

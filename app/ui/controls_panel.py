@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -18,6 +19,7 @@ from app.models.config import Config
 
 class ControlsPanel(QWidget):
     parameters_changed = Signal(float, float, int, int)
+    trajectory_selected = Signal(int)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -33,6 +35,10 @@ class ControlsPanel(QWidget):
         main_layout.addWidget(self._build_parameters_box())
         main_layout.addWidget(self._build_controls_box())
         main_layout.addStretch(1)
+
+        self._trajectory_list.currentItemChanged.connect(
+            self._on_current_item_changed
+        )
 
     def _build_trajectory_box(self) -> QGroupBox:
         box = QGroupBox("Trajectories")
@@ -83,8 +89,25 @@ class ControlsPanel(QWidget):
         self._n_phase_edit.setText(str(config.simulation.n_phase_default))
         self._n_geom_edit.setText(str(config.simulation.n_geom_default))
 
-    def add_trajectory_item(self, label: str) -> None:
-        self._trajectory_list.addItem(label)
+    def set_trajectory_items(
+        self,
+        items: list[tuple[int, str]],
+        selected_trajectory_id: int | None,
+    ) -> None:
+        self._trajectory_list.clear()
+        selected_item: QListWidgetItem | None = None
+
+        for trajectory_id, label in items:
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, trajectory_id)
+            self._trajectory_list.addItem(item)
+            if trajectory_id == selected_trajectory_id:
+                selected_item = item
+
+        if selected_item is not None:
+            self._trajectory_list.setCurrentItem(selected_item)
+        elif self._trajectory_list.count() > 0:
+            self._trajectory_list.setCurrentRow(0)
 
     def _emit_parameters(self) -> None:
         self.parameters_changed.emit(
@@ -93,3 +116,15 @@ class ControlsPanel(QWidget):
             int(self._n_phase_edit.text()),
             int(self._n_geom_edit.text()),
         )
+
+    def _on_current_item_changed(
+        self,
+        current: QListWidgetItem | None,
+        previous: QListWidgetItem | None,
+    ) -> None:
+        del previous
+        if current is None:
+            return
+        trajectory_id = current.data(Qt.UserRole)
+        if trajectory_id is not None:
+            self.trajectory_selected.emit(int(trajectory_id))
