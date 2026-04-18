@@ -24,8 +24,8 @@ def build_wedge_geometry(
     if max_reflections <= 0:
         return geometry
 
-    reflection_count = min(len(orbit.points), max_reflections)
-    segment_count = max(reflection_count - 1, 0)
+    segment_count = min(max_reflections, max(len(orbit.points) - 1, 0))
+    reflection_count = min(len(orbit.points), segment_count + 1)
     reflection_points = orbit.points[:reflection_count]
     segment_points = reflection_points[:segment_count]
     states = [
@@ -45,8 +45,8 @@ def build_wedge_geometry(
         )
 
     for orbit_point, state, left, right in zip(
-        reflection_points[1 : segment_count + 1],
-        states[1 : segment_count + 1],
+        segment_points,
+        states[:segment_count],
         geometry.reflections,
         geometry.reflections[1 : segment_count + 1],
     ):
