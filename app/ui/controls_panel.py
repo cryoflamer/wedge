@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
-from PySide6.QtGui import QColor, QIcon, QPixmap
+from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -333,9 +333,11 @@ class ControlsPanel(QWidget):
         qcolor = QColor(color)
         if not visible:
             qcolor.setAlpha(90)
-        for x in range(12):
-            for y in range(12):
-                pixmap.setPixelColor(x, y, qcolor)
+        painter = QPainter(pixmap)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(qcolor)
+        painter.drawEllipse(1, 1, 10, 10)
+        painter.end()
         return QIcon(pixmap)
 
     def set_lyapunov_status(
