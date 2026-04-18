@@ -519,6 +519,249 @@ project/
   - symmetric mode
   - export mode
 
+### Task 20. Розширити механізм областей на панелі `(alpha, beta)`
+- області є visual overlays, а не жорсткими обмеженнями вибору точки
+- вибір `(alpha, beta)` лишається дозволеним у всій допустимій області клина
+- кожна область має підтримувати metadata:
+  - `name`
+  - `display_text`
+  - `legend_text`
+  - `priority`
+  - `visible`
+  - `style`
+- підтримати щонайменше такі типи областей:
+  - `predicate`
+  - `implicit`
+  - `boundary`
+- для `predicate`:
+  - область задається булевою формулою, наприклад `beta > 2*alpha`
+- для `implicit`:
+  - область задається неявно через числову функцію `F(alpha, beta)` і relation до нуля
+  - підтримати relation:
+    - `<`
+    - `<=`
+    - `>`
+    - `>=`
+- для `boundary`:
+  - задається крива виду `F(alpha, beta) = 0`
+  - використовується для відображення меж без обов'язкової заливки області
+- expression/predicate мають підтримувати тригонометричні функції:
+  - `sin`
+  - `cos`
+  - `tan`
+  - `asin`
+  - `acos`
+  - `atan`
+  - `sqrt`
+  - `abs`
+  - `pi`
+- це потрібно для підтримки аналітично заданих областей, зокрема тригонометричних неявних областей для випадків типу `n=3`
+- рендер має підтримувати:
+  - fill
+  - contour
+  - hatch
+  - opacity
+  - border style
+- області можуть накладатися одна на одну за `priority`
+- додати legend support:
+  - short alias / display text на графіку
+  - повний опис у легенді
+- додати UI toggles:
+  - show regions
+  - show region labels
+  - show legend
+- у symmetric mode області мають коректно відображатися відносно обмеження `beta = pi - alpha`
+- додати приклади в config для:
+  - простої predicate-області
+  - implicit тригонометричної області
+  - boundary-кривої
+
+### Task 21. Додати обчислення показника Ляпунова (finite-time)
+
+- реалізувати чисельну оцінку найбільшого показника Ляпунова для траєкторії `(d, tau, wall)`
+- використовувати метод двох близьких траєкторій (companion orbit):
+  - стартувати з двох станів на малій відстані `delta0`
+  - ітерувати обидві траєкторії через той самий `next_state(...)`
+- на кожному кроці:
+  - обчислювати відстань у фазовому просторі:
+    - `delta = sqrt((d2 - d1)^2 + (tau2 - tau1)^2)`
+  - додавати вклад:
+    - `log(delta / delta_ref)` у накопичену суму
+- після кожного кроку (або кожних k кроків) виконувати перенормалізацію:
+  - повернути companion orbit на відстань `delta0` від базової траєкторії вздовж поточного напрямку розходження
+- ігнорувати перші `transient_steps` при обчисленні оцінки
+- результат:
+  - `lyapunov_estimate = sum_log / steps_used`
+  - також зберігати `running_estimate` по кроках
+
+#### Обробка стану
+- використовувати тільки `(d, tau)` для метрики
+- `wall` не входить у відстань, але:
+  - обидві траєкторії стартують з одного `wall`
+  - якщо `wall` розходиться, це фіксувати (лічильник або статус)
+
+#### Обробка помилок
+- якщо `delta` стає нечисловим або занадто малим:
+  - пропускати крок або завершувати з partial результатом
+- якщо одна з траєкторій стає invalid:
+  - завершити обчислення і повернути partial результат
+
+#### Параметри (config)
+- `delta0`
+- `transient_steps`
+- `max_steps`
+- `renormalization_interval`
+- `eps`
+
+#### UI
+- кнопка `Compute Lyapunov` (тільки для selected trajectory)
+- відображати:
+  - оцінку λ
+  - кількість кроків
+  - статус (`done`, `partial`, `failed`)
+- опціонально:
+  - графік `running_estimate`
+
+#### Архітектура
+- винести в окремий модуль (наприклад `lyapunov.py`)
+- використовувати існуючий `next_state(...)`
+- не змішувати з UI логікою
+
+#### Обмеження
+- це finite-time оцінка, а не строгий асимптотичний показник
+- не робити автоматичну класифікацію типу траєкторії на основі λ
+
+### Task 22. Додати export даних траєкторій
+- підтримати експорт у:
+  - CSV
+  - JSON
+- формат:
+  - step_index
+  - d
+  - tau
+  - wall
+  - branch (same_wall / cross_wall)
+- опційно:
+  - reflection points
+  - focus points
+- UI:
+  - кнопка `Export Data`
+  - вибір формату
+- не залежить від PNG export
+
+---
+
+### Task 23. Додати crosshair і координати під курсором
+- для фазових панелей:
+  - показувати `(d, tau)` під курсором
+- для `(alpha, beta)` панелі:
+  - показувати `(alpha, beta)` під курсором
+- відображення:
+  - status bar або overlay
+- синхронізувати з режимом одиниць (rad/deg)
+
+---
+
+### Task 24. Візуалізація гілок відображення
+- відображати тип переходу:
+  - `same_wall`
+  - `cross_wall`
+- варіанти:
+  - різні кольори точок
+  - різні маркери
+- опціонально:
+  - toggle у UI
+- дані брати з `branch` у `OrbitPoint`
+
+---
+
+### Task 25. Додати heatmap / density для фазового портрета
+- побудова 2D гістограми по `(d, tau)`
+- варіанти:
+  - cumulative по всіх траєкторіях
+  - тільки для selected
+- відображення:
+  - як overlay
+  - з прозорістю
+- UI toggle:
+  - show heatmap
+- параметри:
+  - resolution
+  - normalization
+
+---
+
+### Task 26. Додати scan mode (multi-seed генерація)
+- генерація seed-ів:
+  - grid sampling
+  - random sampling
+- параметри:
+  - кількість точок
+  - область
+- автоматичне побудування орбіт
+- обмеження:
+  - max number of trajectories
+- UI:
+  - кнопка `Scan`
+  - налаштування sampling
+
+---
+
+### Task 27. Додати reference trajectory mode
+- дозволити зберегти поточну траєкторію як reference overlay
+- reference trajectory не перебудовується при зміні `(alpha, beta)`
+- reference trajectory має явно позначатися як побудована для старих параметрів
+- metadata reference trajectory:
+  - source alpha
+  - source beta
+  - source seed
+  - original trajectory id
+- UI:
+  - кнопка `Freeze as Reference`
+  - toggle visibility для reference overlays
+  - окремий стиль рендеру (наприклад, тьмяна або dashed)
+- reference trajectories не входять у поточний physics state
+- reference trajectories використовуються лише для візуального порівняння
+- підтримати save/load у session
+
+---
+
+### Task 28. Додати snap-to-constraints для `(alpha, beta)`
+- підтримати snapping до:
+  - `beta = pi - alpha` (symmetric)
+  - boundary regions (optional)
+- при кліку:
+  - точка project-иться на найближчу криву
+- UI toggle:
+  - enable snapping
+
+---
+
+### Task 29. Додати режим trace boundary (advanced)
+- режим, у якому:
+  - `(alpha, beta)` змінюються плавно
+  - відслідковується зміна поведінки траєкторії
+- базова версія:
+  - змінюється один параметр (наприклад alpha)
+  - будується серія орбіт
+- мета:
+  - знаходження меж режимів
+- опціонально:
+  - логувати точки переходу
+
+---
+
+### Task 30. Розширити session до “experiment”
+- додати metadata:
+  - назва експерименту
+  - опис / notes
+- зберігати:
+  - regions
+  - seeds
+  - параметри
+- можливість:
+  - швидко відкрити попередній кейс
+
 ## 17. Мінімальний MVP
 
 Перша робоча версія має вміти:
