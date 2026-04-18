@@ -546,7 +546,7 @@ class MainWindow(QMainWindow):
         if mode == "selected" and self._selected_trajectory_id is not None:
             self._active_phase_frames = {self._selected_trajectory_id: active_frame}
             self._active_segment_indices = {
-                self._selected_trajectory_id: max(active_frame - 1, 0)
+                self._selected_trajectory_id: active_frame - 1
             }
         elif mode == "all":
             self._active_phase_frames = {
@@ -554,7 +554,7 @@ class MainWindow(QMainWindow):
                 for trajectory_id in self._trajectory_orbits.keys()
             }
             self._active_segment_indices = {
-                trajectory_id: max(active_frame - 1, 0)
+                trajectory_id: active_frame - 1
                 for trajectory_id in self._trajectory_geometries.keys()
             }
         self.update_view()
