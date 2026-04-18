@@ -86,6 +86,7 @@ class MainWindow(QMainWindow):
             self._config.simulation.alpha,
             self._config.simulation.beta,
         )
+        self.angle_panel.set_regions(self._config.regions)
         trajectory_items = [
             (
                 seed.id,
@@ -152,6 +153,12 @@ class MainWindow(QMainWindow):
         self.update_view()
 
     def _on_angle_click(self, alpha: float, beta: float) -> None:
+        self._on_parameters_changed(
+            alpha=alpha,
+            beta=beta,
+            n_phase=self._config.simulation.n_phase_default,
+            n_geom=self._config.simulation.n_geom_default,
+        )
         logger.info("Angle panel clicked: alpha=%.6f beta=%.6f", alpha, beta)
 
     def _on_parameters_changed(
