@@ -133,6 +133,8 @@ class MainWindow(QMainWindow):
     def _connect_signals(self) -> None:
         self.phase_panel_wall_1.clicked.connect(self._on_phase_click)
         self.phase_panel_wall_2.clicked.connect(self._on_phase_click)
+        self.phase_panel_wall_1.viewport_changed.connect(self._on_phase_viewport_changed)
+        self.phase_panel_wall_2.viewport_changed.connect(self._on_phase_viewport_changed)
         self.angle_panel.point_selected.connect(self._on_angle_click)
         self.controls_panel.parameters_changed.connect(self._on_parameters_changed)
         self.controls_panel.trajectory_selected.connect(self._on_trajectory_selected)
@@ -274,6 +276,10 @@ class MainWindow(QMainWindow):
     def _on_reset_phase_view(self) -> None:
         self.phase_panel_wall_1.reset_view()
         self.phase_panel_wall_2.reset_view()
+        self._autosave_session()
+        self.update_view()
+
+    def _on_phase_viewport_changed(self) -> None:
         self._autosave_session()
         self.update_view()
 

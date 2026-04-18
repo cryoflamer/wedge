@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen, QWheelEvent
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
@@ -8,9 +10,12 @@ from app.models.config import ViewConfig
 from app.models.orbit import Orbit
 from app.models.trajectory import TrajectorySeed
 
+logger = logging.getLogger(__name__)
+
 
 class PhasePanel(QWidget):
     clicked = Signal(int, float, float)
+    viewport_changed = Signal()
 
     def __init__(
         self,
@@ -33,6 +38,8 @@ class PhasePanel(QWidget):
         self._viewport = (0.0, 2.0, -1.0, 1.0)
         self._pan_anchor_canvas: QPointF | None = None
         self._pan_anchor_viewport: tuple[float, float, float, float] | None = None
+        self._zoom_anchor_canvas: QPointF | None = None
+        self._zoom_rect_canvas: QRectF | None = None
         self._padding = 24
         self._top_margin = 16
         self._bottom_margin = 16
@@ -59,12 +66,36 @@ class PhasePanel(QWidget):
         self.setStyleSheet(
             "PhasePanel { background: #ffffff; border: 1px solid #a0a0a0; }"
         )
+        self._update_hint()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.RightButton and not self._fixed_domain:
             self._pan_anchor_canvas = event.position()
             self._pan_anchor_viewport = self._viewport
+            self.setCursor(Qt.ClosedHandCursor)
+            logger.info(
+                "Phase viewport pan start: wall=%s viewport=%s",
+                self.wall,
+                self._viewport,
+            )
+            self._update_hint()
+            self.update()
             return
+
+        if event.button() == Qt.LeftButton and not self._fixed_domain:
+            plot = self._plot_rect()
+            if plot.contains(event.position()):
+                self._zoom_anchor_canvas = event.position()
+                self._zoom_rect_canvas = QRectF(event.position(), event.position()).normalized()
+                logger.info(
+                    "Phase viewport box-zoom start: wall=%s start=(%.3f, %.3f)",
+                    self.wall,
+                    event.position().x(),
+                    event.position().y(),
+                )
+                self._update_hint()
+                self.update()
+                return
 
         if event.button() != Qt.LeftButton:
             return
@@ -84,6 +115,19 @@ class PhasePanel(QWidget):
             or self._pan_anchor_viewport is None
             or self._fixed_domain
         ):
+            if (
+                self._zoom_anchor_canvas is not None
+                and self._zoom_rect_canvas is not None
+                and not self._fixed_domain
+            ):
+                plot = self._plot_rect()
+                current = self._clamp_to_plot(event.position(), plot)
+                self._zoom_rect_canvas = QRectF(
+                    self._zoom_anchor_canvas,
+                    current,
+                ).normalized()
+                self._update_hint()
+                self.update()
             return
 
         plot = self._plot_rect()
@@ -102,12 +146,24 @@ class PhasePanel(QWidget):
             tau_min + tau_shift,
             tau_max + tau_shift,
         )
+        logger.debug(
+            "Phase viewport pan: wall=%s viewport=%s",
+            self.wall,
+            self._viewport,
+        )
+        self._update_hint()
+        self.viewport_changed.emit()
         self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.RightButton:
             self._pan_anchor_canvas = None
             self._pan_anchor_viewport = None
+            self.unsetCursor()
+            self._update_hint()
+            self.update()
+        elif event.button() == Qt.LeftButton and not self._fixed_domain:
+            self._apply_zoom_rect()
         super().mouseReleaseEvent(event)
 
     def wheelEvent(self, event: QWheelEvent) -> None:
@@ -131,6 +187,22 @@ class PhasePanel(QWidget):
             tau_value + (tau_min - tau_value) * scale,
             tau_value + (tau_max - tau_value) * scale,
         )
+        logger.info(
+            "Phase viewport wheel: wall=%s d=%.6f tau=%.6f viewport=%s",
+            self.wall,
+            d_value,
+            tau_value,
+            self._viewport,
+        )
+        logger.debug(
+            "Phase viewport wheel: wall=%s d=%.6f tau=%.6f viewport=%s",
+            self.wall,
+            d_value,
+            tau_value,
+            self._viewport,
+        )
+        self._update_hint()
+        self.viewport_changed.emit()
         self.update()
 
     def set_trajectories(
@@ -148,13 +220,24 @@ class PhasePanel(QWidget):
 
     def set_fixed_domain_mode(self, fixed_domain: bool) -> None:
         self._fixed_domain = fixed_domain
+        self._zoom_anchor_canvas = None
+        self._zoom_rect_canvas = None
+        self._pan_anchor_canvas = None
+        self._pan_anchor_viewport = None
         if fixed_domain:
             self.reset_view()
         else:
+            self._update_hint()
             self.update()
 
     def reset_view(self) -> None:
         self._viewport = (0.0, 2.0, -1.0, 1.0)
+        self._zoom_anchor_canvas = None
+        self._zoom_rect_canvas = None
+        self._pan_anchor_canvas = None
+        self._pan_anchor_viewport = None
+        self._update_hint()
+        self.viewport_changed.emit()
         self.update()
 
     def viewport(self) -> tuple[float, float, float, float] | None:
@@ -164,6 +247,7 @@ class PhasePanel(QWidget):
 
     def set_viewport(self, viewport: tuple[float, float, float, float] | None) -> None:
         self._viewport = viewport or (0.0, 2.0, -1.0, 1.0)
+        self._update_hint()
         self.update()
 
     def is_fixed_domain_mode(self) -> bool:
@@ -234,6 +318,13 @@ class PhasePanel(QWidget):
         painter.setBrush(QColor(214, 231, 248, 80))
         painter.drawEllipse(domain_rect)
 
+        if self._zoom_rect_canvas is not None:
+            selection = self._zoom_rect_canvas.intersected(plot)
+            if selection.width() > 0 and selection.height() > 0:
+                painter.setPen(QPen(QColor("#d62728"), 1, Qt.DashLine))
+                painter.setBrush(QColor(214, 39, 40, 35))
+                painter.drawRect(selection)
+
         for trajectory_id, orbit in self._orbits.items():
             seed = self._seeds.get(trajectory_id)
             if seed is None or not seed.visible:
@@ -283,3 +374,68 @@ class PhasePanel(QWidget):
             painter.setBrush(QColor("#ffffff"))
             active_radius = self._view_config.phase_point_radius + 2
             painter.drawEllipse(active_canvas_point, active_radius, active_radius)
+
+    def _apply_zoom_rect(self) -> None:
+        plot = self._plot_rect()
+        zoom_rect = self._zoom_rect_canvas
+        self._zoom_anchor_canvas = None
+        self._zoom_rect_canvas = None
+        if zoom_rect is None:
+            self._update_hint()
+            self.update()
+            return
+
+        clipped = zoom_rect.intersected(plot)
+        if clipped.width() < 8 or clipped.height() < 8:
+            self._update_hint()
+            self.update()
+            return
+
+        top_left = self._map_click(clipped.topLeft())
+        bottom_right = self._map_click(clipped.bottomRight())
+        d_min = min(top_left[0], bottom_right[0])
+        d_max = max(top_left[0], bottom_right[0])
+        tau_min = min(top_left[1], bottom_right[1])
+        tau_max = max(top_left[1], bottom_right[1])
+        if d_max - d_min < 1.0e-6 or tau_max - tau_min < 1.0e-6:
+            self._update_hint()
+            self.update()
+            return
+
+        self._viewport = (d_min, d_max, tau_min, tau_max)
+        logger.info(
+            "Phase viewport box-zoom applied: wall=%s viewport=%s",
+            self.wall,
+            self._viewport,
+        )
+        logger.debug(
+            "Phase viewport box-zoom applied: wall=%s viewport=%s",
+            self.wall,
+            self._viewport,
+        )
+        self._update_hint()
+        self.viewport_changed.emit()
+        self.update()
+
+    def _clamp_to_plot(self, point: QPointF, plot: QRectF) -> QPointF:
+        return QPointF(
+            min(max(point.x(), plot.left()), plot.right()),
+            min(max(point.y(), plot.top()), plot.bottom()),
+        )
+
+    def _update_hint(self) -> None:
+        if self._fixed_domain:
+            self._hint.setText("fixed domain")
+            return
+
+        d_min, d_max, tau_min, tau_max = self._viewport
+        if self._pan_anchor_canvas is not None:
+            self._hint.setText("free zoom | pan")
+            return
+        if self._zoom_rect_canvas is not None:
+            self._hint.setText("free zoom | select area")
+            return
+        self._hint.setText(
+            "free zoom | "
+            f"d=[{d_min:.3f}, {d_max:.3f}] tau=[{tau_min:.3f}, {tau_max:.3f}]"
+        )
