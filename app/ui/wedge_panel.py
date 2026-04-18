@@ -23,10 +23,22 @@ class WedgePanel(QWidget):
         self._seeds: dict[int, TrajectorySeed] = {}
         self._selected_trajectory_id: int | None = None
         self._active_segment_indices: dict[int, int] = {}
+        self._padding = 24
+        self._top_margin = 16
+        self._bottom_margin = 16
+        self._header_spacing = 4
+
+        for label in (self._title, self._hint):
+            label.setFixedHeight(label.sizeHint().height())
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 16, 24, 16)
-        layout.setSpacing(4)
+        layout.setContentsMargins(
+            self._padding,
+            self._top_margin,
+            self._padding,
+            self._bottom_margin,
+        )
+        layout.setSpacing(self._header_spacing)
         layout.addWidget(self._title)
         layout.addWidget(self._hint)
         layout.addStretch(1)
@@ -50,17 +62,21 @@ class WedgePanel(QWidget):
         self.update()
 
     def _plot_rect(self) -> QRectF:
-        top = self._header_bottom() + 12.0
-        return QRectF(
-            24.0,
-            top,
-            max(self.width() - 48.0, 1),
-            max(self.height() - top - 16.0, 1),
-        )
+        available_width = max(self.width() - 2 * self._padding, 1)
+        top = self._header_height() + 12.0
+        available_height = max(self.height() - top - self._bottom_margin, 1)
+        side = min(available_width, available_height)
+        left = self._padding + (available_width - side) / 2.0
+        plot_top = top + (available_height - side) / 2.0
+        return QRectF(left, plot_top, side, side)
 
-    def _header_bottom(self) -> float:
-        labels = [self._title, self._hint]
-        return max((label.geometry().bottom() for label in labels), default=0) + 1.0
+    def _header_height(self) -> float:
+        return (
+            self._top_margin
+            + self._title.height()
+            + self._hint.height()
+            + self._header_spacing
+        )
 
     def _all_points(self) -> list[tuple[float, float]]:
         points: list[tuple[float, float]] = [(0.0, 0.0)]
@@ -72,8 +88,6 @@ class WedgePanel(QWidget):
                 if reflection.point is not None:
                     points.append((reflection.point.x, reflection.point.y))
             for segment in geometry.segments:
-                if segment.focus is not None:
-                    points.append((segment.focus.x, segment.focus.y))
                 if segment.start_point is not None:
                     points.append((segment.start_point.x, segment.start_point.y))
                 if segment.end_point is not None:
@@ -87,7 +101,7 @@ class WedgePanel(QWidget):
         min_x, max_x, min_y, max_y = self._geometry_bounds()
         data_width = max(max_x - min_x, 1.0e-6)
         data_height = max(max_y - min_y, 1.0e-6)
-        inner_margin = 16.0
+        inner_margin = 8.0
         available_width = max(plot.width() - 2.0 * inner_margin, 1.0)
         available_height = max(plot.height() - 2.0 * inner_margin, 1.0)
         scale = min(available_width / data_width, available_height / data_height)
