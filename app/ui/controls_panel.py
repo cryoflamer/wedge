@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -22,6 +24,7 @@ from app.services.parameter_parser import parse_real_expression
 
 class ControlsPanel(QWidget):
     parameters_changed = Signal(float, float, int, int)
+    angle_units_changed = Signal(str)
     trajectory_selected = Signal(int)
     trajectory_visibility_toggled = Signal(int)
     clear_selected_requested = Signal()
@@ -39,10 +42,12 @@ class ControlsPanel(QWidget):
         self._n_phase_edit = QLineEdit()
         self._n_geom_edit = QLineEdit()
         self._fixed_domain_checkbox = QCheckBox("Fixed domain (disable for zoom/pan)")
+        self._angle_units_combo = QComboBox()
         self._export_mode_combo = QComboBox()
         self._export_preset_combo = QComboBox()
         self._trajectory_info = QLabel("selected: -")
         self._parameter_status = QLabel("")
+        self._angle_units = "rad"
 
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(self._build_trajectory_box())
@@ -62,6 +67,10 @@ class ControlsPanel(QWidget):
             line_edit.returnPressed.connect(self._emit_parameters)
         self._fixed_domain_checkbox.toggled.connect(
             self.phase_view_mode_changed.emit
+        )
+        self._angle_units_combo.addItems(["rad", "deg"])
+        self._angle_units_combo.currentTextChanged.connect(
+            self._on_angle_units_changed
         )
         self._export_mode_combo.addItems(["color", "monochrome"])
         self._export_mode_combo.currentTextChanged.connect(
@@ -91,6 +100,7 @@ class ControlsPanel(QWidget):
     def _build_parameters_box(self) -> QGroupBox:
         box = QGroupBox("Parameters")
         layout = QFormLayout(box)
+        layout.addRow("Units", self._angle_units_combo)
         layout.addRow("alpha", self._alpha_edit)
         layout.addRow("beta", self._beta_edit)
         layout.addRow("N_phase", self._n_phase_edit)
@@ -144,8 +154,12 @@ class ControlsPanel(QWidget):
     def load_config(self, config: Config) -> None:
         current_mode = self.export_mode()
         current_preset = self.export_preset()
-        self._alpha_edit.setText(f"{config.simulation.alpha:.6f}")
-        self._beta_edit.setText(f"{config.simulation.beta:.6f}")
+        alpha_value, beta_value = self._display_angles(
+            config.simulation.alpha,
+            config.simulation.beta,
+        )
+        self._alpha_edit.setText(f"{alpha_value:.6f}")
+        self._beta_edit.setText(f"{beta_value:.6f}")
         self._n_phase_edit.setText(str(config.simulation.n_phase_default))
         self._n_geom_edit.setText(str(config.simulation.n_geom_default))
         self.set_export_options(
@@ -153,6 +167,17 @@ class ControlsPanel(QWidget):
             presets=config.export.monochrome_line_styles,
             selected_preset=current_preset,
         )
+
+    def set_angle_units(self, units: str) -> None:
+        normalized_units = units.strip().lower() if units.strip() else "rad"
+        blocker = QSignalBlocker(self._angle_units_combo)
+        index = self._angle_units_combo.findText(normalized_units)
+        self._angle_units_combo.setCurrentIndex(index if index >= 0 else 0)
+        del blocker
+        self._angle_units = self._angle_units_combo.currentText().strip().lower() or "rad"
+
+    def angle_units(self) -> str:
+        return self._angle_units
 
     def set_phase_view_mode(self, fixed_domain: bool) -> None:
         blocker = QSignalBlocker(self._fixed_domain_checkbox)
@@ -226,8 +251,8 @@ class ControlsPanel(QWidget):
     def _emit_parameters(self) -> None:
         self._clear_parameter_error()
         try:
-            alpha = parse_real_expression(self._alpha_edit.text())
-            beta = parse_real_expression(self._beta_edit.text())
+            alpha = self._parse_angle(self._alpha_edit.text())
+            beta = self._parse_angle(self._beta_edit.text())
             n_phase = int(self._n_phase_edit.text())
             n_geom = int(self._n_geom_edit.text())
         except (ValueError, SyntaxError, ZeroDivisionError):
@@ -269,6 +294,21 @@ class ControlsPanel(QWidget):
         self._parameter_status.setStyleSheet("")
         self._alpha_edit.setStyleSheet("")
         self._beta_edit.setStyleSheet("")
+
+    def _display_angles(self, alpha: float, beta: float) -> tuple[float, float]:
+        if self._angle_units == "deg":
+            return math.degrees(alpha), math.degrees(beta)
+        return alpha, beta
+
+    def _parse_angle(self, text: str) -> float:
+        value = parse_real_expression(text)
+        if self._angle_units == "deg":
+            return math.radians(value)
+        return value
+
+    def _on_angle_units_changed(self, units: str) -> None:
+        self._angle_units = units.strip().lower() or "rad"
+        self.angle_units_changed.emit(self._angle_units)
 
     def _sync_export_preset_state(self) -> None:
         is_monochrome = self._export_mode_combo.currentText().strip().lower() == "monochrome"

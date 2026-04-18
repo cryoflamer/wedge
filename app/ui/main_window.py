@@ -40,6 +40,7 @@ class MainWindow(QMainWindow):
         self._window_position_restored = False
         self._next_trajectory_id = 1
         self._selected_trajectory_id: int | None = None
+        self._angle_units = "rad"
         self._trajectory_seeds: dict[int, TrajectorySeed] = {}
         self._trajectory_orbits: dict[int, Orbit] = {}
         self._trajectory_geometries: dict[int, WedgeGeometry] = {}
@@ -137,6 +138,7 @@ class MainWindow(QMainWindow):
         self.phase_panel_wall_2.viewport_changed.connect(self._on_phase_viewport_changed)
         self.angle_panel.point_selected.connect(self._on_angle_click)
         self.controls_panel.parameters_changed.connect(self._on_parameters_changed)
+        self.controls_panel.angle_units_changed.connect(self._on_angle_units_changed)
         self.controls_panel.trajectory_selected.connect(self._on_trajectory_selected)
         self.controls_panel.trajectory_visibility_toggled.connect(
             self._on_trajectory_visibility_toggled
@@ -156,9 +158,11 @@ class MainWindow(QMainWindow):
 
     def update_view(self) -> None:
         self.controls_panel.load_config(self._config)
+        self.controls_panel.set_angle_units(self._angle_units)
         self.controls_panel.set_phase_view_mode(
             self.phase_panel_wall_1.is_fixed_domain_mode()
         )
+        self.angle_panel.set_angle_units(self._angle_units)
         self.angle_panel.set_angles(
             self._config.simulation.alpha,
             self._config.simulation.beta,
@@ -235,6 +239,11 @@ class MainWindow(QMainWindow):
             n_geom=self._config.simulation.n_geom_default,
         )
         logger.info("Angle panel clicked: alpha=%.6f beta=%.6f", alpha, beta)
+
+    def _on_angle_units_changed(self, units: str) -> None:
+        self._angle_units = units
+        self.update_view()
+        logger.info("Angle units changed: %s", units)
 
     def _on_parameters_changed(
         self,

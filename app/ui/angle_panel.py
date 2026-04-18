@@ -26,6 +26,7 @@ class AnglePanel(QWidget):
         self._point_label = QLabel("point: -")
         self._alpha = 0.0
         self._beta = 0.0
+        self._angle_units = "rad"
         self._regions: list[RegionDescription] = []
         self._padding = 24
         self._top_margin = 16
@@ -57,11 +58,21 @@ class AnglePanel(QWidget):
     def set_angles(self, alpha: float, beta: float) -> None:
         self._alpha = alpha
         self._beta = beta
-        self._point_label.setText(f"point: alpha={alpha:.6f}, beta={beta:.6f}")
+        self._point_label.setText(
+            f"point: alpha={self._format_angle(alpha)}, beta={self._format_angle(beta)}"
+        )
         self.update()
 
     def set_regions(self, regions: list[RegionDescription]) -> None:
         self._regions = sorted(regions, key=lambda item: item.priority)
+        self.update()
+
+    def set_angle_units(self, units: str) -> None:
+        self._angle_units = units.strip().lower() if units.strip() else "rad"
+        self._hint.setText(f"parameter space ({self._angle_units})")
+        self._point_label.setText(
+            f"point: alpha={self._format_angle(self._alpha)}, beta={self._format_angle(self._beta)}"
+        )
         self.update()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
@@ -72,7 +83,9 @@ class AnglePanel(QWidget):
         if not self._is_inside_domain(alpha, beta):
             return
 
-        self._point_label.setText(f"point: alpha={alpha:.6f}, beta={beta:.6f}")
+        self._point_label.setText(
+            f"point: alpha={self._format_angle(alpha)}, beta={self._format_angle(beta)}"
+        )
         self.point_selected.emit(alpha, beta)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
@@ -83,7 +96,7 @@ class AnglePanel(QWidget):
         if self._is_inside_domain(alpha, beta):
             QToolTip.showText(
                 event.globalPosition().toPoint(),
-                f"alpha={alpha:.6f}\nbeta={beta:.6f}",
+                f"alpha={self._format_angle(alpha)}\nbeta={self._format_angle(beta)}",
                 self,
             )
         else:
@@ -130,6 +143,11 @@ class AnglePanel(QWidget):
 
     def _is_inside_domain(self, alpha: float, beta: float) -> bool:
         return 0.0 < alpha <= math.pi / 2.0 and alpha < beta < math.pi - alpha
+
+    def _format_angle(self, value: float) -> str:
+        if self._angle_units == "deg":
+            return f"{math.degrees(value):.3f} deg"
+        return f"{value:.6f} rad"
 
     def _build_domain_path(self) -> QPainterPath:
         path = QPainterPath()
