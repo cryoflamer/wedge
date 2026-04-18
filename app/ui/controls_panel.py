@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.models.config import Config
+from app.services.parameter_parser import parse_real_expression
 
 
 class ControlsPanel(QWidget):
@@ -34,6 +35,7 @@ class ControlsPanel(QWidget):
         self._n_phase_edit = QLineEdit()
         self._n_geom_edit = QLineEdit()
         self._trajectory_info = QLabel("selected: -")
+        self._parameter_status = QLabel("")
 
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(self._build_trajectory_box())
@@ -71,6 +73,7 @@ class ControlsPanel(QWidget):
         layout.addRow("beta", self._beta_edit)
         layout.addRow("N_phase", self._n_phase_edit)
         layout.addRow("N_geom", self._n_geom_edit)
+        layout.addRow(self._parameter_status)
 
         apply_button = QPushButton("Apply")
         apply_button.clicked.connect(self._emit_parameters)
@@ -140,12 +143,17 @@ class ControlsPanel(QWidget):
                 self._trajectory_info.setText(f"selected: #{int(trajectory_id)}")
 
     def _emit_parameters(self) -> None:
-        self.parameters_changed.emit(
-            float(self._alpha_edit.text()),
-            float(self._beta_edit.text()),
-            int(self._n_phase_edit.text()),
-            int(self._n_geom_edit.text()),
-        )
+        self._clear_parameter_error()
+        try:
+            alpha = parse_real_expression(self._alpha_edit.text())
+            beta = parse_real_expression(self._beta_edit.text())
+            n_phase = int(self._n_phase_edit.text())
+            n_geom = int(self._n_geom_edit.text())
+        except (ValueError, SyntaxError, ZeroDivisionError):
+            self._set_parameter_error("Invalid parameter value")
+            return
+
+        self.parameters_changed.emit(alpha, beta, n_phase, n_geom)
 
     def _on_current_item_changed(
         self,
@@ -168,3 +176,15 @@ class ControlsPanel(QWidget):
         trajectory_id = current.data(Qt.UserRole)
         if trajectory_id is not None:
             self.trajectory_visibility_toggled.emit(int(trajectory_id))
+
+    def _set_parameter_error(self, message: str) -> None:
+        self._parameter_status.setText(message)
+        self._parameter_status.setStyleSheet("color: #b00020;")
+        self._alpha_edit.setStyleSheet("border: 1px solid #b00020;")
+        self._beta_edit.setStyleSheet("border: 1px solid #b00020;")
+
+    def _clear_parameter_error(self) -> None:
+        self._parameter_status.setText("")
+        self._parameter_status.setStyleSheet("")
+        self._alpha_edit.setStyleSheet("")
+        self._beta_edit.setStyleSheet("")
