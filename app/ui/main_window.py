@@ -3,7 +3,13 @@ from __future__ import annotations
 import logging
 import sys
 
-from PySide6.QtWidgets import QApplication, QGridLayout, QMainWindow, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QGridLayout,
+    QMainWindow,
+    QWidget,
+)
 
 from app.core.geometry_builder import build_wedge_geometry
 from app.core.orbit_builder import build_orbit
@@ -11,6 +17,7 @@ from app.models.config import Config
 from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
 from app.models.trajectory import TrajectorySeed
+from app.services.export_service import export_widget_bundle_png
 from app.ui.angle_panel import AnglePanel
 from app.ui.controls_panel import ControlsPanel
 from app.ui.phase_panel import PhasePanel
@@ -289,6 +296,8 @@ class MainWindow(QMainWindow):
             self.replay_controller.reset()
             self._reset_replay_views()
             self.update_view()
+        elif action_name == "export_png":
+            self._export_png()
         else:
             logger.info("Replay/control action requested: %s", action_name)
 
@@ -336,6 +345,36 @@ class MainWindow(QMainWindow):
         if not self._trajectory_orbits:
             return 0
         return max(max(len(orbit.points) - 1, 0) for orbit in self._trajectory_orbits.values())
+
+    def _export_png(self) -> None:
+        output_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export PNG",
+            "wedge_export.png",
+            "PNG Files (*.png)",
+        )
+        if not output_path:
+            return
+
+        mode = self._config.export.default_mode.strip().lower()
+        monochrome = mode == "monochrome"
+        exported_paths = export_widget_bundle_png(
+            widgets={
+                "layout": self.centralWidget(),
+                "phase_wall_1": self.phase_panel_wall_1,
+                "phase_wall_2": self.phase_panel_wall_2,
+                "wedge": self.wedge_panel,
+                "angle": self.angle_panel,
+            },
+            base_path=output_path,
+            dpi=self._config.export.dpi,
+            monochrome=monochrome,
+        )
+        logger.info(
+            "PNG export completed: mode=%s files=%s",
+            mode or "color",
+            ", ".join(str(path) for path in exported_paths),
+        )
 
 
 def run_app(config: Config) -> None:
