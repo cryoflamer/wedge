@@ -30,11 +30,12 @@ def setup_logging(level: str) -> None:
 def main() -> None:
     args = parse_args()
     config = load_config(args.config)
-    setup_logging(config.log_level)
+    setup_logging(config.app.log_level)
 
     logger = logging.getLogger(__name__)
     logger.info("Application initialized")
     logger.info("Config loaded from %s", args.config.resolve())
+    logger.info("Simulation parameters: alpha=%s beta=%s", config.simulation.alpha, config.simulation.beta)
 
 
 if __name__ == "__main__":
