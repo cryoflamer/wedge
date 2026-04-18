@@ -75,7 +75,9 @@ def _cross_wall_target(wall: int) -> int:
 
 
 def _same_wall_allowed(state: PhaseState, config: SimulationConfig) -> bool:
-    return state.wall == 2 and config.beta >= math.pi / 2.0
+    if config.beta < math.pi / 2.0:
+        return True
+    return state.wall == 2
 
 
 def _compute_cross_wall_d(
