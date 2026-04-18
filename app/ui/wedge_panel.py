@@ -25,6 +25,8 @@ class WedgePanel(QWidget):
         self._active_segment_indices: dict[int, int] = {}
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 16, 24, 16)
+        layout.setSpacing(4)
         layout.addWidget(self._title)
         layout.addWidget(self._hint)
         layout.addStretch(1)
@@ -48,7 +50,17 @@ class WedgePanel(QWidget):
         self.update()
 
     def _plot_rect(self) -> QRectF:
-        return QRectF(24.0, 52.0, max(self.width() - 48.0, 1), max(self.height() - 76.0, 1))
+        top = self._header_bottom() + 12.0
+        return QRectF(
+            24.0,
+            top,
+            max(self.width() - 48.0, 1),
+            max(self.height() - top - 16.0, 1),
+        )
+
+    def _header_bottom(self) -> float:
+        labels = [self._title, self._hint]
+        return max((label.geometry().bottom() for label in labels), default=0) + 1.0
 
     def _all_points(self) -> list[tuple[float, float]]:
         points: list[tuple[float, float]] = [(0.0, 0.0)]

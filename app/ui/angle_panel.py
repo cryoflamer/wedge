@@ -24,6 +24,8 @@ class AnglePanel(QWidget):
         self._padding = 24
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(self._padding, 16, self._padding, 16)
+        layout.setSpacing(4)
         layout.addWidget(self._title)
         layout.addWidget(self._hint)
         layout.addWidget(self._point_label)
@@ -67,12 +69,17 @@ class AnglePanel(QWidget):
         return alpha, beta
 
     def _plot_rect(self) -> QRectF:
+        top = self._header_bottom() + 12.0
         return QRectF(
             self._padding,
-            52.0,
+            top,
             max(self.width() - 2 * self._padding, 1),
-            max(self.height() - 88.0, 1),
+            max(self.height() - top - 16.0, 1),
         )
+
+    def _header_bottom(self) -> float:
+        labels = [self._title, self._hint, self._point_label]
+        return max((label.geometry().bottom() for label in labels), default=0) + 1.0
 
     def _to_canvas(self, alpha: float, beta: float) -> QPointF:
         plot = self._plot_rect()

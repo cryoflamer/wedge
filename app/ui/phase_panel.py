@@ -32,6 +32,8 @@ class PhasePanel(QWidget):
         self._padding = 24
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(self._padding, 16, self._padding, 16)
+        layout.setSpacing(4)
         layout.addWidget(self._title)
         layout.addWidget(self._hint)
         layout.addWidget(self._last_click)
@@ -82,11 +84,16 @@ class PhasePanel(QWidget):
 
     def _plot_rect(self) -> QRectF:
         available_width = max(self.width() - 2 * self._padding, 1)
-        available_height = max(self.height() - 88.0, 1)
+        top = self._header_bottom() + 12.0
+        available_height = max(self.height() - top - 16.0, 1)
         side = min(available_width, available_height)
         left = self._padding + (available_width - side) / 2.0
-        top = 52.0 + (available_height - side) / 2.0
-        return QRectF(left, top, side, side)
+        plot_top = top + (available_height - side) / 2.0
+        return QRectF(left, plot_top, side, side)
+
+    def _header_bottom(self) -> float:
+        labels = [self._title, self._hint, self._last_click]
+        return max((label.geometry().bottom() for label in labels), default=0) + 1.0
 
     def _to_canvas(self, d_value: float, tau_value: float) -> QPointF:
         plot = self._plot_rect()
