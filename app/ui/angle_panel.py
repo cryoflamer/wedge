@@ -27,6 +27,7 @@ class AnglePanel(QWidget):
         self._alpha = 0.0
         self._beta = 0.0
         self._angle_units = "rad"
+        self._symmetric_mode = False
         self._regions: list[RegionDescription] = []
         self._padding = 24
         self._top_margin = 16
@@ -75,11 +76,15 @@ class AnglePanel(QWidget):
         )
         self.update()
 
+    def set_symmetric_mode(self, enabled: bool) -> None:
+        self._symmetric_mode = enabled
+        self.update()
+
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() != Qt.LeftButton:
             return
 
-        alpha, beta = self._map_click(event.position())
+        alpha, beta = self._selection_from_position(event.position())
         if not self._is_inside_domain(alpha, beta):
             return
 
@@ -92,7 +97,7 @@ class AnglePanel(QWidget):
         if not self._view_config.angle_hover_tooltip:
             return
 
-        alpha, beta = self._map_click(event.position())
+        alpha, beta = self._selection_from_position(event.position())
         if self._is_inside_domain(alpha, beta):
             QToolTip.showText(
                 event.globalPosition().toPoint(),
@@ -143,6 +148,15 @@ class AnglePanel(QWidget):
 
     def _is_inside_domain(self, alpha: float, beta: float) -> bool:
         return 0.0 < alpha <= math.pi / 2.0 and alpha < beta < math.pi - alpha
+
+    def _selection_from_position(self, point: QPointF) -> tuple[float, float]:
+        alpha, beta = self._map_click(point)
+        if not self._symmetric_mode:
+            return alpha, beta
+
+        projected_alpha = min(max(alpha, 0.0), math.pi / 2.0)
+        projected_beta = math.pi - projected_alpha
+        return projected_alpha, projected_beta
 
     def _format_angle(self, value: float) -> str:
         if self._angle_units == "deg":
@@ -214,6 +228,13 @@ class AnglePanel(QWidget):
         painter.setBrush(QColor(214, 231, 248, 80))
         painter.drawPath(self._build_domain_path())
         self._draw_regions(painter)
+
+        if self._symmetric_mode:
+            painter.setPen(QPen(QColor("#d62728"), 2, Qt.DashLine))
+            painter.drawLine(
+                self._to_canvas(0.0, math.pi),
+                self._to_canvas(math.pi / 2.0, math.pi / 2.0),
+            )
 
         if self._is_inside_domain(self._alpha, self._beta):
             painter.setPen(QPen(QColor("#111111"), 2))

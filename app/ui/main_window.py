@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import logging
 import sys
 from pathlib import Path
@@ -41,6 +42,7 @@ class MainWindow(QMainWindow):
         self._next_trajectory_id = 1
         self._selected_trajectory_id: int | None = None
         self._angle_units = "rad"
+        self._symmetric_mode = False
         self._trajectory_seeds: dict[int, TrajectorySeed] = {}
         self._trajectory_orbits: dict[int, Orbit] = {}
         self._trajectory_geometries: dict[int, WedgeGeometry] = {}
@@ -139,6 +141,9 @@ class MainWindow(QMainWindow):
         self.angle_panel.point_selected.connect(self._on_angle_click)
         self.controls_panel.parameters_changed.connect(self._on_parameters_changed)
         self.controls_panel.angle_units_changed.connect(self._on_angle_units_changed)
+        self.controls_panel.symmetric_mode_changed.connect(
+            self._on_symmetric_mode_changed
+        )
         self.controls_panel.trajectory_selected.connect(self._on_trajectory_selected)
         self.controls_panel.trajectory_visibility_toggled.connect(
             self._on_trajectory_visibility_toggled
@@ -159,10 +164,12 @@ class MainWindow(QMainWindow):
     def update_view(self) -> None:
         self.controls_panel.load_config(self._config)
         self.controls_panel.set_angle_units(self._angle_units)
+        self.controls_panel.set_symmetric_mode(self._symmetric_mode)
         self.controls_panel.set_phase_view_mode(
             self.phase_panel_wall_1.is_fixed_domain_mode()
         )
         self.angle_panel.set_angle_units(self._angle_units)
+        self.angle_panel.set_symmetric_mode(self._symmetric_mode)
         self.angle_panel.set_angles(
             self._config.simulation.alpha,
             self._config.simulation.beta,
@@ -244,6 +251,16 @@ class MainWindow(QMainWindow):
         self._angle_units = units
         self.update_view()
         logger.info("Angle units changed: %s", units)
+
+    def _on_symmetric_mode_changed(self, enabled: bool) -> None:
+        self._symmetric_mode = enabled
+        if enabled:
+            self._config.simulation.beta = math.pi - self._config.simulation.alpha
+            self._rebuild_orbits()
+            self._reset_replay_views()
+            self._autosave_session()
+        self.update_view()
+        logger.info("Symmetric mode changed: %s", enabled)
 
     def _on_parameters_changed(
         self,

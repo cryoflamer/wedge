@@ -25,6 +25,7 @@ from app.services.parameter_parser import parse_real_expression
 class ControlsPanel(QWidget):
     parameters_changed = Signal(float, float, int, int)
     angle_units_changed = Signal(str)
+    symmetric_mode_changed = Signal(bool)
     trajectory_selected = Signal(int)
     trajectory_visibility_toggled = Signal(int)
     clear_selected_requested = Signal()
@@ -42,6 +43,7 @@ class ControlsPanel(QWidget):
         self._n_phase_edit = QLineEdit()
         self._n_geom_edit = QLineEdit()
         self._fixed_domain_checkbox = QCheckBox("Fixed domain (disable for zoom/pan)")
+        self._symmetric_mode_checkbox = QCheckBox("Symmetric wedge mode")
         self._angle_units_combo = QComboBox()
         self._export_mode_combo = QComboBox()
         self._export_preset_combo = QComboBox()
@@ -65,8 +67,12 @@ class ControlsPanel(QWidget):
             self._n_geom_edit,
         ):
             line_edit.returnPressed.connect(self._emit_parameters)
+        self._alpha_edit.textChanged.connect(self._sync_symmetric_beta_preview)
         self._fixed_domain_checkbox.toggled.connect(
             self.phase_view_mode_changed.emit
+        )
+        self._symmetric_mode_checkbox.toggled.connect(
+            self._on_symmetric_mode_toggled
         )
         self._angle_units_combo.addItems(["rad", "deg"])
         self._angle_units_combo.currentTextChanged.connect(
@@ -105,6 +111,7 @@ class ControlsPanel(QWidget):
         layout.addRow("beta", self._beta_edit)
         layout.addRow("N_phase", self._n_phase_edit)
         layout.addRow("N_geom", self._n_geom_edit)
+        layout.addRow(self._symmetric_mode_checkbox)
         layout.addRow(self._fixed_domain_checkbox)
         layout.addRow(self._parameter_status)
 
@@ -175,9 +182,21 @@ class ControlsPanel(QWidget):
         self._angle_units_combo.setCurrentIndex(index if index >= 0 else 0)
         del blocker
         self._angle_units = self._angle_units_combo.currentText().strip().lower() or "rad"
+        self._sync_symmetric_beta_preview()
 
     def angle_units(self) -> str:
         return self._angle_units
+
+    def set_symmetric_mode(self, enabled: bool) -> None:
+        blocker = QSignalBlocker(self._symmetric_mode_checkbox)
+        self._symmetric_mode_checkbox.setChecked(enabled)
+        del blocker
+        self._beta_edit.setReadOnly(enabled)
+        self._beta_edit.setEnabled(not enabled)
+        self._sync_symmetric_beta_preview()
+
+    def symmetric_mode(self) -> bool:
+        return self._symmetric_mode_checkbox.isChecked()
 
     def set_phase_view_mode(self, fixed_domain: bool) -> None:
         blocker = QSignalBlocker(self._fixed_domain_checkbox)
@@ -252,7 +271,10 @@ class ControlsPanel(QWidget):
         self._clear_parameter_error()
         try:
             alpha = self._parse_angle(self._alpha_edit.text())
-            beta = self._parse_angle(self._beta_edit.text())
+            if self.symmetric_mode():
+                beta = math.pi - alpha
+            else:
+                beta = self._parse_angle(self._beta_edit.text())
             n_phase = int(self._n_phase_edit.text())
             n_geom = int(self._n_geom_edit.text())
         except (ValueError, SyntaxError, ZeroDivisionError):
@@ -309,6 +331,26 @@ class ControlsPanel(QWidget):
     def _on_angle_units_changed(self, units: str) -> None:
         self._angle_units = units.strip().lower() or "rad"
         self.angle_units_changed.emit(self._angle_units)
+
+    def _on_symmetric_mode_toggled(self, enabled: bool) -> None:
+        self._beta_edit.setReadOnly(enabled)
+        self._beta_edit.setEnabled(not enabled)
+        self._sync_symmetric_beta_preview()
+        self.symmetric_mode_changed.emit(enabled)
+
+    def _sync_symmetric_beta_preview(self) -> None:
+        if not self.symmetric_mode():
+            return
+        try:
+            alpha = self._parse_angle(self._alpha_edit.text())
+        except (ValueError, SyntaxError, ZeroDivisionError):
+            return
+
+        beta = math.pi - alpha
+        beta_value = math.degrees(beta) if self._angle_units == "deg" else beta
+        blocker = QSignalBlocker(self._beta_edit)
+        self._beta_edit.setText(f"{beta_value:.6f}")
+        del blocker
 
     def _sync_export_preset_state(self) -> None:
         is_monochrome = self._export_mode_combo.currentText().strip().lower() == "monochrome"
