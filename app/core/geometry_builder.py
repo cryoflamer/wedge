@@ -49,20 +49,18 @@ def build_wedge_geometry(
             )
         )
 
-    previous_t_end: float | None = None
     for orbit_point, state, left, right in zip(
         segment_points,
         states[:segment_count],
         geometry.reflections,
         geometry.reflections[1 : segment_count + 1],
     ):
-        segment, previous_t_end = _build_segment(
+        segment = _build_segment(
             step_index=orbit_point.step_index,
             state=state,
             left=left,
             right=right,
             config=config,
-            previous_t_end=previous_t_end,
         )
         geometry.segments.append(segment)
 
@@ -133,79 +131,65 @@ def _build_segment(
     left: ReflectionPoint,
     right: ReflectionPoint,
     config: SimulationConfig,
-    previous_t_end: float | None,
-) -> tuple[ParabolicSegment, float | None]:
+) -> ParabolicSegment:
     focus = _focus_from_state(state, config)
     if focus is None or not left.valid or not right.valid:
-        return (
-            ParabolicSegment(
-                step_index=step_index,
-                wall_from=left.wall,
-                wall_to=right.wall,
-                focus=focus,
-                start_point=left.point,
-                end_point=right.point,
-                samples=[],
-                valid=False,
-                invalid_reason=left.invalid_reason or right.invalid_reason or "segment_reconstruction_failed",
-            ),
-            None,
+        return ParabolicSegment(
+            step_index=step_index,
+            wall_from=left.wall,
+            wall_to=right.wall,
+            focus=focus,
+            start_point=left.point,
+            end_point=right.point,
+            samples=[],
+            valid=False,
+            invalid_reason=left.invalid_reason or right.invalid_reason or "segment_reconstruction_failed",
         )
 
     start_point = left.point
     end_point = right.point
     if start_point is None or end_point is None:
-        return (
-            ParabolicSegment(
-                step_index=step_index,
-                wall_from=left.wall,
-                wall_to=right.wall,
-                focus=focus,
-                start_point=start_point,
-                end_point=end_point,
-                samples=[],
-                valid=False,
-                invalid_reason="segment_boundary_resolution_failed",
-            ),
-            None,
-        )
-
-    samples, _, t_end = _build_parabola_samples(
-        focus=focus,
-        start_point=start_point,
-        end_point=end_point,
-        wall_to=right.wall,
-        config=config,
-        previous_t_end=previous_t_end,
-    )
-    if not samples:
-        return (
-            ParabolicSegment(
-                step_index=step_index,
-                wall_from=left.wall,
-                wall_to=right.wall,
-                focus=focus,
-                start_point=start_point,
-                end_point=end_point,
-                samples=[],
-                valid=False,
-                invalid_reason="segment_sampling_failed",
-            ),
-            None,
-        )
-
-    return (
-        ParabolicSegment(
+        return ParabolicSegment(
             step_index=step_index,
             wall_from=left.wall,
             wall_to=right.wall,
             focus=focus,
             start_point=start_point,
             end_point=end_point,
-            samples=samples,
-            valid=True,
-        ),
-        t_end,
+            samples=[],
+            valid=False,
+            invalid_reason="segment_boundary_resolution_failed",
+        )
+
+    samples, _, _ = _build_parabola_samples(
+        focus=focus,
+        start_point=start_point,
+        end_point=end_point,
+        wall_to=right.wall,
+        config=config,
+    )
+    if not samples:
+        return ParabolicSegment(
+            step_index=step_index,
+            wall_from=left.wall,
+            wall_to=right.wall,
+            focus=focus,
+            start_point=start_point,
+            end_point=end_point,
+            samples=[],
+            valid=False,
+            invalid_reason="segment_sampling_failed",
+        )
+
+    return ParabolicSegment(
+        step_index=step_index,
+        wall_from=left.wall,
+        wall_to=right.wall,
+        focus=focus,
+        start_point=start_point,
+        end_point=end_point,
+        samples=samples,
+        valid=True,
     )
 
 
@@ -259,7 +243,6 @@ def _build_parabola_samples(
     end_point: GeometryPoint | None,
     wall_to: int,
     config: SimulationConfig,
-    previous_t_end: float | None,
     num_samples: int = 48,
 ) -> tuple[list[GeometryPoint], float | None, float | None]:
     if start_point is None or end_point is None:
@@ -288,20 +271,6 @@ def _build_parabola_samples(
     if not start_candidates or not end_candidates:
         return [], None, None
 
-    start_candidates = _filter_t_candidates_by_x(
-        point=start_point,
-        candidates=start_candidates,
-        vertex=vertex,
-        parabola_parameter=parabola_parameter,
-        config=config,
-    )
-    end_candidates = _filter_t_candidates_by_x(
-        point=end_point,
-        candidates=end_candidates,
-        vertex=vertex,
-        parabola_parameter=parabola_parameter,
-        config=config,
-    )
     t_start, t_end = _select_segment_parameters(
         start_point=start_point,
         end_point=end_point,
@@ -311,7 +280,6 @@ def _build_parabola_samples(
         vertex=vertex,
         parabola_parameter=parabola_parameter,
         config=config,
-        previous_t_end=previous_t_end,
     )
     _log_segment_debug(
         focus=focus,
@@ -367,41 +335,26 @@ def _select_segment_parameters(
     vertex: GeometryPoint,
     parabola_parameter: float,
     config: SimulationConfig,
-    previous_t_end: float | None,
 ) -> tuple[float, float]:
     best_pair: tuple[float, float] | None = None
-    best_score: tuple[float, float, float, float] | None = None
-
-    preferred_start_sign = (
-        -math.copysign(1.0, previous_t_end)
-        if previous_t_end is not None and abs(previous_t_end) > config.eps
-        else None
-    )
+    best_score: tuple[float, float, float] | None = None
 
     for t_start in start_candidates:
         start_error = abs(_x_from_t(vertex, parabola_parameter, t_start) - start_point.x)
         for t_end in end_candidates:
             end_error = abs(_x_from_t(vertex, parabola_parameter, t_end) - end_point.x)
-            mismatch_penalty = 0.0
+            upper_wall_penalty = 0.0
             if (
                 wall_to == 2
                 and len(end_candidates) > 1
                 and abs(t_end) <= abs(t_start) + config.eps
             ):
-                mismatch_penalty = 1.0
-
-            start_sign_penalty = 0.0
-            if (
-                preferred_start_sign is not None
-                and math.copysign(1.0, t_start) != preferred_start_sign
-            ):
-                start_sign_penalty = 1.0
+                upper_wall_penalty = 1.0
 
             score = (
-                start_sign_penalty,
-                mismatch_penalty,
+                upper_wall_penalty,
                 start_error + end_error,
-                abs(t_end - t_start),
+                abs(abs(t_end) - abs(t_start)),
             )
             if best_score is None or score < best_score:
                 best_score = score
@@ -410,29 +363,6 @@ def _select_segment_parameters(
     if best_pair is None:
         return 0.0, 0.0
     return best_pair
-
-
-def _filter_t_candidates_by_x(
-    point: GeometryPoint,
-    candidates: tuple[float, ...],
-    vertex: GeometryPoint,
-    parabola_parameter: float,
-    config: SimulationConfig,
-) -> tuple[float, ...]:
-    if len(candidates) <= 1:
-        return candidates
-
-    errors = [
-        abs(_x_from_t(vertex, parabola_parameter, candidate) - point.x)
-        for candidate in candidates
-    ]
-    best_error = min(errors)
-    filtered = tuple(
-        candidate
-        for candidate, error in zip(candidates, errors)
-        if abs(error - best_error) <= config.eps
-    )
-    return filtered or candidates
 
 
 def _x_from_t(
