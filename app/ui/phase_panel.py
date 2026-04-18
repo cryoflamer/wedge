@@ -114,6 +114,7 @@ class PhasePanel(QWidget):
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         plot = self._plot_rect()
+        previous_hover = self._hover_point
         self._hover_point = (
             self._clamp_to_plot(event.position(), plot)
             if plot.contains(event.position())
@@ -148,6 +149,8 @@ class PhasePanel(QWidget):
                     current,
                 ).normalized()
                 self._update_hint()
+                self.update()
+            elif previous_hover != self._hover_point:
                 self.update()
             return
 
