@@ -545,7 +545,7 @@ class PhasePanel(QWidget):
         label_height = metrics.height() + 6.0
         label_rect = QRectF(
             plot.left() + 8.0,
-            plot.bottom() - label_height - 8.0,
+            plot.bottom() + 6.0,
             label_width,
             label_height,
         )
