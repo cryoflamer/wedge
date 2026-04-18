@@ -133,6 +133,7 @@ def _build_segment(
     left: ReflectionPoint,
     right: ReflectionPoint,
     config: SimulationConfig,
+    previous_t_end: float | None,
 ) -> tuple[ParabolicSegment, float | None]:
     focus = _focus_from_state(state, config)
     if focus is None or not left.valid or not right.valid:
