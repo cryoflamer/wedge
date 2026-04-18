@@ -19,6 +19,7 @@ def save_session(session: Session, output_path: str | Path) -> Path:
         "replay_delay_ms": session.replay_delay_ms,
         "replay_selected_only": session.replay_selected_only,
         "selected_trajectory_id": session.selected_trajectory_id,
+        "phase_fixed_domain": session.phase_fixed_domain,
         "trajectories": [
             {
                 "id": trajectory.id,
@@ -69,6 +70,7 @@ def load_session(input_path: str | Path) -> Session:
             if data.get("selected_trajectory_id") is not None
             else None
         ),
+        phase_fixed_domain=bool(data.get("phase_fixed_domain", True)),
         trajectories=trajectories,
         phase_viewport_wall_1=_as_viewport(data.get("phase_viewport_wall_1")),
         phase_viewport_wall_2=_as_viewport(data.get("phase_viewport_wall_2")),

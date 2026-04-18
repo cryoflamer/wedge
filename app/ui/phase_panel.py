@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen
+from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen, QWheelEvent
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from app.models.config import ViewConfig
@@ -29,6 +29,10 @@ class PhasePanel(QWidget):
         self._orbits: dict[int, Orbit] = {}
         self._selected_trajectory_id: int | None = None
         self._active_frames: dict[int, int] = {}
+        self._fixed_domain = True
+        self._viewport = (0.0, 2.0, -1.0, 1.0)
+        self._pan_anchor_canvas: QPointF | None = None
+        self._pan_anchor_viewport: tuple[float, float, float, float] | None = None
         self._padding = 24
         self._top_margin = 16
         self._bottom_margin = 16
@@ -57,6 +61,11 @@ class PhasePanel(QWidget):
         )
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.RightButton and not self._fixed_domain:
+            self._pan_anchor_canvas = event.position()
+            self._pan_anchor_viewport = self._viewport
+            return
+
         if event.button() != Qt.LeftButton:
             return
 
@@ -67,6 +76,61 @@ class PhasePanel(QWidget):
 
         self._last_click.setText(f"click: d={d_value:.3f}, tau={tau_value:.3f}")
         self.clicked.emit(self.wall, d_value, tau_value)
+        self.update()
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        if (
+            self._pan_anchor_canvas is None
+            or self._pan_anchor_viewport is None
+            or self._fixed_domain
+        ):
+            return
+
+        plot = self._plot_rect()
+        if plot.width() <= 0 or plot.height() <= 0:
+            return
+
+        delta = event.position() - self._pan_anchor_canvas
+        d_min, d_max, tau_min, tau_max = self._pan_anchor_viewport
+        d_span = d_max - d_min
+        tau_span = tau_max - tau_min
+        d_shift = -(delta.x() / plot.width()) * d_span
+        tau_shift = (delta.y() / plot.height()) * tau_span
+        self._viewport = (
+            d_min + d_shift,
+            d_max + d_shift,
+            tau_min + tau_shift,
+            tau_max + tau_shift,
+        )
+        self.update()
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.RightButton:
+            self._pan_anchor_canvas = None
+            self._pan_anchor_viewport = None
+        super().mouseReleaseEvent(event)
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        if self._fixed_domain:
+            return
+
+        plot = self._plot_rect()
+        if not plot.contains(event.position()):
+            return
+
+        delta_y = event.angleDelta().y()
+        if delta_y == 0:
+            return
+
+        scale = 0.9 if delta_y > 0 else 1.1
+        d_value, tau_value = self._map_click(event.position())
+        d_min, d_max, tau_min, tau_max = self._viewport
+        self._viewport = (
+            d_value + (d_min - d_value) * scale,
+            d_value + (d_max - d_value) * scale,
+            tau_value + (tau_min - tau_value) * scale,
+            tau_value + (tau_max - tau_value) * scale,
+        )
         self.update()
 
     def set_trajectories(
@@ -82,6 +146,29 @@ class PhasePanel(QWidget):
         self._active_frames = active_frames or {}
         self.update()
 
+    def set_fixed_domain_mode(self, fixed_domain: bool) -> None:
+        self._fixed_domain = fixed_domain
+        if fixed_domain:
+            self.reset_view()
+        else:
+            self.update()
+
+    def reset_view(self) -> None:
+        self._viewport = (0.0, 2.0, -1.0, 1.0)
+        self.update()
+
+    def viewport(self) -> tuple[float, float, float, float] | None:
+        if self._fixed_domain:
+            return None
+        return self._viewport
+
+    def set_viewport(self, viewport: tuple[float, float, float, float] | None) -> None:
+        self._viewport = viewport or (0.0, 2.0, -1.0, 1.0)
+        self.update()
+
+    def is_fixed_domain_mode(self) -> bool:
+        return self._fixed_domain
+
     def _map_click(self, point: QPointF) -> tuple[float, float]:
         plot = self._plot_rect()
         if plot.width() <= 0 or plot.height() <= 0:
@@ -89,8 +176,9 @@ class PhasePanel(QWidget):
 
         x_ratio = min(max((point.x() - plot.left()) / plot.width(), 0.0), 1.0)
         y_ratio = min(max((point.y() - plot.top()) / plot.height(), 0.0), 1.0)
-        d_value = 2.0 * x_ratio
-        tau_value = 1.0 - 2.0 * y_ratio
+        d_min, d_max, tau_min, tau_max = self._viewport
+        d_value = d_min + (d_max - d_min) * x_ratio
+        tau_value = tau_max - (tau_max - tau_min) * y_ratio
         return d_value, tau_value
 
     def _plot_rect(self) -> QRectF:
@@ -113,8 +201,11 @@ class PhasePanel(QWidget):
 
     def _to_canvas(self, d_value: float, tau_value: float) -> QPointF:
         plot = self._plot_rect()
-        x = plot.left() + (d_value / 2.0) * plot.width()
-        y = plot.top() + ((1.0 - tau_value) / 2.0) * plot.height()
+        d_min, d_max, tau_min, tau_max = self._viewport
+        d_span = max(d_max - d_min, 1.0e-9)
+        tau_span = max(tau_max - tau_min, 1.0e-9)
+        x = plot.left() + ((d_value - d_min) / d_span) * plot.width()
+        y = plot.top() + ((tau_max - tau_value) / tau_span) * plot.height()
         return QPointF(x, y)
 
     def _is_inside_domain(self, d_value: float, tau_value: float) -> bool:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -24,6 +25,8 @@ class ControlsPanel(QWidget):
     trajectory_visibility_toggled = Signal(int)
     clear_selected_requested = Signal()
     clear_all_requested = Signal()
+    reset_phase_view_requested = Signal()
+    phase_view_mode_changed = Signal(bool)
     replay_action_requested = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -34,6 +37,7 @@ class ControlsPanel(QWidget):
         self._beta_edit = QLineEdit()
         self._n_phase_edit = QLineEdit()
         self._n_geom_edit = QLineEdit()
+        self._fixed_domain_checkbox = QCheckBox("Fixed domain")
         self._trajectory_info = QLabel("selected: -")
         self._parameter_status = QLabel("")
 
@@ -53,6 +57,9 @@ class ControlsPanel(QWidget):
             self._n_geom_edit,
         ):
             line_edit.returnPressed.connect(self._emit_parameters)
+        self._fixed_domain_checkbox.toggled.connect(
+            self.phase_view_mode_changed.emit
+        )
 
     def _build_trajectory_box(self) -> QGroupBox:
         box = QGroupBox("Trajectories")
@@ -80,11 +87,18 @@ class ControlsPanel(QWidget):
         layout.addRow("beta", self._beta_edit)
         layout.addRow("N_phase", self._n_phase_edit)
         layout.addRow("N_geom", self._n_geom_edit)
+        layout.addRow(self._fixed_domain_checkbox)
         layout.addRow(self._parameter_status)
 
         apply_button = QPushButton("Apply")
         apply_button.clicked.connect(self._emit_parameters)
         layout.addRow(apply_button)
+
+        reset_phase_view_button = QPushButton("Reset phase view")
+        reset_phase_view_button.clicked.connect(
+            self.reset_phase_view_requested.emit
+        )
+        layout.addRow(reset_phase_view_button)
         return box
 
     def _build_controls_box(self) -> QGroupBox:
@@ -118,6 +132,11 @@ class ControlsPanel(QWidget):
         self._beta_edit.setText(f"{config.simulation.beta:.6f}")
         self._n_phase_edit.setText(str(config.simulation.n_phase_default))
         self._n_geom_edit.setText(str(config.simulation.n_geom_default))
+
+    def set_phase_view_mode(self, fixed_domain: bool) -> None:
+        blocker = QSignalBlocker(self._fixed_domain_checkbox)
+        self._fixed_domain_checkbox.setChecked(fixed_domain)
+        del blocker
 
     def set_trajectory_items(
         self,

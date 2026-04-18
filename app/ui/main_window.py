@@ -139,6 +139,12 @@ class MainWindow(QMainWindow):
         self.controls_panel.trajectory_visibility_toggled.connect(
             self._on_trajectory_visibility_toggled
         )
+        self.controls_panel.phase_view_mode_changed.connect(
+            self._on_phase_view_mode_changed
+        )
+        self.controls_panel.reset_phase_view_requested.connect(
+            self._on_reset_phase_view
+        )
         self.controls_panel.clear_selected_requested.connect(
             self._on_clear_selected_trajectory
         )
@@ -148,6 +154,9 @@ class MainWindow(QMainWindow):
 
     def update_view(self) -> None:
         self.controls_panel.load_config(self._config)
+        self.controls_panel.set_phase_view_mode(
+            self.phase_panel_wall_1.is_fixed_domain_mode()
+        )
         self.angle_panel.set_angles(
             self._config.simulation.alpha,
             self._config.simulation.beta,
@@ -253,6 +262,18 @@ class MainWindow(QMainWindow):
             return
         self._selected_trajectory_id = trajectory_id
         self._reset_replay_views()
+        self._autosave_session()
+        self.update_view()
+
+    def _on_phase_view_mode_changed(self, fixed_domain: bool) -> None:
+        self.phase_panel_wall_1.set_fixed_domain_mode(fixed_domain)
+        self.phase_panel_wall_2.set_fixed_domain_mode(fixed_domain)
+        self._autosave_session()
+        self.update_view()
+
+    def _on_reset_phase_view(self) -> None:
+        self.phase_panel_wall_1.reset_view()
+        self.phase_panel_wall_2.reset_view()
         self._autosave_session()
         self.update_view()
 
@@ -446,6 +467,9 @@ class MainWindow(QMainWindow):
             replay_selected_only=self._config.replay.selected_only_by_default,
             selected_trajectory_id=self._selected_trajectory_id,
             trajectories=list(self._trajectory_seeds.values()),
+            phase_fixed_domain=self.phase_panel_wall_1.is_fixed_domain_mode(),
+            phase_viewport_wall_1=self.phase_panel_wall_1.viewport(),
+            phase_viewport_wall_2=self.phase_panel_wall_2.viewport(),
         )
 
     def _apply_session(self, session: Session) -> None:
@@ -468,6 +492,10 @@ class MainWindow(QMainWindow):
             for seed in session.trajectories
         }
         self._selected_trajectory_id = session.selected_trajectory_id
+        self.phase_panel_wall_1.set_fixed_domain_mode(session.phase_fixed_domain)
+        self.phase_panel_wall_2.set_fixed_domain_mode(session.phase_fixed_domain)
+        self.phase_panel_wall_1.set_viewport(session.phase_viewport_wall_1)
+        self.phase_panel_wall_2.set_viewport(session.phase_viewport_wall_2)
         if self._selected_trajectory_id not in self._trajectory_seeds:
             self._selected_trajectory_id = next(
                 iter(self._trajectory_seeds.keys()),

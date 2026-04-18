@@ -15,5 +15,6 @@ class Session:
     replay_selected_only: bool = True
     selected_trajectory_id: int | None = None
     trajectories: list[TrajectorySeed] = field(default_factory=list)
+    phase_fixed_domain: bool = True
     phase_viewport_wall_1: tuple[float, float, float, float] | None = None
     phase_viewport_wall_2: tuple[float, float, float, float] | None = None
