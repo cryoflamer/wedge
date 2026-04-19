@@ -50,93 +50,20 @@ def build_wedge_geometry(
             )
         )
 
-    if segment_count <= 0:
-        return geometry
-
-    candidate_pairs = [
-        _parabola_candidates_from_state(state, config)
-        for state in states[: reflection_count]
-    ]
-    first_match = _match_candidate_pair(
-        candidate_pairs[0],
-        candidate_pairs[1],
-        config,
-    )
-    if first_match is None:
-        for orbit_point, left, right in zip(
-            segment_points,
-            geometry.reflections,
-            geometry.reflections[1 : segment_count + 1],
-        ):
-            geometry.segments.append(
-                _invalid_segment(
-                    step_index=orbit_point.step_index,
-                    left=left,
-                    right=right,
-                    reason="parabola_match_failed",
-                )
-            )
-        return geometry
-
-    first_index, next_index, first_distance = first_match
-    if first_distance > _PARABOLA_MATCH_TOLERANCE:
-        logger.warning(
-            "Initial parabola match exceeds tolerance: %.6e",
-            first_distance,
-        )
-
-    active_index = 1 - next_index
-    left = geometry.reflections[0]
-    right = geometry.reflections[1]
-    geometry.segments.append(
-        _build_segment(
-            step_index=segment_points[0].step_index,
-            left=left,
-            right=right,
-            current_candidate=candidate_pairs[0][first_index],
-            next_candidate=candidate_pairs[1][next_index],
-            config=config,
-        )
-    )
-
-    for segment_offset in range(1, segment_count):
-        orbit_point = segment_points[segment_offset]
-        left = geometry.reflections[segment_offset]
-        right = geometry.reflections[segment_offset + 1]
-        current_pair = candidate_pairs[segment_offset]
-        next_pair = candidate_pairs[segment_offset + 1]
-        current_candidate = current_pair[active_index]
-        next_match = _match_active_candidate(
-            current_candidate,
-            next_pair,
-            config,
-        )
-        if next_match is None:
-            geometry.segments.append(
-                _invalid_segment(
-                    step_index=orbit_point.step_index,
-                    left=left,
-                    right=right,
-                    reason="parabola_chain_failed",
-                )
-            )
-            break
-
-        next_index, distance = next_match
-        if distance > _PARABOLA_MATCH_TOLERANCE:
-            logger.warning(
-                "Parabola chain match exceeds tolerance at step %s: %.6e",
-                orbit_point.step_index,
-                distance,
-            )
-
+    for orbit_point, left, right, current_state, next_state in zip(
+        segment_points,
+        geometry.reflections,
+        geometry.reflections[1 : segment_count + 1],
+        states[:segment_count],
+        states[1 : segment_count + 1],
+    ):
         geometry.segments.append(
             _build_segment(
                 step_index=orbit_point.step_index,
                 left=left,
                 right=right,
-                current_candidate=current_candidate,
-                next_candidate=next_pair[next_index],
+                current_state=current_state,
+                next_state=next_state,
                 config=config,
             )
         )
@@ -203,18 +130,18 @@ def _build_reflection_point(
     )
 
 
-class _ParabolaCandidate:
+class _SharedParabola:
     def __init__(
         self,
         x: float,
         y: float,
-        u: float,
-        sign: int,
+        u_start: float,
+        u_end: float,
     ) -> None:
         self.x = x
         self.y = y
-        self.u = u
-        self.sign = sign
+        self.u_start = u_start
+        self.u_end = u_end
 
 
 def _invalid_segment(
@@ -240,11 +167,10 @@ def _build_segment(
     step_index: int,
     left: ReflectionPoint,
     right: ReflectionPoint,
-    current_candidate: _ParabolaCandidate,
-    next_candidate: _ParabolaCandidate,
+    current_state: PhaseState,
+    next_state: PhaseState,
     config: SimulationConfig,
 ) -> ParabolicSegment:
-    focus = GeometryPoint(x=current_candidate.x, y=current_candidate.y)
     if not left.valid or not right.valid:
         return _invalid_segment(
             step_index=step_index,
@@ -263,13 +189,16 @@ def _build_segment(
             reason="segment_boundary_resolution_failed",
         )
 
-    samples = _build_parabola_samples(
-        current_candidate=current_candidate,
-        next_candidate=next_candidate,
-        start_point=start_point,
-        end_point=end_point,
-        config=config,
-    )
+    shared = _shared_parabola_from_states(current_state, next_state, config)
+    if shared is None:
+        return _invalid_segment(
+            step_index=step_index,
+            left=left,
+            right=right,
+            reason="parabola_match_failed",
+        )
+
+    samples = _build_parabola_samples(shared, start_point, end_point, config)
     if not samples:
         return _invalid_segment(
             step_index=step_index,
@@ -282,32 +211,12 @@ def _build_segment(
         step_index=step_index,
         wall_from=left.wall,
         wall_to=right.wall,
-        focus=focus,
+        focus=GeometryPoint(x=shared.x, y=shared.y),
         start_point=start_point,
         end_point=end_point,
         samples=samples,
         valid=True,
     )
-
-
-def _focus_from_state(
-    state: PhaseState,
-    config: SimulationConfig,
-) -> GeometryPoint | None:
-    angle = _wall_angle(state.wall, config)
-    sin_2_angle = math.sin(2.0 * angle)
-    if abs(sin_2_angle) <= config.eps or state.d <= config.eps:
-        return None
-
-    y = 1.0 - (
-        (state.d * math.sin(angle) - state.tau * math.cos(angle)) ** 2
-        / state.d
-    )
-    x = (1.0 + y * math.cos(2.0 * angle) - state.d) / sin_2_angle
-    if not math.isfinite(x) or not math.isfinite(y):
-        return None
-
-    return GeometryPoint(x=x, y=y)
 
 
 def _reflection_point_from_state(
@@ -334,89 +243,84 @@ def _reflection_point_from_state(
     return GeometryPoint(x=x_coord, y=y_coord)
 
 
-def _parabola_candidates_from_state(
-    state: PhaseState,
+def _shared_parabola_from_states(
+    current_state: PhaseState,
+    next_state: PhaseState,
     config: SimulationConfig,
-) -> tuple[_ParabolaCandidate, _ParabolaCandidate] | None:
-    theta = _wall_angle(state.wall, config)
+) -> _SharedParabola | None:
+    theta_current = _wall_angle(current_state.wall, config)
+    theta_next = _wall_angle(next_state.wall, config)
+
+    current = _parabola_parameters(current_state.d, current_state.tau, theta_current, -1, config)
+    next_params = _parabola_parameters(next_state.d, next_state.tau, theta_next, +1, config)
+    if current is None or next_params is None:
+        return None
+
+    x_current, y_current, u_current = current
+    x_next, y_next, u_next = next_params
+
+    mismatch = math.hypot(x_current - x_next, y_current - y_next)
+    if mismatch > _PARABOLA_MATCH_TOLERANCE:
+        logger.warning(
+            "Shared parabola mismatch at walls %s -> %s: %.6e",
+            current_state.wall,
+            next_state.wall,
+            mismatch,
+        )
+
+    _log_segment_debug(
+        current_x=x_current,
+        current_y=y_current,
+        current_u=u_current,
+        next_x=x_next,
+        next_y=y_next,
+        next_u=u_next,
+        mismatch=mismatch,
+    )
+
+    return _SharedParabola(
+        x=x_current,
+        y=y_current,
+        u_start=u_current,
+        u_end=u_next,
+    )
+
+
+def _parabola_parameters(
+    d_value: float,
+    tau_value: float,
+    theta: float,
+    sigma: int,
+    config: SimulationConfig,
+) -> tuple[float, float, float] | None:
     sin_theta = math.sin(theta)
     cos_theta = math.cos(theta)
     sin_2_theta = math.sin(2.0 * theta)
-    if abs(sin_2_theta) <= config.eps or state.d <= config.eps:
+    if abs(sin_2_theta) <= config.eps or d_value <= config.eps:
         return None
 
-    candidates: list[_ParabolaCandidate] = []
-    for sign in (-1, 1):
-        a_term = state.d * sin_theta + sign * state.tau * cos_theta
-        y_coord = 1.0 - (a_term * a_term) / state.d
-        x_coord = (
-            1.0
-            + y_coord * math.cos(2.0 * theta)
-            - state.d
-        ) / sin_2_theta
-        b_term = state.d * cos_theta - sign * state.tau * sin_theta
-        u_value = (a_term * b_term) / state.d
-        if (
-            not math.isfinite(x_coord)
-            or not math.isfinite(y_coord)
-            or not math.isfinite(u_value)
-        ):
-            return None
-        candidates.append(
-            _ParabolaCandidate(
-                x=x_coord,
-                y=y_coord,
-                u=u_value,
-                sign=sign,
-            )
-        )
+    a_term = d_value * sin_theta + sigma * tau_value * cos_theta
+    y_coord = 1.0 - (a_term * a_term) / d_value
+    x_coord = ((1.0 - d_value + math.cos(2.0 * theta)) / sin_2_theta) - (
+        (math.cos(2.0 * theta) / sin_2_theta) * (a_term * a_term / d_value)
+    )
+    u_value = (
+        (d_value * sigma * cos_theta - tau_value * sin_theta)
+        * (d_value * sigma * sin_theta + tau_value * cos_theta)
+    ) / d_value
 
-    return candidates[0], candidates[1]
-
-
-def _candidate_distance(
-    left: _ParabolaCandidate,
-    right: _ParabolaCandidate,
-) -> float:
-    return math.hypot(left.x - right.x, left.y - right.y)
-
-
-def _match_candidate_pair(
-    current_pair: tuple[_ParabolaCandidate, _ParabolaCandidate] | None,
-    next_pair: tuple[_ParabolaCandidate, _ParabolaCandidate] | None,
-    config: SimulationConfig,
-) -> tuple[int, int, float] | None:
-    if current_pair is None or next_pair is None:
+    if not (
+        math.isfinite(x_coord)
+        and math.isfinite(y_coord)
+        and math.isfinite(u_value)
+    ):
         return None
 
-    best_match: tuple[int, int, float] | None = None
-    for current_index, current_candidate in enumerate(current_pair):
-        for next_index, next_candidate in enumerate(next_pair):
-            distance = _candidate_distance(current_candidate, next_candidate)
-            if best_match is None or distance < best_match[2]:
-                best_match = (current_index, next_index, distance)
-    return best_match
-
-
-def _match_active_candidate(
-    active_candidate: _ParabolaCandidate,
-    next_pair: tuple[_ParabolaCandidate, _ParabolaCandidate] | None,
-    config: SimulationConfig,
-) -> tuple[int, float] | None:
-    if next_pair is None:
-        return None
-
-    distances = [
-        _candidate_distance(active_candidate, candidate)
-        for candidate in next_pair
-    ]
-    best_index = 0 if distances[0] <= distances[1] else 1
-    return best_index, distances[best_index]
+    return x_coord, y_coord, u_value
 
 
 def _build_parabola_samples(
-    current_candidate: _ParabolaCandidate,
-    next_candidate: _ParabolaCandidate,
+    shared: _SharedParabola,
     start_point: GeometryPoint | None,
     end_point: GeometryPoint | None,
     config: SimulationConfig,
@@ -425,27 +329,16 @@ def _build_parabola_samples(
     if start_point is None or end_point is None:
         return []
 
-    denominator = 2.0 * (1.0 - current_candidate.y)
+    denominator = 2.0 * (1.0 - shared.y)
     if abs(denominator) <= config.eps:
         return []
-
-    _log_segment_debug(
-        current_candidate=current_candidate,
-        next_candidate=next_candidate,
-        start_point=start_point,
-        end_point=end_point,
-    )
 
     samples: list[GeometryPoint] = []
     for index in range(num_samples + 1):
         ratio = index / num_samples
-        u_value = current_candidate.u + (
-            next_candidate.u - current_candidate.u
-        ) * ratio
-        x_coord = current_candidate.x + u_value
-        y_coord = ((1.0 + current_candidate.y) / 2.0) - (
-            (u_value * u_value) / denominator
-        )
+        u_value = shared.u_start + (shared.u_end - shared.u_start) * ratio
+        x_coord = shared.x + u_value
+        y_coord = ((1.0 + shared.y) / 2.0) - ((u_value * u_value) / denominator)
 
         if not math.isfinite(x_coord) or not math.isfinite(y_coord):
             continue
@@ -458,10 +351,13 @@ def _build_parabola_samples(
 
 
 def _log_segment_debug(
-    current_candidate: _ParabolaCandidate,
-    next_candidate: _ParabolaCandidate,
-    start_point: GeometryPoint,
-    end_point: GeometryPoint,
+    current_x: float,
+    current_y: float,
+    current_u: float,
+    next_x: float,
+    next_y: float,
+    next_u: float,
+    mismatch: float,
 ) -> None:
     global _debug_segment_logs_emitted
 
@@ -470,43 +366,19 @@ def _log_segment_debug(
 
     logger.info(
         (
-            "Wedge segment: current=(X=%.6f, Y=%.6f, u=%.6f, sign=%d) "
-            "next=(X=%.6f, Y=%.6f, u=%.6f, sign=%d) "
-            "match=%.6e "
-            "start=(%.6f, %.6f) end=(%.6f, %.6f) "
-            "start_delta=%.6e end_delta=%.6e"
+            "Wedge segment: current=(X=%.6f, Y=%.6f, u=%.6f) "
+            "next=(X=%.6f, Y=%.6f, u=%.6f) "
+            "match=%.6e"
         ),
-        current_candidate.x,
-        current_candidate.y,
-        current_candidate.u,
-        current_candidate.sign,
-        next_candidate.x,
-        next_candidate.y,
-        next_candidate.u,
-        next_candidate.sign,
-        _candidate_distance(current_candidate, next_candidate),
-        start_point.x,
-        start_point.y,
-        end_point.x,
-        end_point.y,
-        _point_delta(current_candidate, start_point),
-        _point_delta(next_candidate, end_point),
+        current_x,
+        current_y,
+        current_u,
+        next_x,
+        next_y,
+        next_u,
+        mismatch,
     )
     _debug_segment_logs_emitted += 1
-
-
-def _point_delta(
-    candidate: _ParabolaCandidate,
-    point: GeometryPoint,
-) -> float:
-    denominator = 2.0 * (1.0 - candidate.y)
-    if abs(denominator) <= 1.0e-12:
-        return float("nan")
-    x_coord = candidate.x + candidate.u
-    y_coord = ((1.0 + candidate.y) / 2.0) - (
-        (candidate.u * candidate.u) / denominator
-    )
-    return math.hypot(x_coord - point.x, y_coord - point.y)
 
 
 def _wall_angle(wall: int, config: SimulationConfig) -> float:
