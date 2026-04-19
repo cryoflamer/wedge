@@ -160,51 +160,57 @@ def next_state(state: PhaseState, config: SimulationConfig) -> StepResult:
     target_angle = _wall_angle(target_wall, config)
     eps = config.eps
 
+    d_candidate = _compute_cross_wall_d(
+        state=state,
+        source_angle=source_angle,
+        target_angle=target_angle,
+        eps=eps,
+    )
+    if not math.isfinite(d_candidate):
+        logger.warning("Cross-wall transition is non-finite")
+        return StepResult(
+            state=None,
+            valid=False,
+            reason="non_finite_cross_wall",
+        )
+
+    tau_candidate = _compute_cross_wall_tau(
+        state=state,
+        d_next=d_candidate,
+        source_angle=source_angle,
+        target_angle=target_angle,
+        eps=eps,
+    )
+    if not math.isfinite(tau_candidate):
+        logger.warning("Cross-wall tau is non-finite")
+        return StepResult(
+            state=None,
+            valid=False,
+            reason="non_finite_cross_wall_tau",
+        )
+
+    cross_wall_state = PhaseState(
+        d=d_candidate,
+        tau=tau_candidate,
+        wall=target_wall,
+    )
+    cross_wall_validation = validate_state(cross_wall_state, config)
+
     same_wall_state = PhaseState(
         d=state.d,
         tau=state.tau - 2.0 * state.d * math.tan(source_angle),
         wall=state.wall,
     )
     same_wall_validation = validate_state(same_wall_state, config)
-    if _same_wall_allowed(state, config) and same_wall_validation.valid:
+
+    if cross_wall_validation.valid:
+        next_phase_state = cross_wall_state
+        branch = "cross_wall"
+    elif _same_wall_allowed(state, config) and same_wall_validation.valid:
         next_phase_state = same_wall_state
         branch = "same_wall"
-        d_candidate = math.nan
     else:
-        d_candidate = _compute_cross_wall_d(
-            state=state,
-            source_angle=source_angle,
-            target_angle=target_angle,
-            eps=eps,
-        )
-        if not math.isfinite(d_candidate):
-            logger.warning("Cross-wall transition is non-finite")
-            return StepResult(
-                state=None,
-                valid=False,
-                reason="non_finite_cross_wall",
-            )
-
-        tau_candidate = _compute_cross_wall_tau(
-            state=state,
-            d_next=d_candidate,
-            source_angle=source_angle,
-            target_angle=target_angle,
-            eps=eps,
-        )
-        if not math.isfinite(tau_candidate):
-            logger.warning("Cross-wall tau is non-finite")
-            return StepResult(
-                state=None,
-                valid=False,
-                reason="non_finite_cross_wall_tau",
-            )
-
-        next_phase_state = PhaseState(
-            d=d_candidate,
-            tau=tau_candidate,
-            wall=target_wall,
-        )
+        next_phase_state = cross_wall_state
         branch = "cross_wall"
 
     _log_step_debug(
