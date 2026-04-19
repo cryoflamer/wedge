@@ -67,7 +67,6 @@ def build_wedge_geometry(
                 config=config,
             )
         )
-        active_index = 1 - next_index
 
     return geometry
 
