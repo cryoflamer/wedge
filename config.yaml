@@ -38,9 +38,9 @@ view:
   geometry_point_radius: 2
   angle_hover_tooltip: true
 window:
-  width: 1850
+  width: 1866
   height: 1543
-  x: 284
+  x: 279
   y: 27
 autosave:
   enabled: true
