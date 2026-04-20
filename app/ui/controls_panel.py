@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -82,12 +83,16 @@ class ControlsPanel(QWidget):
         self._lyapunov_value = QLabel("Lyapunov λ: -")
         self._parameter_status = QLabel("")
         self._angle_units = "rad"
+        self._details_tabs = QTabWidget()
 
         main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(8)
         main_layout.addWidget(self._build_trajectory_box())
-        main_layout.addWidget(self._build_parameters_box())
-        main_layout.addWidget(self._build_controls_box())
-        main_layout.addStretch(1)
+        self._details_tabs.addTab(self._build_parameters_box(), "Parameters")
+        self._details_tabs.addTab(self._build_controls_box(), "Controls")
+        self._details_tabs.setDocumentMode(True)
+        main_layout.addWidget(self._details_tabs, 1)
 
         self._trajectory_list.currentItemChanged.connect(
             self._on_current_item_changed
@@ -147,53 +152,62 @@ class ControlsPanel(QWidget):
     def _build_trajectory_box(self) -> QGroupBox:
         box = QGroupBox("Trajectories")
         layout = QVBoxLayout(box)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
         layout.addWidget(self._trajectory_list)
         layout.addWidget(self._trajectory_info)
 
+        actions_grid = QGridLayout()
+        actions_grid.setHorizontalSpacing(6)
+        actions_grid.setVerticalSpacing(4)
+
         toggle_button = QPushButton("Toggle visibility")
         toggle_button.clicked.connect(self._toggle_current_visibility)
-        layout.addWidget(toggle_button)
+        actions_grid.addWidget(toggle_button, 0, 0)
 
         clear_selected_button = QPushButton("Clear selected trajectory")
         clear_selected_button.clicked.connect(self.clear_selected_requested.emit)
-        layout.addWidget(clear_selected_button)
+        actions_grid.addWidget(clear_selected_button, 0, 1)
 
         clear_all_button = QPushButton("Clear all trajectories")
         clear_all_button.clicked.connect(self.clear_all_requested.emit)
-        layout.addWidget(clear_all_button)
+        actions_grid.addWidget(clear_all_button, 1, 0)
 
         lyapunov_button = QPushButton("Compute Lyapunov")
         lyapunov_button.clicked.connect(self.compute_lyapunov_requested.emit)
-        layout.addWidget(lyapunov_button)
+        actions_grid.addWidget(lyapunov_button, 1, 1)
+
+        export_data_button = QPushButton("Export Data")
+        export_data_button.clicked.connect(self.export_data_requested.emit)
+        actions_grid.addWidget(export_data_button, 2, 0)
+
+        add_trajectory_button = QPushButton("Add trajectory")
+        add_trajectory_button.clicked.connect(self._emit_manual_seed)
+        actions_grid.addWidget(add_trajectory_button, 2, 1)
+
+        layout.addLayout(actions_grid)
         layout.addWidget(self._lyapunov_status)
         layout.addWidget(self._lyapunov_steps)
         layout.addWidget(self._lyapunov_value)
 
-        export_data_button = QPushButton("Export Data")
-        export_data_button.clicked.connect(self.export_data_requested.emit)
-        layout.addWidget(export_data_button)
-
         manual_form = QFormLayout()
+        manual_form.setContentsMargins(0, 0, 0, 0)
+        manual_form.setHorizontalSpacing(6)
+        manual_form.setVerticalSpacing(4)
         manual_form.addRow("d", self._manual_d_edit)
         manual_form.addRow("tau", self._manual_tau_edit)
         manual_form.addRow("wall", self._manual_wall_combo)
         layout.addLayout(manual_form)
-
-        add_trajectory_button = QPushButton("Add trajectory")
-        add_trajectory_button.clicked.connect(self._emit_manual_seed)
-        layout.addWidget(add_trajectory_button)
-
-        scan_button = QPushButton("Scan")
-        scan_button.clicked.connect(self._emit_scan_request)
-        layout.addWidget(scan_button)
         return box
 
     def _build_parameters_box(self) -> QGroupBox:
         box = QGroupBox("Parameters")
         outer_layout = QVBoxLayout(box)
+        outer_layout.setContentsMargins(8, 8, 8, 8)
+        outer_layout.setSpacing(6)
         grid = QGridLayout()
-        grid.setHorizontalSpacing(12)
-        grid.setVerticalSpacing(6)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(4)
 
         left_layout = QFormLayout()
         left_layout.setContentsMargins(0, 0, 0, 0)
@@ -233,7 +247,7 @@ class ControlsPanel(QWidget):
         )
 
         button_row = QGridLayout()
-        button_row.setHorizontalSpacing(8)
+        button_row.setHorizontalSpacing(6)
         button_row.addWidget(apply_button, 0, 0)
         button_row.addWidget(reset_phase_view_button, 0, 1)
         outer_layout.addLayout(button_row)
@@ -242,8 +256,13 @@ class ControlsPanel(QWidget):
     def _build_controls_box(self) -> QGroupBox:
         box = QGroupBox("Controls")
         layout = QVBoxLayout(box)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
         export_form = QFormLayout()
+        export_form.setContentsMargins(0, 0, 0, 0)
+        export_form.setHorizontalSpacing(6)
+        export_form.setVerticalSpacing(4)
         export_form.addRow("Export mode", self._export_mode_combo)
         export_form.addRow("Mono preset", self._export_preset_combo)
         export_form.addRow("Data format", self._data_export_format_combo)
@@ -256,9 +275,13 @@ class ControlsPanel(QWidget):
         export_form.addRow("Scan tau max", self._scan_tau_max_edit)
         layout.addLayout(export_form)
 
+        scan_button = QPushButton("Scan")
+        scan_button.clicked.connect(self._emit_scan_request)
+        layout.addWidget(scan_button)
+
         actions_grid = QGridLayout()
-        actions_grid.setHorizontalSpacing(8)
-        actions_grid.setVerticalSpacing(6)
+        actions_grid.setHorizontalSpacing(6)
+        actions_grid.setVerticalSpacing(4)
 
         for index, action_name in enumerate((
             "replay_selected",
