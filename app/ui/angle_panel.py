@@ -21,7 +21,7 @@ class AnglePanel(QWidget):
     ) -> None:
         super().__init__(parent)
         self._view_config = view_config
-        self._title = QLabel("Alpha / Beta")
+        self._title = QLabel("α / β")
         self._hint = QLabel("parameter space")
         self._point_label = QLabel("point: -")
         self._alpha = 0.0
@@ -61,7 +61,7 @@ class AnglePanel(QWidget):
         self._alpha = alpha
         self._beta = beta
         self._point_label.setText(
-            f"point: alpha={self._format_angle(alpha)}, beta={self._format_angle(beta)}"
+            f"point: α={self._format_angle(alpha)}, β={self._format_angle(beta)}"
         )
         self.update()
 
@@ -73,7 +73,7 @@ class AnglePanel(QWidget):
         self._angle_units = units.strip().lower() if units.strip() else "rad"
         self._hint.setText(f"parameter space ({self._angle_units})")
         self._point_label.setText(
-            f"point: alpha={self._format_angle(self._alpha)}, beta={self._format_angle(self._beta)}"
+            f"point: α={self._format_angle(self._alpha)}, β={self._format_angle(self._beta)}"
         )
         self.update()
 
@@ -90,7 +90,7 @@ class AnglePanel(QWidget):
             return
 
         self._point_label.setText(
-            f"point: alpha={self._format_angle(alpha)}, beta={self._format_angle(beta)}"
+            f"point: α={self._format_angle(alpha)}, β={self._format_angle(beta)}"
         )
         self.point_selected.emit(alpha, beta)
 
@@ -112,7 +112,7 @@ class AnglePanel(QWidget):
         if self._is_inside_domain(alpha, beta):
             QToolTip.showText(
                 event.globalPosition().toPoint(),
-                f"alpha={self._format_angle(alpha)}\nbeta={self._format_angle(beta)}",
+                f"α={self._format_angle(alpha)}\nβ={self._format_angle(beta)}",
                 self,
             )
         else:

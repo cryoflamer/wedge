@@ -88,7 +88,7 @@ class PhasePanel(QWidget):
                 self._last_click.setText(
                     "drag: "
                     f"d={self._drag_seed_preview[0]:.3f}, "
-                    f"tau={self._drag_seed_preview[1]:.3f}"
+                    f"τ={self._drag_seed_preview[1]:.3f}"
                 )
                 self.seed_drag_started.emit(dragged_seed_id)
                 self.update()
@@ -150,7 +150,7 @@ class PhasePanel(QWidget):
             self._last_click.setText(
                 "drag: "
                 f"d={self._drag_seed_preview[0]:.3f}, "
-                f"tau={self._drag_seed_preview[1]:.3f}"
+                f"τ={self._drag_seed_preview[1]:.3f}"
             )
             seed = self._seeds.get(self._drag_seed_id)
             if seed is not None and self._drag_seed_preview is not None:
@@ -243,7 +243,7 @@ class PhasePanel(QWidget):
             self._drag_seed_preview = None
             if preview is not None:
                 self._last_click.setText(
-                    f"drag: d={preview[0]:.3f}, tau={preview[1]:.3f}"
+                    f"drag: d={preview[0]:.3f}, τ={preview[1]:.3f}"
                 )
                 self.seed_drag_finished.emit(
                     trajectory_id,
@@ -416,7 +416,7 @@ class PhasePanel(QWidget):
             f"trajectory id: {seed.id}\n"
             f"wall: {seed.wall_start}\n"
             f"d0: {d_value:.6f}\n"
-            f"tau0: {tau_value:.6f}"
+            f"τ0: {tau_value:.6f}"
         )
 
     def _plot_rect(self) -> QRectF:
@@ -981,7 +981,7 @@ class PhasePanel(QWidget):
             return
         self._hint.setText(
             "free zoom | "
-            f"d=[{d_min:.3f}, {d_max:.3f}] tau=[{tau_min:.3f}, {tau_max:.3f}]"
+            f"d=[{d_min:.3f}, {d_max:.3f}] τ=[{tau_min:.3f}, {tau_max:.3f}]"
         )
 
     def _emit_click(self, point: QPointF) -> None:
@@ -991,7 +991,7 @@ class PhasePanel(QWidget):
             self.update()
             return
 
-        self._last_click.setText(f"click: d={d_value:.3f}, tau={tau_value:.3f}")
+        self._last_click.setText(f"click: d={d_value:.3f}, τ={tau_value:.3f}")
         self.clicked.emit(self.wall, d_value, tau_value)
         self.update()
 
@@ -1002,7 +1002,7 @@ class PhasePanel(QWidget):
         point: QPointF,
     ) -> str:
         d_value, tau_value = self._map_click(point)
-        label_text = f"d={d_value:.3f}, tau={tau_value:.3f}"
+        label_text = f"d={d_value:.3f}, τ={tau_value:.3f}"
         painter.setPen(QPen(QColor(60, 60, 60, 120), 1, Qt.DashLine))
         painter.drawLine(QPointF(plot.left(), point.y()), QPointF(plot.right(), point.y()))
         painter.drawLine(QPointF(point.x(), plot.top()), QPointF(point.x(), plot.bottom()))
