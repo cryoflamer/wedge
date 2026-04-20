@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import QSignalBlocker, Qt, Signal
+from PySide6.QtCore import QSignalBlocker, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -13,9 +13,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -47,7 +46,7 @@ class ControlsPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
-        self._trajectory_list = QListWidget()
+        self._trajectory_selector = QComboBox()
         self._alpha_edit = QLineEdit()
         self._beta_edit = QLineEdit()
         self._n_phase_edit = QLineEdit()
@@ -76,7 +75,6 @@ class ControlsPanel(QWidget):
         self._manual_d_edit = QLineEdit()
         self._manual_tau_edit = QLineEdit()
         self._manual_wall_combo = QComboBox()
-        self._trajectory_info = QLabel("selected: -")
         self._lyapunov_status = QLabel("Lyapunov: not computed")
         self._lyapunov_steps = QLabel("Lyapunov steps: -")
         self._lyapunov_value = QLabel("Lyapunov λ: -")
@@ -91,8 +89,8 @@ class ControlsPanel(QWidget):
         main_layout.addWidget(self._build_controls_box())
         main_layout.addStretch(1)
 
-        self._trajectory_list.currentItemChanged.connect(
-            self._on_current_item_changed
+        self._trajectory_selector.currentIndexChanged.connect(
+            self._on_trajectory_selector_changed
         )
         for line_edit in (
             self._alpha_edit,
@@ -145,42 +143,59 @@ class ControlsPanel(QWidget):
         self._scan_wall_combo.addItems(["1", "2"])
         self._manual_wall_combo.addItems(["1", "2"])
         self._sync_export_preset_state()
+        self._trajectory_selector.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToContents
+        )
+        self._trajectory_selector.setIconSize(QSize(12, 12))
 
     def _build_trajectory_box(self) -> QGroupBox:
         box = QGroupBox("Trajectories")
         layout = QVBoxLayout(box)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
-        layout.addWidget(self._trajectory_list)
-        layout.addWidget(self._trajectory_info)
+        selector_row = QHBoxLayout()
+        selector_row.setContentsMargins(0, 0, 0, 0)
+        selector_row.setSpacing(6)
+        selector_row.addWidget(self._trajectory_selector, 1)
+        layout.addLayout(selector_row)
 
         actions_grid = QGridLayout()
         actions_grid.setHorizontalSpacing(6)
         actions_grid.setVerticalSpacing(4)
 
-        toggle_button = QPushButton("Toggle visibility")
+        toggle_button = QPushButton("Toggle")
         toggle_button.clicked.connect(self._toggle_current_visibility)
         actions_grid.addWidget(toggle_button, 0, 0)
 
-        clear_selected_button = QPushButton("Clear selected trajectory")
+        clear_selected_button = QPushButton("Clear selected")
         clear_selected_button.clicked.connect(self.clear_selected_requested.emit)
         actions_grid.addWidget(clear_selected_button, 0, 1)
 
-        clear_all_button = QPushButton("Clear all trajectories")
+        clear_all_button = QPushButton("Clear all")
         clear_all_button.clicked.connect(self.clear_all_requested.emit)
         actions_grid.addWidget(clear_all_button, 1, 0)
 
-        lyapunov_button = QPushButton("Compute Lyapunov")
+        lyapunov_button = QPushButton("Lyapunov")
         lyapunov_button.clicked.connect(self.compute_lyapunov_requested.emit)
         actions_grid.addWidget(lyapunov_button, 1, 1)
 
-        export_data_button = QPushButton("Export Data")
+        export_data_button = QPushButton("Export data")
         export_data_button.clicked.connect(self.export_data_requested.emit)
         actions_grid.addWidget(export_data_button, 2, 0)
 
-        add_trajectory_button = QPushButton("Add trajectory")
+        add_trajectory_button = QPushButton("Add")
         add_trajectory_button.clicked.connect(self._emit_manual_seed)
         actions_grid.addWidget(add_trajectory_button, 2, 1)
+
+        for button in (
+            toggle_button,
+            clear_selected_button,
+            clear_all_button,
+            lyapunov_button,
+            export_data_button,
+            add_trajectory_button,
+        ):
+            button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         layout.addLayout(actions_grid)
         layout.addWidget(self._lyapunov_status)
@@ -275,26 +290,29 @@ class ControlsPanel(QWidget):
         scan_button = QPushButton("Scan")
         scan_button.clicked.connect(self._emit_scan_request)
         layout.addWidget(scan_button)
+        scan_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         actions_grid = QGridLayout()
         actions_grid.setHorizontalSpacing(6)
         actions_grid.setVerticalSpacing(4)
 
-        for index, action_name in enumerate((
-            "replay_selected",
-            "replay_all",
-            "pause",
-            "resume",
-            "step",
-            "reset_replay",
-            "export_png",
-            "save_session",
-            "load_session",
-        )):
-            button = QPushButton(action_name.replace("_", " ").title())
+        action_labels = (
+            ("replay_selected", "Replay sel"),
+            ("replay_all", "Replay all"),
+            ("pause", "Pause"),
+            ("resume", "Resume"),
+            ("step", "Step"),
+            ("reset_replay", "Reset"),
+            ("export_png", "PNG"),
+            ("save_session", "Save"),
+            ("load_session", "Load"),
+        )
+        for index, (action_name, label) in enumerate(action_labels):
+            button = QPushButton(label)
             button.clicked.connect(
                 lambda checked=False, name=action_name: self.replay_action_requested.emit(name)
             )
+            button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             actions_grid.addWidget(button, index // 2, index % 2)
 
         layout.addLayout(actions_grid)
@@ -448,36 +466,33 @@ class ControlsPanel(QWidget):
 
     def set_trajectory_items(
         self,
-        items: list[tuple[int, str, str, bool]],
+        items: list[tuple[int, str, str, str, bool]],
         selected_trajectory_id: int | None,
     ) -> None:
-        blocker = QSignalBlocker(self._trajectory_list)
-        self._trajectory_list.clear()
-        selected_item: QListWidgetItem | None = None
+        selector_blocker = QSignalBlocker(self._trajectory_selector)
+        self._trajectory_selector.clear()
+        selected_selector_index = -1
 
-        for trajectory_id, label, color, visible in items:
-            item = QListWidgetItem(label)
-            item.setData(Qt.UserRole, trajectory_id)
-            item.setIcon(self._color_icon(color, visible))
-            if not visible:
-                item.setForeground(QColor("#777777"))
-            self._trajectory_list.addItem(item)
+        for index, (trajectory_id, selector_label, tooltip_label, color, visible) in enumerate(items):
+            self._trajectory_selector.addItem(
+                self._color_icon(color, visible),
+                selector_label,
+                trajectory_id,
+            )
+            self._trajectory_selector.setItemData(
+                index,
+                tooltip_label,
+                Qt.ToolTipRole,
+            )
             if trajectory_id == selected_trajectory_id:
-                selected_item = item
+                selected_selector_index = index
 
-        if selected_item is not None:
-            self._trajectory_list.setCurrentItem(selected_item)
-        elif self._trajectory_list.count() > 0:
-            self._trajectory_list.setCurrentRow(0)
-        else:
-            self._trajectory_info.setText("selected: -")
-        del blocker
-
-        current = self._trajectory_list.currentItem()
-        if current is not None:
-            trajectory_id = current.data(Qt.UserRole)
-            if trajectory_id is not None:
-                self._trajectory_info.setText(f"selected: #{int(trajectory_id)}")
+        if selected_selector_index >= 0:
+            self._trajectory_selector.setCurrentIndex(selected_selector_index)
+        elif self._trajectory_selector.count() > 0:
+            self._trajectory_selector.setCurrentIndex(0)
+        del selector_blocker
+        self._sync_selector_tooltip()
 
     def _color_icon(self, color: str, visible: bool) -> QIcon:
         pixmap = QPixmap(12, 12)
@@ -528,27 +543,37 @@ class ControlsPanel(QWidget):
 
         self.parameters_changed.emit(alpha, beta, n_phase, n_geom)
 
-    def _on_current_item_changed(
-        self,
-        current: QListWidgetItem | None,
-        previous: QListWidgetItem | None,
-    ) -> None:
-        del previous
-        if current is None:
-            self._trajectory_info.setText("selected: -")
+    def _on_trajectory_selector_changed(self, index: int) -> None:
+        if index < 0:
+            self._trajectory_selector.setToolTip("")
             return
-        trajectory_id = current.data(Qt.UserRole)
-        if trajectory_id is not None:
-            self._trajectory_info.setText(f"selected: #{int(trajectory_id)}")
-            self.trajectory_selected.emit(int(trajectory_id))
+        trajectory_id = self._trajectory_selector.itemData(index)
+        if trajectory_id is None:
+            return
+        self._sync_selector_tooltip()
+        self.trajectory_selected.emit(int(trajectory_id))
 
     def _toggle_current_visibility(self) -> None:
-        current = self._trajectory_list.currentItem()
-        if current is None:
-            return
-        trajectory_id = current.data(Qt.UserRole)
+        trajectory_id = self._current_trajectory_id()
         if trajectory_id is not None:
             self.trajectory_visibility_toggled.emit(int(trajectory_id))
+
+    def _current_trajectory_id(self) -> int | None:
+        index = self._trajectory_selector.currentIndex()
+        if index < 0:
+            return None
+        trajectory_id = self._trajectory_selector.itemData(index)
+        if trajectory_id is None:
+            return None
+        return int(trajectory_id)
+
+    def _sync_selector_tooltip(self) -> None:
+        index = self._trajectory_selector.currentIndex()
+        if index < 0:
+            self._trajectory_selector.setToolTip("")
+            return
+        tooltip = self._trajectory_selector.itemData(index, Qt.ToolTipRole)
+        self._trajectory_selector.setToolTip(str(tooltip) if tooltip is not None else "")
 
     def _set_parameter_error(self, message: str) -> None:
         self._parameter_status.setText(message)
