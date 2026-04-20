@@ -13,7 +13,7 @@ replay:
   selected_only_by_default: true
 background:
   build_chunk_size: 16
-  fast_build: false
+  fast_build: true
 lyapunov:
   delta0: 1.0e-06
   transient_steps: 10

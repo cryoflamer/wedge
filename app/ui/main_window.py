@@ -1021,7 +1021,19 @@ class MainWindow(QMainWindow):
             symmetric_mode=self._symmetric_mode,
             export_mode=self.controls_panel.export_mode(),
             phase_fixed_domain=self.phase_panel_wall_1.is_fixed_domain_mode(),
+            show_phase_grid=self._config.view.show_phase_grid,
+            show_phase_minor_grid=self._config.view.show_phase_minor_grid,
             show_seed_markers=self._config.view.show_seed_markers,
+            show_directrix=self._config.view.show_directrix,
+            show_regions=self._config.view.show_regions,
+            show_region_labels=self._config.view.show_region_labels,
+            show_region_legend=self._config.view.show_region_legend,
+            show_branch_markers=self._config.view.show_branch_markers,
+            show_heatmap=self._config.view.show_heatmap,
+            heatmap_mode=self._config.view.heatmap_mode,
+            heatmap_resolution=self._config.view.heatmap_resolution,
+            heatmap_normalization=self._config.view.heatmap_normalization,
+            fast_build=self._config.background.fast_build,
             phase_viewport_wall_1=self.phase_panel_wall_1.viewport(),
             phase_viewport_wall_2=self.phase_panel_wall_2.viewport(),
         )
@@ -1044,7 +1056,20 @@ class MainWindow(QMainWindow):
         self._angle_units = session.angle_units
         self._symmetric_mode = session.symmetric_mode
         self._config.export.default_mode = session.export_mode
+        self._config.view.show_phase_grid = session.show_phase_grid
+        self._config.view.show_phase_minor_grid = session.show_phase_minor_grid
+        self._config.view.phase_grid.show_minor = session.show_phase_minor_grid
         self._config.view.show_seed_markers = session.show_seed_markers
+        self._config.view.show_directrix = session.show_directrix
+        self._config.view.show_regions = session.show_regions
+        self._config.view.show_region_labels = session.show_region_labels
+        self._config.view.show_region_legend = session.show_region_legend
+        self._config.view.show_branch_markers = session.show_branch_markers
+        self._config.view.show_heatmap = session.show_heatmap
+        self._config.view.heatmap_mode = session.heatmap_mode
+        self._config.view.heatmap_resolution = session.heatmap_resolution
+        self._config.view.heatmap_normalization = session.heatmap_normalization
+        self._config.background.fast_build = session.fast_build
 
         self._trajectory_seeds = {
             seed.id: TrajectorySeed(
