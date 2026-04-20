@@ -76,7 +76,9 @@ class MainWindow(QMainWindow):
         self._current_job_worker: OrbitBuildWorker | None = None
         self._job_status_state = "idle"
         self._job_status_message = "Idle"
+        self._job_last_percent = 0
         self._pending_partial_results: dict[int, OrbitPartialResult] = {}
+        self._autosave_restore_scheduled = False
 
         self.setWindowTitle(config.app.title)
         self.resize(config.window.width, config.window.height)
@@ -120,7 +122,6 @@ class MainWindow(QMainWindow):
         QApplication.instance().installEventFilter(self)
         self._connect_signals()
         self.update_view()
-        self._restore_autosave_session()
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -148,11 +149,13 @@ class MainWindow(QMainWindow):
                 max(available.bottom() - frame.height() + 1, available.top()),
             )
             self.move(clamped_x, clamped_y)
+            self._schedule_autosave_restore()
             return
 
         frame.moveCenter(available.center())
         self.move(frame.topLeft())
         self._window_position_restored = True
+        self._schedule_autosave_restore()
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self._cancel_current_job()
@@ -218,6 +221,7 @@ class MainWindow(QMainWindow):
         self._status_progress.setValue(0)
         self._status_progress.setTextVisible(True)
         self._status_progress.setMaximumWidth(220)
+        self._status_progress.hide()
         self.statusBar().addWidget(self._status_label, 1)
         self.statusBar().addPermanentWidget(self._status_progress)
 
@@ -602,15 +606,16 @@ class MainWindow(QMainWindow):
         self._current_job_thread = None
         self._pending_partial_results.clear()
         self._partial_update_timer.stop()
-        self._set_job_progress(
-            JobProgress(
-                generation_id=self._job_generation,
-                job_kind="cancel",
-                status="cancelled",
-                current=0,
-                total=0,
-                message="Cancelling current job...",
-            )
+        self._job_status_state = "cancelled"
+        self._job_status_message = (
+            f"Job interrupted at {self._job_last_percent}%"
+        )
+        self._status_label.setText(self._job_status_message)
+        self._status_progress.hide()
+        self.controls_panel.set_job_status(
+            status=self._job_status_state,
+            message=self._job_status_message,
+            cancellable=False,
         )
 
     def _on_cancel_shortcut(self) -> None:
@@ -811,7 +816,7 @@ class MainWindow(QMainWindow):
             phase_viewport_wall_2=self.phase_panel_wall_2.viewport(),
         )
 
-    def _apply_session(
+    def _apply_session_state(
         self,
         session: Session,
         restore_simulation_parameters: bool = True,
@@ -855,6 +860,16 @@ class MainWindow(QMainWindow):
         self._next_trajectory_id = (
             max(self._trajectory_seeds.keys(), default=0) + 1
         )
+
+    def _apply_session(
+        self,
+        session: Session,
+        restore_simulation_parameters: bool = True,
+    ) -> None:
+        self._apply_session_state(
+            session,
+            restore_simulation_parameters=restore_simulation_parameters,
+        )
         self._rebuild_orbits()
         self.replay_controller.reset()
         self._reset_replay_views()
@@ -883,18 +898,39 @@ class MainWindow(QMainWindow):
             return
 
         session = load_session(autosave_path)
-        self._apply_session(
+        self._apply_session_state(
             session,
             restore_simulation_parameters=(
                 self._config.autosave.restore_simulation_parameters
             ),
         )
+        self._trajectory_orbits = {
+            trajectory_id: Orbit(trajectory_id=trajectory_id)
+            for trajectory_id in self._trajectory_seeds
+        }
+        self._trajectory_geometries = {
+            trajectory_id: WedgeGeometry()
+            for trajectory_id in self._trajectory_seeds
+        }
+        self.replay_controller.reset()
+        self._reset_replay_views()
+        self.update_view()
+        if self._trajectory_seeds:
+            self._start_rebuild_job(
+                job_message="Restoring autosave session...",
+            )
         logger.info(
             "Autosave restored: %s runtime alpha=%.10f beta=%.10f",
             autosave_path,
             self._config.simulation.alpha,
             self._config.simulation.beta,
         )
+
+    def _schedule_autosave_restore(self) -> None:
+        if self._autosave_restore_scheduled:
+            return
+        self._autosave_restore_scheduled = True
+        QTimer.singleShot(0, self._restore_autosave_session)
 
     def _autosave_path(self) -> Path:
         path = Path(self._config.autosave.path)
@@ -1018,7 +1054,7 @@ class MainWindow(QMainWindow):
         )
         return trajectory_id
 
-    def _start_rebuild_job(self) -> None:
+    def _start_rebuild_job(self, job_message: str = "Starting rebuild...") -> None:
         self._trajectory_orbits = {}
         self._trajectory_geometries = {}
         self.update_view()
@@ -1034,7 +1070,8 @@ class MainWindow(QMainWindow):
                 ),
                 chunk_size=self._config.background.build_chunk_size,
                 seeds=sorted(self._trajectory_seeds.values(), key=lambda item: item.id),
-            )
+            ),
+            start_message=job_message,
         )
 
     def _start_scan_job(
@@ -1092,7 +1129,11 @@ class MainWindow(QMainWindow):
         self._job_generation += 1
         return self._job_generation
 
-    def _start_worker(self, worker: OrbitBuildWorker) -> None:
+    def _start_worker(
+        self,
+        worker: OrbitBuildWorker,
+        start_message: str = "Starting background job...",
+    ) -> None:
         self._cancel_current_job()
         thread = QThread(self)
         worker.moveToThread(thread)
@@ -1113,7 +1154,7 @@ class MainWindow(QMainWindow):
                 status="running",
                 current=0,
                 total=0,
-                message="Starting background job...",
+                message=start_message,
             )
         )
         thread.start()
@@ -1131,11 +1172,14 @@ class MainWindow(QMainWindow):
         percent = int((current / total) * 100.0) if total > 0 else 0
         self._job_status_state = progress.status
         if progress.status in ("running", "partial"):
+            self._job_last_percent = percent
+        if progress.status in ("running", "partial"):
             self._job_status_message = f"{progress.message} | Press Esc to cancel"
         else:
             self._job_status_message = progress.message
         self._status_label.setText(self._job_status_message)
         self._status_progress.setValue(percent)
+        self._status_progress.setVisible(progress.status in ("running", "partial"))
         self.controls_panel.set_job_status(
             status=self._job_status_state,
             message=self._job_status_message,
@@ -1192,8 +1236,14 @@ class MainWindow(QMainWindow):
             return
         self._flush_partial_updates()
         self._job_status_state = payload.status
-        self._job_status_message = payload.message
+        if payload.status == "cancelled":
+            self._job_status_message = (
+                f"{payload.message} at {self._job_last_percent}%"
+            )
+        else:
+            self._job_status_message = payload.message
         self._status_label.setText(self._job_status_message)
+        self._status_progress.setVisible(False)
         self._status_progress.setValue(100 if payload.status == "done" else 0)
         self.controls_panel.set_job_status(
             status=self._job_status_state,
