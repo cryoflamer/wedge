@@ -277,6 +277,9 @@ class MainWindow(QMainWindow):
         self.controls_panel.phase_grid_visibility_changed.connect(
             self._on_phase_grid_visibility_changed
         )
+        self.controls_panel.seed_markers_visibility_changed.connect(
+            self._on_seed_markers_visibility_changed
+        )
         self.controls_panel.region_visibility_changed.connect(
             self._on_region_visibility_changed
         )
@@ -537,6 +540,10 @@ class MainWindow(QMainWindow):
         self._config.view.show_phase_grid = show_grid
         self._config.view.show_phase_minor_grid = show_minor_grid
         self._config.view.phase_grid.show_minor = show_minor_grid
+        self.update_view()
+
+    def _on_seed_markers_visibility_changed(self, enabled: bool) -> None:
+        self._config.view.show_seed_markers = enabled
         self.update_view()
 
     def _on_branch_markers_changed(self, enabled: bool) -> None:
@@ -933,6 +940,7 @@ class MainWindow(QMainWindow):
             symmetric_mode=self._symmetric_mode,
             export_mode=self.controls_panel.export_mode(),
             phase_fixed_domain=self.phase_panel_wall_1.is_fixed_domain_mode(),
+            show_seed_markers=self._config.view.show_seed_markers,
             phase_viewport_wall_1=self.phase_panel_wall_1.viewport(),
             phase_viewport_wall_2=self.phase_panel_wall_2.viewport(),
         )
@@ -955,6 +963,7 @@ class MainWindow(QMainWindow):
         self._angle_units = session.angle_units
         self._symmetric_mode = session.symmetric_mode
         self._config.export.default_mode = session.export_mode
+        self._config.view.show_seed_markers = session.show_seed_markers
 
         self._trajectory_seeds = {
             seed.id: TrajectorySeed(

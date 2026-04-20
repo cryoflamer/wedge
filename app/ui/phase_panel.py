@@ -466,6 +466,7 @@ class PhasePanel(QWidget):
 
         painter.restore()
         self._draw_axis_labels(painter, plot)
+        self._draw_seed_markers(painter)
         if hover_label_text is not None:
             self._draw_hover_label(painter, plot, hover_label_text)
 
@@ -665,6 +666,37 @@ class PhasePanel(QWidget):
             return
 
         painter.drawEllipse(canvas_point, radius, radius)
+
+    def _draw_seed_markers(self, painter: QPainter) -> None:
+        if not self._view_config.show_seed_markers:
+            return
+
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        for trajectory_id, seed in self._seeds.items():
+            if not seed.visible or seed.wall_start != self.wall:
+                continue
+
+            center = self._to_canvas(seed.d0, seed.tau0)
+            is_selected = trajectory_id == self._selected_trajectory_id
+            base_color = QColor(seed.color)
+
+            outer_radius = 6 if is_selected else 5
+            inner_radius = 3 if is_selected else 2
+
+            painter.setPen(QPen(QColor("#111111"), 2 if is_selected else 1.5))
+            painter.setBrush(QColor("#ffffff"))
+            painter.drawEllipse(center, outer_radius, outer_radius)
+
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(base_color)
+            painter.drawEllipse(center, inner_radius, inner_radius)
+
+            if is_selected:
+                painter.setPen(QPen(base_color, 1.5))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawEllipse(center, outer_radius + 2, outer_radius + 2)
+        painter.restore()
 
     def _draw_diamond(
         self,

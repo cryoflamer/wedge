@@ -75,6 +75,7 @@ class ControlsPanel(QWidget):
     symmetric_mode_changed = Signal(bool)
     export_mode_changed = Signal(str)
     phase_grid_visibility_changed = Signal(bool, bool)
+    seed_markers_visibility_changed = Signal(bool)
     region_visibility_changed = Signal(bool, bool, bool)
     branch_markers_changed = Signal(bool)
     heatmap_settings_changed = Signal(bool, str, int, str)
@@ -102,6 +103,7 @@ class ControlsPanel(QWidget):
         self._symmetric_mode_checkbox = QCheckBox("Symmetric wedge mode")
         self._show_phase_grid_checkbox = QCheckBox("Show grid")
         self._show_phase_minor_grid_checkbox = QCheckBox("Show minor grid")
+        self._show_seed_markers_checkbox = QCheckBox("Show seed markers")
         self._show_regions_checkbox = QCheckBox("Show regions")
         self._show_region_labels_checkbox = QCheckBox("Show region labels")
         self._show_region_legend_checkbox = QCheckBox("Show legend")
@@ -171,6 +173,9 @@ class ControlsPanel(QWidget):
         )
         self._show_phase_minor_grid_checkbox.toggled.connect(
             self._emit_phase_grid_visibility
+        )
+        self._show_seed_markers_checkbox.toggled.connect(
+            self.seed_markers_visibility_changed.emit
         )
         self._show_region_labels_checkbox.toggled.connect(self._emit_region_visibility)
         self._show_region_legend_checkbox.toggled.connect(self._emit_region_visibility)
@@ -301,6 +306,7 @@ class ControlsPanel(QWidget):
         right_layout.setSpacing(4)
         right_layout.addWidget(self._symmetric_mode_checkbox)
         right_layout.addWidget(self._fixed_domain_checkbox)
+        right_layout.addWidget(self._show_seed_markers_checkbox)
         right_layout.addWidget(self._show_regions_checkbox)
         right_layout.addWidget(self._show_region_labels_checkbox)
         right_layout.addWidget(self._show_region_legend_checkbox)
@@ -504,6 +510,7 @@ class ControlsPanel(QWidget):
             show_grid=config.view.show_phase_grid,
             show_minor_grid=config.view.show_phase_minor_grid,
         )
+        self.set_seed_markers_enabled(config.view.show_seed_markers)
         self.set_heatmap_settings(
             show_heatmap=config.view.show_heatmap,
             mode=config.view.heatmap_mode,
@@ -572,6 +579,11 @@ class ControlsPanel(QWidget):
         self._show_phase_minor_grid_checkbox.setChecked(show_minor_grid)
         self._show_phase_minor_grid_checkbox.setEnabled(show_grid)
         del blockers
+
+    def set_seed_markers_enabled(self, enabled: bool) -> None:
+        blocker = QSignalBlocker(self._show_seed_markers_checkbox)
+        self._show_seed_markers_checkbox.setChecked(enabled)
+        del blocker
 
     def set_heatmap_settings(
         self,
@@ -920,6 +932,7 @@ class ControlsPanel(QWidget):
             self._show_phase_minor_grid_checkbox,
             "show_phase_minor_grid",
         )
+        apply_tooltip(self._show_seed_markers_checkbox, "show_seed_markers")
         apply_tooltip(self._show_regions_checkbox, "show_regions")
         apply_tooltip(self._show_region_labels_checkbox, "show_region_labels")
         apply_tooltip(self._show_region_legend_checkbox, "show_region_legend")
