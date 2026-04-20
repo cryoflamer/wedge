@@ -148,6 +148,17 @@ class OrbitBuildWorker(QObject):
             return
 
         seed = self._seeds[0]
+        total_steps = max(self._phase_steps - 1, 1)
+        self.progress.emit(
+            JobProgress(
+                generation_id=self._generation_id,
+                job_kind=self._job_kind,
+                status="running",
+                current=0,
+                total=total_steps,
+                message=f"Building trajectory #{seed.id}",
+            )
+        )
         for orbit, done in iter_orbit_chunks(
             seed=seed,
             config=self._simulation_config,
@@ -197,11 +208,11 @@ class OrbitBuildWorker(QObject):
                     generation_id=self._generation_id,
                     job_kind=self._job_kind,
                     status="done" if done else "partial",
-                    current=len(orbit.points),
-                    total=self._phase_steps,
+                    current=max(len(orbit.points) - 1, 0),
+                    total=total_steps,
                     message=(
                         f"Building trajectory #{seed.id}: "
-                        f"{len(orbit.points)} / {self._phase_steps}"
+                        f"{max(len(orbit.points) - 1, 0)} / {total_steps}"
                     ),
                 )
             )
@@ -228,6 +239,18 @@ class OrbitBuildWorker(QObject):
 
     def _run_rebuild(self) -> None:
         total = max(len(self._seeds), 1)
+        steps_per_seed = max(self._phase_steps - 1, 1)
+        total_work = max(len(self._seeds) * steps_per_seed, 1)
+        self.progress.emit(
+            JobProgress(
+                generation_id=self._generation_id,
+                job_kind=self._job_kind,
+                status="running",
+                current=0,
+                total=total_work,
+                message=f"Rebuilding 0 / {total}",
+            )
+        )
         for seed_index, seed in enumerate(self._seeds, start=1):
             if self._is_cancel_requested():
                 self.finished.emit(
@@ -291,11 +314,13 @@ class OrbitBuildWorker(QObject):
                         generation_id=self._generation_id,
                         job_kind=self._job_kind,
                         status="done" if done and seed_index == total else "partial",
-                        current=seed_index,
-                        total=total,
+                        current=((seed_index - 1) * steps_per_seed)
+                        + max(len(orbit.points) - 1, 0),
+                        total=total_work,
                         message=(
                             f"Rebuilding {seed_index} / {total}: "
-                            f"trajectory #{seed.id} ({len(orbit.points)} / {self._phase_steps})"
+                            f"trajectory #{seed.id} "
+                            f"({max(len(orbit.points) - 1, 0)} / {steps_per_seed})"
                         ),
                     )
                 )
@@ -334,6 +359,18 @@ class OrbitBuildWorker(QObject):
         )
 
         total = max(len(generated_points), 1)
+        steps_per_seed = max(self._phase_steps - 1, 1)
+        total_work = max(total * steps_per_seed, 1)
+        self.progress.emit(
+            JobProgress(
+                generation_id=self._generation_id,
+                job_kind=self._job_kind,
+                status="running",
+                current=0,
+                total=total_work,
+                message=f"Scanning 0 / {total}",
+            )
+        )
         added = 0
         for point_index, (d_value, tau_value) in enumerate(generated_points, start=1):
             if self._is_cancel_requested():
@@ -353,8 +390,8 @@ class OrbitBuildWorker(QObject):
                         generation_id=self._generation_id,
                         job_kind=self._job_kind,
                         status="partial",
-                        current=point_index,
-                        total=total,
+                        current=(point_index - 1) * steps_per_seed,
+                        total=total_work,
                         message=f"Scanning {point_index} / {total}: skipped outside domain",
                     )
                 )
@@ -426,11 +463,13 @@ class OrbitBuildWorker(QObject):
                         generation_id=self._generation_id,
                         job_kind=self._job_kind,
                         status="done" if done and point_index == total else "partial",
-                        current=point_index,
-                        total=total,
+                        current=((point_index - 1) * steps_per_seed)
+                        + max(len(orbit.points) - 1, 0),
+                        total=total_work,
                         message=(
                             f"Scanning {point_index} / {total}: "
-                            f"trajectory #{seed.id} ({len(orbit.points)} / {self._phase_steps})"
+                            f"trajectory #{seed.id} "
+                            f"({max(len(orbit.points) - 1, 0)} / {steps_per_seed})"
                         ),
                     )
                 )
