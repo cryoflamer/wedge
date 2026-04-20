@@ -5,7 +5,7 @@ import logging
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Qt
+from PySide6.QtCore import QEvent, QObject, QThread, Qt
 from PySide6.QtGui import QCloseEvent, QKeyEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -103,6 +103,7 @@ class MainWindow(QMainWindow):
         )
         self.controls_scroll.setWidget(self.controls_panel)
         self._cancel_job_shortcut = QShortcut(QKeySequence(Qt.Key_Escape), self)
+        self._cancel_job_shortcut.setContext(Qt.ApplicationShortcut)
         self._cancel_job_shortcut.activated.connect(self._on_cancel_shortcut)
         self.replay_controller = ReplayController(
             delay_ms=config.replay.delay_ms,
@@ -111,6 +112,7 @@ class MainWindow(QMainWindow):
 
         self._build_layout()
         self._build_status_bar()
+        QApplication.instance().installEventFilter(self)
         self._connect_signals()
         self.update_view()
         self._restore_autosave_session()
@@ -167,6 +169,22 @@ class MainWindow(QMainWindow):
             event.accept()
             return
         super().keyPressEvent(event)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if (
+            event.type() == QEvent.KeyPress
+            and isinstance(event, QKeyEvent)
+            and event.key() == Qt.Key_Escape
+        ):
+            logger.info(
+                "Escape eventFilter received: watched=%s job_active=%s",
+                type(watched).__name__,
+                self._current_job_worker is not None,
+            )
+            self._cancel_current_job()
+            event.accept()
+            return True
+        return super().eventFilter(watched, event)
 
     def _build_layout(self) -> None:
         central = QWidget()
