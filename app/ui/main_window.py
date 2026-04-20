@@ -265,6 +265,18 @@ class MainWindow(QMainWindow):
     def _connect_signals(self) -> None:
         self.phase_panel_wall_1.clicked.connect(self._on_phase_click)
         self.phase_panel_wall_2.clicked.connect(self._on_phase_click)
+        self.phase_panel_wall_1.seed_drag_started.connect(
+            self._on_seed_drag_started
+        )
+        self.phase_panel_wall_2.seed_drag_started.connect(
+            self._on_seed_drag_started
+        )
+        self.phase_panel_wall_1.seed_drag_finished.connect(
+            self._on_seed_drag_finished
+        )
+        self.phase_panel_wall_2.seed_drag_finished.connect(
+            self._on_seed_drag_finished
+        )
         self.phase_panel_wall_1.viewport_changed.connect(self._on_phase_viewport_changed)
         self.phase_panel_wall_2.viewport_changed.connect(self._on_phase_viewport_changed)
         self.angle_panel.point_selected.connect(self._on_angle_click)
@@ -490,6 +502,35 @@ class MainWindow(QMainWindow):
         )
         self._autosave_session()
         self.update_view()
+
+    def _on_seed_drag_started(self, trajectory_id: int) -> None:
+        if trajectory_id != self._selected_trajectory_id:
+            self._selected_trajectory_id = trajectory_id
+            self._reset_replay_views()
+            self.update_view()
+
+    def _on_seed_drag_finished(
+        self,
+        trajectory_id: int,
+        d_value: float,
+        tau_value: float,
+    ) -> None:
+        seed = self._trajectory_seeds.get(trajectory_id)
+        if seed is None:
+            return
+
+        seed.d0 = d_value
+        seed.tau0 = tau_value
+        self._selected_trajectory_id = trajectory_id
+        self._reset_replay_views()
+        self._trajectory_orbits[trajectory_id] = Orbit(trajectory_id=trajectory_id)
+        self._trajectory_geometries[trajectory_id] = WedgeGeometry()
+        self.update_view()
+        self._start_single_seed_rebuild(
+            seed,
+            start_message=f"Rebuilding trajectory #{trajectory_id}",
+        )
+        self._autosave_session()
 
     def _on_angle_click(self, alpha: float, beta: float) -> None:
         self._on_parameters_changed(
@@ -1168,6 +1209,17 @@ class MainWindow(QMainWindow):
             self._selected_trajectory_id = trajectory_id
         self._reset_replay_views()
         self.update_view()
+        self._start_single_seed_rebuild(
+            seed,
+            start_message=f"Building trajectory #{seed.id}",
+        )
+        return trajectory_id
+
+    def _start_single_seed_rebuild(
+        self,
+        seed: TrajectorySeed,
+        start_message: str,
+    ) -> None:
         self._start_worker(
             OrbitBuildWorker(
                 generation_id=self._next_generation_id(),
@@ -1180,16 +1232,16 @@ class MainWindow(QMainWindow):
                 ),
                 chunk_size=self._config.background.build_chunk_size,
                 seeds=[seed],
+                existing_orbits={seed.id: self._trajectory_orbits.get(seed.id, Orbit(trajectory_id=seed.id))},
             ),
-            start_message=f"Building trajectory #{seed.id}",
+            start_message=start_message,
             resumable_payload={
                 "job_kind": "single_build",
                 "seeds": [seed],
-                "start_message": f"Building trajectory #{seed.id}",
+                "start_message": start_message,
                 "title": f"Trajectory #{seed.id}",
             },
         )
-        return trajectory_id
 
     def _start_rebuild_job(self, job_message: str = "Starting rebuild...") -> None:
         self._trajectory_orbits = {}
