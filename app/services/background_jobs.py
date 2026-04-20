@@ -33,6 +33,9 @@ class OrbitPartialResult:
     orbit: Orbit
     geometry: WedgeGeometry
     replace: bool
+    current: int
+    total: int
+    message: str
 
 
 @dataclass(frozen=True)
@@ -201,6 +204,12 @@ class OrbitBuildWorker(QObject):
                     orbit=orbit,
                     geometry=geometry,
                     replace=True,
+                    current=max(len(orbit.points) - 1, 0),
+                    total=total_steps,
+                    message=(
+                        f"Building trajectory #{seed.id}: "
+                        f"{max(len(orbit.points) - 1, 0)} / {total_steps}"
+                    ),
                 )
             )
             self.progress.emit(
@@ -307,6 +316,14 @@ class OrbitBuildWorker(QObject):
                         orbit=orbit,
                         geometry=geometry,
                         replace=True,
+                        current=((seed_index - 1) * steps_per_seed)
+                        + max(len(orbit.points) - 1, 0),
+                        total=total_work,
+                        message=(
+                            f"Rebuilding {seed_index} / {total}: "
+                            f"trajectory #{seed.id} "
+                            f"({max(len(orbit.points) - 1, 0)} / {steps_per_seed})"
+                        ),
                     )
                 )
                 self.progress.emit(
@@ -456,6 +473,14 @@ class OrbitBuildWorker(QObject):
                         orbit=orbit,
                         geometry=geometry,
                         replace=False,
+                        current=((point_index - 1) * steps_per_seed)
+                        + max(len(orbit.points) - 1, 0),
+                        total=total_work,
+                        message=(
+                            f"Scanning {point_index} / {total}: "
+                            f"trajectory #{seed.id} "
+                            f"({max(len(orbit.points) - 1, 0)} / {steps_per_seed})"
+                        ),
                     )
                 )
                 self.progress.emit(

@@ -79,6 +79,7 @@ class MainWindow(QMainWindow):
         self._job_status_message = "Idle"
         self._job_last_percent = 0
         self._pending_partial_results: deque[OrbitPartialResult] = deque()
+        self._pending_finished_payload: JobFinished | None = None
         self._autosave_restore_scheduled = False
 
         self.setWindowTitle(config.app.title)
@@ -619,6 +620,7 @@ class MainWindow(QMainWindow):
         self._current_job_thread = None
         self._pending_partial_results.clear()
         self._partial_update_timer.stop()
+        self._pending_finished_payload = None
         self._job_status_state = "cancelled"
         self._job_status_message = (
             f"Job interrupted at {self._job_last_percent}%"
@@ -1177,6 +1179,20 @@ class MainWindow(QMainWindow):
             return
         if progress.generation_id != self._job_generation:
             return
+        if progress.job_kind in ("single_build", "rebuild", "scan"):
+            if progress.status in ("running", "partial"):
+                self._job_status_state = progress.status
+                self._job_status_message = (
+                    f"{progress.message} | Press Esc to cancel"
+                )
+                self._status_label.setText(self._job_status_message)
+                self._status_progress.setVisible(True)
+                self.controls_panel.set_job_status(
+                    status=self._job_status_state,
+                    message=self._job_status_message,
+                    cancellable=self._current_job_worker is not None,
+                )
+            return
         self._set_job_progress(progress)
 
     def _set_job_progress(self, progress: JobProgress) -> None:
@@ -1210,14 +1226,30 @@ class MainWindow(QMainWindow):
 
     def _flush_partial_updates(self) -> None:
         if not self._pending_partial_results:
+            if self._pending_finished_payload is not None:
+                self._finalize_finished_job(self._pending_finished_payload)
+                self._pending_finished_payload = None
             return
         payload = self._pending_partial_results.popleft()
         self._apply_partial_payload(payload)
+        self._set_job_progress(
+            JobProgress(
+                generation_id=payload.generation_id,
+                job_kind="display",
+                status="partial" if self._pending_partial_results else "running",
+                current=payload.current,
+                total=payload.total,
+                message=payload.message,
+            )
+        )
         self._update_trajectory_views()
         self._update_panel_views()
         self._update_status_view()
         if self._pending_partial_results:
             self._partial_update_timer.start()
+        elif self._pending_finished_payload is not None:
+            self._finalize_finished_job(self._pending_finished_payload)
+            self._pending_finished_payload = None
 
     def _apply_partial_payload(self, payload: OrbitPartialResult) -> None:
         self._trajectory_seeds[payload.trajectory_id] = payload.seed
@@ -1252,8 +1284,14 @@ class MainWindow(QMainWindow):
             return
         if payload.generation_id != self._job_generation:
             return
-        while self._pending_partial_results:
-            self._apply_partial_payload(self._pending_partial_results.popleft())
+        if self._pending_partial_results:
+            self._pending_finished_payload = payload
+            if not self._partial_update_timer.isActive():
+                self._partial_update_timer.start()
+            return
+        self._finalize_finished_job(payload)
+
+    def _finalize_finished_job(self, payload: JobFinished) -> None:
         self._job_status_state = payload.status
         if payload.status == "cancelled":
             self._job_status_message = (
