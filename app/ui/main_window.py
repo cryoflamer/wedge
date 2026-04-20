@@ -668,7 +668,6 @@ class MainWindow(QMainWindow):
         )
         self._status_label.setText(self._job_status_message)
         self._status_progress.setVisible(self._resumable_job_payload is not None)
-        self.controls_panel.expand_scan_section()
         self.controls_panel.set_job_status(
             status=self._job_status_state,
             message=self._job_status_message,
