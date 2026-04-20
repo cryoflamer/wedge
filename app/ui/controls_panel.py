@@ -306,6 +306,7 @@ class ControlsPanel(QWidget):
         right_layout.setSpacing(4)
         right_layout.addWidget(self._symmetric_mode_checkbox)
         right_layout.addWidget(self._fixed_domain_checkbox)
+        right_layout.addWidget(self._show_seed_markers_checkbox)
         right_layout.addWidget(self._show_regions_checkbox)
         right_layout.addWidget(self._show_region_labels_checkbox)
         right_layout.addWidget(self._show_region_legend_checkbox)
@@ -417,7 +418,6 @@ class ControlsPanel(QWidget):
         view_layout = view_section.content_layout()
         view_layout.addWidget(self._show_phase_grid_checkbox)
         view_layout.addWidget(self._show_phase_minor_grid_checkbox)
-        view_layout.addWidget(self._show_seed_markers_checkbox)
         for checkbox in (
             self._show_regions_checkbox,
             self._show_region_labels_checkbox,
