@@ -274,6 +274,9 @@ class MainWindow(QMainWindow):
             self._on_symmetric_mode_changed
         )
         self.controls_panel.export_mode_changed.connect(self._on_export_mode_changed)
+        self.controls_panel.phase_grid_visibility_changed.connect(
+            self._on_phase_grid_visibility_changed
+        )
         self.controls_panel.region_visibility_changed.connect(
             self._on_region_visibility_changed
         )
@@ -524,6 +527,16 @@ class MainWindow(QMainWindow):
         self._config.view.show_regions = show_regions
         self._config.view.show_region_labels = show_labels
         self._config.view.show_region_legend = show_legend
+        self.update_view()
+
+    def _on_phase_grid_visibility_changed(
+        self,
+        show_grid: bool,
+        show_minor_grid: bool,
+    ) -> None:
+        self._config.view.show_phase_grid = show_grid
+        self._config.view.show_phase_minor_grid = show_minor_grid
+        self._config.view.phase_grid.show_minor = show_minor_grid
         self.update_view()
 
     def _on_branch_markers_changed(self, enabled: bool) -> None:

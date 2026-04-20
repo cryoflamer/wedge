@@ -74,6 +74,7 @@ class ControlsPanel(QWidget):
     angle_units_changed = Signal(str)
     symmetric_mode_changed = Signal(bool)
     export_mode_changed = Signal(str)
+    phase_grid_visibility_changed = Signal(bool, bool)
     region_visibility_changed = Signal(bool, bool, bool)
     branch_markers_changed = Signal(bool)
     heatmap_settings_changed = Signal(bool, str, int, str)
@@ -99,6 +100,8 @@ class ControlsPanel(QWidget):
         self._n_geom_edit = QLineEdit()
         self._fixed_domain_checkbox = QCheckBox("Fixed domain (disable for zoom/pan)")
         self._symmetric_mode_checkbox = QCheckBox("Symmetric wedge mode")
+        self._show_phase_grid_checkbox = QCheckBox("Show grid")
+        self._show_phase_minor_grid_checkbox = QCheckBox("Show minor grid")
         self._show_regions_checkbox = QCheckBox("Show regions")
         self._show_region_labels_checkbox = QCheckBox("Show region labels")
         self._show_region_legend_checkbox = QCheckBox("Show legend")
@@ -163,6 +166,12 @@ class ControlsPanel(QWidget):
             self._on_symmetric_mode_toggled
         )
         self._show_regions_checkbox.toggled.connect(self._emit_region_visibility)
+        self._show_phase_grid_checkbox.toggled.connect(
+            self._emit_phase_grid_visibility
+        )
+        self._show_phase_minor_grid_checkbox.toggled.connect(
+            self._emit_phase_grid_visibility
+        )
         self._show_region_labels_checkbox.toggled.connect(self._emit_region_visibility)
         self._show_region_legend_checkbox.toggled.connect(self._emit_region_visibility)
         self._show_branch_markers_checkbox.toggled.connect(
@@ -401,6 +410,8 @@ class ControlsPanel(QWidget):
         view_section = CollapsibleSection("View options", expanded=False)
         view_section.set_tooltip("show_regions")
         view_layout = view_section.content_layout()
+        view_layout.addWidget(self._show_phase_grid_checkbox)
+        view_layout.addWidget(self._show_phase_minor_grid_checkbox)
         for checkbox in (
             self._show_regions_checkbox,
             self._show_region_labels_checkbox,
@@ -489,6 +500,10 @@ class ControlsPanel(QWidget):
             show_legend=config.view.show_region_legend,
         )
         self.set_branch_markers_enabled(config.view.show_branch_markers)
+        self.set_phase_grid_options(
+            show_grid=config.view.show_phase_grid,
+            show_minor_grid=config.view.show_phase_minor_grid,
+        )
         self.set_heatmap_settings(
             show_heatmap=config.view.show_heatmap,
             mode=config.view.heatmap_mode,
@@ -543,6 +558,20 @@ class ControlsPanel(QWidget):
         blocker = QSignalBlocker(self._show_branch_markers_checkbox)
         self._show_branch_markers_checkbox.setChecked(enabled)
         del blocker
+
+    def set_phase_grid_options(
+        self,
+        show_grid: bool,
+        show_minor_grid: bool,
+    ) -> None:
+        blockers = [
+            QSignalBlocker(self._show_phase_grid_checkbox),
+            QSignalBlocker(self._show_phase_minor_grid_checkbox),
+        ]
+        self._show_phase_grid_checkbox.setChecked(show_grid)
+        self._show_phase_minor_grid_checkbox.setChecked(show_minor_grid)
+        self._show_phase_minor_grid_checkbox.setEnabled(show_grid)
+        del blockers
 
     def set_heatmap_settings(
         self,
@@ -827,6 +856,14 @@ class ControlsPanel(QWidget):
             self._show_region_legend_checkbox.isChecked(),
         )
 
+    def _emit_phase_grid_visibility(self) -> None:
+        show_grid = self._show_phase_grid_checkbox.isChecked()
+        self._show_phase_minor_grid_checkbox.setEnabled(show_grid)
+        self.phase_grid_visibility_changed.emit(
+            show_grid,
+            show_grid and self._show_phase_minor_grid_checkbox.isChecked(),
+        )
+
     def _emit_heatmap_settings(self) -> None:
         self.heatmap_settings_changed.emit(
             self._show_heatmap_checkbox.isChecked(),
@@ -878,6 +915,11 @@ class ControlsPanel(QWidget):
         apply_tooltip(self._n_geom_edit, "n_geom_edit")
         apply_tooltip(self._symmetric_mode_checkbox, "symmetric_mode")
         apply_tooltip(self._fixed_domain_checkbox, "fixed_domain")
+        apply_tooltip(self._show_phase_grid_checkbox, "show_phase_grid")
+        apply_tooltip(
+            self._show_phase_minor_grid_checkbox,
+            "show_phase_minor_grid",
+        )
         apply_tooltip(self._show_regions_checkbox, "show_regions")
         apply_tooltip(self._show_region_labels_checkbox, "show_region_labels")
         apply_tooltip(self._show_region_legend_checkbox, "show_region_legend")

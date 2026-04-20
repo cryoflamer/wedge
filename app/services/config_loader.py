@@ -11,6 +11,7 @@ from app.models.config import (
     Config,
     ExportConfig,
     LyapunovConfig,
+    PhaseGridConfig,
     ReplayConfig,
     SimulationConfig,
     ViewConfig,
@@ -32,6 +33,7 @@ def load_config(path: str | Path) -> Config:
     lyapunov_data = data.get("lyapunov", {})
     export_data = data.get("export", {})
     view_data = data.get("view", {})
+    phase_grid_data = view_data.get("phase_grid", {})
     window_data = data.get("window", {})
     autosave_data = data.get("autosave", {})
     regions_data = data.get("regions", [])
@@ -77,7 +79,33 @@ def load_config(path: str | Path) -> Config:
             ],
         ),
         view=ViewConfig(
-            show_grid=bool(view_data.get("show_grid", True)),
+            show_phase_grid=bool(
+                view_data.get(
+                    "show_phase_grid",
+                    view_data.get("show_grid", True),
+                )
+            ),
+            show_phase_minor_grid=bool(
+                view_data.get(
+                    "show_phase_minor_grid",
+                    phase_grid_data.get("show_minor", False),
+                )
+            ),
+            phase_grid=PhaseGridConfig(
+                major_step_d=float(phase_grid_data.get("major_step_d", 0.1)),
+                major_step_tau=float(phase_grid_data.get("major_step_tau", 0.1)),
+                minor_step_d=float(phase_grid_data.get("minor_step_d", 0.05)),
+                minor_step_tau=float(phase_grid_data.get("minor_step_tau", 0.05)),
+                show_minor=bool(phase_grid_data.get("show_minor", False)),
+                major_color=str(phase_grid_data.get("major_color", "#cccccc")),
+                minor_color=str(phase_grid_data.get("minor_color", "#e6e6e6")),
+                major_width=float(phase_grid_data.get("major_width", 1.0)),
+                minor_width=float(phase_grid_data.get("minor_width", 0.6)),
+                major_alpha=float(phase_grid_data.get("major_alpha", 0.8)),
+                minor_alpha=float(phase_grid_data.get("minor_alpha", 0.5)),
+                major_style=str(phase_grid_data.get("major_style", "solid")),
+                minor_style=str(phase_grid_data.get("minor_style", "dotted")),
+            ),
             show_labels=bool(view_data.get("show_labels", True)),
             show_directrix=bool(view_data.get("show_directrix", False)),
             show_reflection_points=bool(
