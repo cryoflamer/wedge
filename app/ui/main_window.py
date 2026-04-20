@@ -272,6 +272,7 @@ class MainWindow(QMainWindow):
         self.controls_panel.manual_seed_requested.connect(self._on_manual_seed_requested)
         self.controls_panel.cancel_job_requested.connect(self._cancel_current_job)
         self.controls_panel.resume_job_requested.connect(self._resume_last_job)
+        self.controls_panel.fast_build_changed.connect(self._on_fast_build_changed)
         self.replay_controller.state_changed.connect(self._on_replay_state_changed)
 
     def update_view(self) -> None:
@@ -469,6 +470,11 @@ class MainWindow(QMainWindow):
         self._config.view.heatmap_normalization = normalization
         self.update_view()
 
+    def _on_fast_build_changed(self, enabled: bool) -> None:
+        self._config.background.fast_build = enabled
+        self._autosave_session()
+        self.update_view()
+
     def _on_compute_lyapunov(self) -> None:
         if self._selected_trajectory_id is None:
             self.controls_panel.set_lyapunov_status("failed", 0, None, "no_selection")
@@ -629,7 +635,7 @@ class MainWindow(QMainWindow):
             f"Job interrupted at {self._job_last_percent}%"
         )
         self._status_label.setText(self._job_status_message)
-        self._status_progress.hide()
+        self._status_progress.setVisible(self._resumable_job_payload is not None)
         self.controls_panel.set_job_status(
             status=self._job_status_state,
             message=self._job_status_message,
@@ -1234,6 +1240,19 @@ class MainWindow(QMainWindow):
             return
         if payload.generation_id != self._job_generation:
             return
+        if self._config.background.fast_build:
+            self._apply_partial_payload(payload)
+            self._set_job_progress(
+                JobProgress(
+                    generation_id=payload.generation_id,
+                    job_kind="display",
+                    status="running",
+                    current=payload.current,
+                    total=payload.total,
+                    message=payload.message,
+                )
+            )
+            return
         self._pending_partial_results.append(payload)
         if not self._partial_update_timer.isActive():
             self._partial_update_timer.start()
@@ -1297,6 +1316,9 @@ class MainWindow(QMainWindow):
         if not isinstance(payload, JobFinished):
             return
         if payload.generation_id != self._job_generation:
+            return
+        if self._config.background.fast_build:
+            self._finalize_finished_job(payload)
             return
         if self._pending_partial_results:
             self._pending_finished_payload = payload

@@ -44,6 +44,7 @@ class ControlsPanel(QWidget):
     manual_seed_requested = Signal(int, float, float)
     cancel_job_requested = Signal()
     resume_job_requested = Signal()
+    fast_build_changed = Signal(bool)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -54,6 +55,7 @@ class ControlsPanel(QWidget):
         self._n_phase_edit = QLineEdit()
         self._n_geom_edit = QLineEdit()
         self._fixed_domain_checkbox = QCheckBox("Fixed domain (disable for zoom/pan)")
+        self._fast_build_checkbox = QCheckBox("Fast build")
         self._symmetric_mode_checkbox = QCheckBox("Symmetric wedge mode")
         self._show_regions_checkbox = QCheckBox("Show regions")
         self._show_region_labels_checkbox = QCheckBox("Show region labels")
@@ -110,6 +112,7 @@ class ControlsPanel(QWidget):
         self._fixed_domain_checkbox.toggled.connect(
             self.phase_view_mode_changed.emit
         )
+        self._fast_build_checkbox.toggled.connect(self.fast_build_changed.emit)
         self._symmetric_mode_checkbox.toggled.connect(
             self._on_symmetric_mode_toggled
         )
@@ -247,6 +250,7 @@ class ControlsPanel(QWidget):
         right_layout.setSpacing(4)
         right_layout.addWidget(self._symmetric_mode_checkbox)
         right_layout.addWidget(self._fixed_domain_checkbox)
+        right_layout.addWidget(self._fast_build_checkbox)
         right_layout.addWidget(self._show_regions_checkbox)
         right_layout.addWidget(self._show_region_labels_checkbox)
         right_layout.addWidget(self._show_region_legend_checkbox)
@@ -364,6 +368,9 @@ class ControlsPanel(QWidget):
             resolution=config.view.heatmap_resolution,
             normalization=config.view.heatmap_normalization,
         )
+        blocker = QSignalBlocker(self._fast_build_checkbox)
+        self._fast_build_checkbox.setChecked(config.background.fast_build)
+        del blocker
 
     def set_angle_units(self, units: str) -> None:
         normalized_units = units.strip().lower() if units.strip() else "rad"

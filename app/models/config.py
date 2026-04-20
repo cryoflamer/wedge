@@ -30,6 +30,7 @@ class ReplayConfig:
 @dataclass
 class BackgroundConfig:
     build_chunk_size: int = 16
+    fast_build: bool = False
 
 
 @dataclass
