@@ -1473,7 +1473,7 @@ class MainWindow(QMainWindow):
                     lambda checked=False, item=payload: self._resume_job(item)
                 )
             self._status_jobs_menu = menu
-            menu.popup(
+            menu.exec(
                 self._status_job_button.mapToGlobal(
                     self._status_job_button.rect().bottomLeft()
                 )
