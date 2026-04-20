@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.core.geometry_builder import build_wedge_geometry
 from app.core.orbit_builder import build_orbit
 from app.models.config import Config
 from app.models.geometry import WedgeGeometry
