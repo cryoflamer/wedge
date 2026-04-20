@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from app.models.config import Config
 from app.services.parameter_parser import parse_real_expression
+from app.ui.tooltips import apply_tooltip, tooltip_text
 
 
 class CollapsibleSection(QWidget):
@@ -58,6 +59,9 @@ class CollapsibleSection(QWidget):
 
     def content_layout(self) -> QVBoxLayout:
         return self._content_layout
+
+    def set_tooltip(self, key: str) -> None:
+        apply_tooltip(self._toggle, key)
 
     def set_expanded(self, expanded: bool) -> None:
         self._toggle.setChecked(expanded)
@@ -197,6 +201,8 @@ class ControlsPanel(QWidget):
             QComboBox.SizeAdjustPolicy.AdjustToContents
         )
         self._trajectory_selector.setIconSize(QSize(12, 12))
+        self._apply_tooltips()
+
     def _build_trajectory_box(self) -> QGroupBox:
         box = QGroupBox("Trajectory")
         layout = QVBoxLayout(box)
@@ -215,22 +221,27 @@ class ControlsPanel(QWidget):
 
         toggle_button = QPushButton("Hide/Show")
         toggle_button.clicked.connect(self._toggle_current_visibility)
+        apply_tooltip(toggle_button, "toggle_visibility")
         actions_grid.addWidget(toggle_button, 0, 0)
 
         clear_selected_button = QPushButton("Clear")
         clear_selected_button.clicked.connect(self.clear_selected_requested.emit)
+        apply_tooltip(clear_selected_button, "clear_selected")
         actions_grid.addWidget(clear_selected_button, 0, 1)
 
         add_button = QPushButton("Add")
         add_button.clicked.connect(self._expand_add_section)
+        apply_tooltip(add_button, "add_seed_shortcut")
         actions_grid.addWidget(add_button, 0, 2)
 
         lyapunov_button = QPushButton("Lyapunov")
         lyapunov_button.clicked.connect(self.compute_lyapunov_requested.emit)
+        apply_tooltip(lyapunov_button, "compute_lyapunov")
         actions_grid.addWidget(lyapunov_button, 1, 0)
 
         clear_all_button = QPushButton("Clear all")
         clear_all_button.clicked.connect(self.clear_all_requested.emit)
+        apply_tooltip(clear_all_button, "clear_all")
         actions_grid.addWidget(clear_all_button, 1, 1)
 
         for button in (
@@ -254,6 +265,7 @@ class ControlsPanel(QWidget):
             self._trajectory_state_summary,
             self._trajectory_lyapunov_summary,
         ):
+            label.setToolTip(tooltip_text("trajectory_summary"))
             summary_layout.addWidget(label)
         layout.addLayout(summary_layout)
         return box
@@ -296,10 +308,12 @@ class ControlsPanel(QWidget):
 
         apply_button = QPushButton("Apply")
         apply_button.clicked.connect(self._emit_parameters)
+        apply_tooltip(apply_button, "apply")
         reset_phase_view_button = QPushButton("Reset phase view")
         reset_phase_view_button.clicked.connect(
             self.reset_phase_view_requested.emit
         )
+        apply_tooltip(reset_phase_view_button, "reset_phase_view")
 
         button_row = QGridLayout()
         button_row.setHorizontalSpacing(6)
@@ -331,6 +345,7 @@ class ControlsPanel(QWidget):
                 lambda checked=False, name=action_name: self.replay_action_requested.emit(name)
             )
             button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            apply_tooltip(button, action_name)
             actions_grid.addWidget(button, index // 3, index % 3)
         layout.addLayout(actions_grid)
 
@@ -340,6 +355,7 @@ class ControlsPanel(QWidget):
         sections: list[QWidget] = []
 
         self._add_section = CollapsibleSection("Add trajectory", expanded=False)
+        self._add_section.set_tooltip("add_trajectory")
         add_form = QFormLayout()
         add_form.setContentsMargins(0, 0, 0, 0)
         add_form.setHorizontalSpacing(6)
@@ -350,6 +366,7 @@ class ControlsPanel(QWidget):
         self._add_section.content_layout().addLayout(add_form)
         add_trajectory_button = QPushButton("Add trajectory")
         add_trajectory_button.clicked.connect(self._emit_manual_seed)
+        apply_tooltip(add_trajectory_button, "add_trajectory")
         add_trajectory_button.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed,
@@ -358,6 +375,7 @@ class ControlsPanel(QWidget):
         sections.append(self._add_section)
 
         scan_section = CollapsibleSection("Scan", expanded=False)
+        scan_section.set_tooltip("run_scan")
         scan_form = QFormLayout()
         scan_form.setContentsMargins(0, 0, 0, 0)
         scan_form.setHorizontalSpacing(6)
@@ -375,11 +393,13 @@ class ControlsPanel(QWidget):
         scan_actions.setVerticalSpacing(4)
         scan_button = QPushButton("Run scan")
         scan_button.clicked.connect(self._emit_scan_request)
+        apply_tooltip(scan_button, "run_scan")
         scan_actions.addWidget(scan_button, 0, 0)
         scan_section.content_layout().addLayout(scan_actions)
         sections.append(scan_section)
 
         view_section = CollapsibleSection("View options", expanded=False)
+        view_section.set_tooltip("show_regions")
         view_layout = view_section.content_layout()
         for checkbox in (
             self._show_regions_checkbox,
@@ -400,6 +420,7 @@ class ControlsPanel(QWidget):
         sections.append(view_section)
 
         export_section = CollapsibleSection("Export", expanded=False)
+        export_section.set_tooltip("export_png")
         export_form = QFormLayout()
         export_form.setContentsMargins(0, 0, 0, 0)
         export_form.setHorizontalSpacing(6)
@@ -413,6 +434,7 @@ class ControlsPanel(QWidget):
         export_actions.setVerticalSpacing(4)
         export_data_button = QPushButton("Export data")
         export_data_button.clicked.connect(self.export_data_requested.emit)
+        apply_tooltip(export_data_button, "export_data")
         export_actions.addWidget(export_data_button, 0, 0)
         export_actions.addWidget(QPushButton("PNG"), 0, 1)
         png_button = export_actions.itemAtPosition(0, 1).widget()
@@ -420,10 +442,12 @@ class ControlsPanel(QWidget):
             png_button.clicked.connect(
                 lambda checked=False: self.replay_action_requested.emit("export_png")
             )
+            apply_tooltip(png_button, "export_png")
         export_section.content_layout().addLayout(export_actions)
         sections.append(export_section)
 
         session_section = CollapsibleSection("Session", expanded=False)
+        session_section.set_tooltip("save_session")
         session_actions = QGridLayout()
         session_actions.setHorizontalSpacing(6)
         session_actions.setVerticalSpacing(4)
@@ -431,10 +455,12 @@ class ControlsPanel(QWidget):
         save_button.clicked.connect(
             lambda checked=False: self.replay_action_requested.emit("save_session")
         )
+        apply_tooltip(save_button, "save_session")
         load_button = QPushButton("Load")
         load_button.clicked.connect(
             lambda checked=False: self.replay_action_requested.emit("load_session")
         )
+        apply_tooltip(load_button, "load_session")
         session_actions.addWidget(save_button, 0, 0)
         session_actions.addWidget(load_button, 0, 1)
         session_section.content_layout().addLayout(session_actions)
@@ -711,10 +737,14 @@ class ControlsPanel(QWidget):
     def _sync_selector_tooltip(self) -> None:
         index = self._trajectory_selector.currentIndex()
         if index < 0:
-            self._trajectory_selector.setToolTip("")
+            self._trajectory_selector.setToolTip(tooltip_text("selected_trajectory"))
             return
         tooltip = self._trajectory_selector.itemData(index, Qt.ToolTipRole)
-        self._trajectory_selector.setToolTip(str(tooltip) if tooltip is not None else "")
+        details = str(tooltip) if tooltip is not None else ""
+        prefix = tooltip_text("selected_trajectory")
+        self._trajectory_selector.setToolTip(
+            prefix if not details else f"{prefix}\n\n{details}"
+        )
 
     def _set_parameter_error(self, message: str) -> None:
         self._parameter_status.setText(message)
@@ -838,3 +868,34 @@ class ControlsPanel(QWidget):
         if self._add_section is not None:
             self._add_section.set_expanded(True)
         self._manual_d_edit.setFocus()
+
+    def _apply_tooltips(self) -> None:
+        apply_tooltip(self._trajectory_selector, "selected_trajectory")
+        apply_tooltip(self._angle_units_combo, "angle_units")
+        apply_tooltip(self._alpha_edit, "alpha_edit")
+        apply_tooltip(self._beta_edit, "beta_edit")
+        apply_tooltip(self._n_phase_edit, "n_phase_edit")
+        apply_tooltip(self._n_geom_edit, "n_geom_edit")
+        apply_tooltip(self._symmetric_mode_checkbox, "symmetric_mode")
+        apply_tooltip(self._fixed_domain_checkbox, "fixed_domain")
+        apply_tooltip(self._show_regions_checkbox, "show_regions")
+        apply_tooltip(self._show_region_labels_checkbox, "show_region_labels")
+        apply_tooltip(self._show_region_legend_checkbox, "show_region_legend")
+        apply_tooltip(self._show_branch_markers_checkbox, "show_branch_markers")
+        apply_tooltip(self._show_heatmap_checkbox, "show_heatmap")
+        apply_tooltip(self._heatmap_mode_combo, "heatmap_mode")
+        apply_tooltip(self._heatmap_resolution_combo, "heatmap_bins")
+        apply_tooltip(self._heatmap_normalization_combo, "heatmap_norm")
+        apply_tooltip(self._export_mode_combo, "export_mode")
+        apply_tooltip(self._export_preset_combo, "mono_preset")
+        apply_tooltip(self._data_export_format_combo, "data_export_format")
+        apply_tooltip(self._scan_mode_combo, "scan_mode")
+        apply_tooltip(self._scan_wall_combo, "scan_wall")
+        apply_tooltip(self._scan_count_edit, "scan_count")
+        apply_tooltip(self._scan_d_min_edit, "scan_d_min")
+        apply_tooltip(self._scan_d_max_edit, "scan_d_max")
+        apply_tooltip(self._scan_tau_min_edit, "scan_tau_min")
+        apply_tooltip(self._scan_tau_max_edit, "scan_tau_max")
+        apply_tooltip(self._manual_d_edit, "manual_d")
+        apply_tooltip(self._manual_tau_edit, "manual_tau")
+        apply_tooltip(self._manual_wall_combo, "manual_wall")
