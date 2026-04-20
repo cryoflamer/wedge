@@ -465,6 +465,7 @@ class PhasePanel(QWidget):
             painter.drawEllipse(active_canvas_point, active_radius, active_radius)
 
         painter.restore()
+        self._draw_axis_labels(painter, plot)
         if hover_label_text is not None:
             self._draw_hover_label(painter, plot, hover_label_text)
 
@@ -560,6 +561,77 @@ class PhasePanel(QWidget):
         if normalized == "dashdot":
             return Qt.DashDotLine
         return Qt.SolidLine
+
+    def _draw_axis_labels(self, painter: QPainter, plot: QRectF) -> None:
+        if not self._view_config.show_phase_grid:
+            return
+
+        grid = self._view_config.phase_grid
+        major_d = self._grid_step(
+            grid.major_step_d,
+            self._viewport[1] - self._viewport[0],
+        )
+        major_tau = self._grid_step(
+            grid.major_step_tau,
+            self._viewport[3] - self._viewport[2],
+        )
+        d_values = self._sparse_tick_values(
+            self._grid_values(self._viewport[0], self._viewport[1], major_d),
+            max_labels=6,
+        )
+        tau_values = self._sparse_tick_values(
+            self._grid_values(self._viewport[2], self._viewport[3], major_tau),
+            max_labels=5,
+        )
+
+        painter.save()
+        painter.setPen(QColor("#5a5a5a"))
+        metrics = painter.fontMetrics()
+        bottom_y = min(plot.bottom() + metrics.height() + 2.0, self.height() - 2.0)
+        left_x = max(2.0, plot.left() - 8.0)
+
+        for d_value in d_values:
+            point = self._to_canvas(d_value, self._viewport[2])
+            text = self._format_tick_value(d_value)
+            text_width = metrics.horizontalAdvance(text)
+            text_x = min(
+                max(point.x() - text_width / 2.0, 2.0),
+                self.width() - text_width - 2.0,
+            )
+            painter.drawText(QPointF(text_x, bottom_y), text)
+
+        for tau_value in tau_values:
+            point = self._to_canvas(self._viewport[0], tau_value)
+            text = self._format_tick_value(tau_value)
+            text_width = metrics.horizontalAdvance(text)
+            text_y = min(
+                max(point.y() + metrics.ascent() / 2.0, metrics.height()),
+                self.height() - 4.0,
+            )
+            painter.drawText(QPointF(left_x - text_width, text_y), text)
+
+        painter.restore()
+
+    def _sparse_tick_values(
+        self,
+        values: list[float],
+        max_labels: int,
+    ) -> list[float]:
+        if len(values) <= max_labels:
+            return values
+
+        stride = max(math.ceil(len(values) / max_labels), 1)
+        sparse = values[::stride]
+        if values and sparse[-1] != values[-1]:
+            sparse.append(values[-1])
+        return sparse
+
+    def _format_tick_value(self, value: float) -> str:
+        rounded = round(value, 6)
+        if abs(rounded) < 1.0e-9:
+            rounded = 0.0
+        text = f"{rounded:.3f}"
+        return text.rstrip("0").rstrip(".") if "." in text else text
 
     def _draw_point_marker(
         self,
