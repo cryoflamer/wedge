@@ -48,6 +48,7 @@ class ControlsPanel(QWidget):
         super().__init__(parent)
 
         self._trajectory_list = QListWidget()
+        self._trajectory_selector = QComboBox()
         self._alpha_edit = QLineEdit()
         self._beta_edit = QLineEdit()
         self._n_phase_edit = QLineEdit()
@@ -93,6 +94,9 @@ class ControlsPanel(QWidget):
 
         self._trajectory_list.currentItemChanged.connect(
             self._on_current_item_changed
+        )
+        self._trajectory_selector.currentIndexChanged.connect(
+            self._on_trajectory_selector_changed
         )
         for line_edit in (
             self._alpha_edit,
@@ -151,6 +155,13 @@ class ControlsPanel(QWidget):
         layout = QVBoxLayout(box)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
+        selector_form = QFormLayout()
+        selector_form.setContentsMargins(0, 0, 0, 0)
+        selector_form.setHorizontalSpacing(6)
+        selector_form.setVerticalSpacing(4)
+        selector_form.addRow("Selected trajectory", self._trajectory_selector)
+        layout.addLayout(selector_form)
+        self._trajectory_list.setMaximumHeight(150)
         layout.addWidget(self._trajectory_list)
         layout.addWidget(self._trajectory_info)
 
@@ -448,15 +459,19 @@ class ControlsPanel(QWidget):
 
     def set_trajectory_items(
         self,
-        items: list[tuple[int, str, str, bool]],
+        items: list[tuple[int, str, str, str, bool]],
         selected_trajectory_id: int | None,
     ) -> None:
-        blocker = QSignalBlocker(self._trajectory_list)
+        list_blocker = QSignalBlocker(self._trajectory_list)
+        selector_blocker = QSignalBlocker(self._trajectory_selector)
         self._trajectory_list.clear()
+        self._trajectory_selector.clear()
         selected_item: QListWidgetItem | None = None
+        selected_selector_index = -1
 
-        for trajectory_id, label, color, visible in items:
-            item = QListWidgetItem(label)
+        for index, (trajectory_id, selector_label, list_label, color, visible) in enumerate(items):
+            self._trajectory_selector.addItem(selector_label, trajectory_id)
+            item = QListWidgetItem(list_label)
             item.setData(Qt.UserRole, trajectory_id)
             item.setIcon(self._color_icon(color, visible))
             if not visible:
@@ -464,20 +479,20 @@ class ControlsPanel(QWidget):
             self._trajectory_list.addItem(item)
             if trajectory_id == selected_trajectory_id:
                 selected_item = item
+                selected_selector_index = index
 
         if selected_item is not None:
             self._trajectory_list.setCurrentItem(selected_item)
+            self._trajectory_selector.setCurrentIndex(selected_selector_index)
         elif self._trajectory_list.count() > 0:
             self._trajectory_list.setCurrentRow(0)
+            self._trajectory_selector.setCurrentIndex(0)
         else:
             self._trajectory_info.setText("selected: -")
-        del blocker
+        del selector_blocker
+        del list_blocker
 
-        current = self._trajectory_list.currentItem()
-        if current is not None:
-            trajectory_id = current.data(Qt.UserRole)
-            if trajectory_id is not None:
-                self._trajectory_info.setText(f"selected: #{int(trajectory_id)}")
+        self._sync_selected_info()
 
     def _color_icon(self, color: str, visible: bool) -> QIcon:
         pixmap = QPixmap(12, 12)
@@ -539,8 +554,28 @@ class ControlsPanel(QWidget):
             return
         trajectory_id = current.data(Qt.UserRole)
         if trajectory_id is not None:
+            selector_index = self._trajectory_selector.findData(int(trajectory_id))
+            if selector_index >= 0:
+                blocker = QSignalBlocker(self._trajectory_selector)
+                self._trajectory_selector.setCurrentIndex(selector_index)
+                del blocker
             self._trajectory_info.setText(f"selected: #{int(trajectory_id)}")
             self.trajectory_selected.emit(int(trajectory_id))
+
+    def _on_trajectory_selector_changed(self, index: int) -> None:
+        if index < 0:
+            self._trajectory_info.setText("selected: -")
+            return
+        trajectory_id = self._trajectory_selector.itemData(index)
+        if trajectory_id is None:
+            return
+        list_item = self._find_trajectory_item(int(trajectory_id))
+        if list_item is not None:
+            blocker = QSignalBlocker(self._trajectory_list)
+            self._trajectory_list.setCurrentItem(list_item)
+            del blocker
+        self._trajectory_info.setText(f"selected: #{int(trajectory_id)}")
+        self.trajectory_selected.emit(int(trajectory_id))
 
     def _toggle_current_visibility(self) -> None:
         current = self._trajectory_list.currentItem()
@@ -549,6 +584,27 @@ class ControlsPanel(QWidget):
         trajectory_id = current.data(Qt.UserRole)
         if trajectory_id is not None:
             self.trajectory_visibility_toggled.emit(int(trajectory_id))
+
+    def _find_trajectory_item(self, trajectory_id: int) -> QListWidgetItem | None:
+        for row in range(self._trajectory_list.count()):
+            item = self._trajectory_list.item(row)
+            if item is None:
+                continue
+            item_id = item.data(Qt.UserRole)
+            if item_id == trajectory_id:
+                return item
+        return None
+
+    def _sync_selected_info(self) -> None:
+        index = self._trajectory_selector.currentIndex()
+        if index < 0:
+            self._trajectory_info.setText("selected: -")
+            return
+        trajectory_id = self._trajectory_selector.itemData(index)
+        if trajectory_id is None:
+            self._trajectory_info.setText("selected: -")
+            return
+        self._trajectory_info.setText(f"selected: #{int(trajectory_id)}")
 
     def _set_parameter_error(self, message: str) -> None:
         self._parameter_status.setText(message)

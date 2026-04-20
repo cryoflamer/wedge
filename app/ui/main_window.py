@@ -236,15 +236,18 @@ class MainWindow(QMainWindow):
         trajectory_items = [
             (
                 seed.id,
-                (
-                    f"#{seed.id} wall={seed.wall_start} "
-                    f"d0={seed.d0:.3f} tau0={seed.tau0:.3f} "
-                    f"{'visible' if seed.visible else 'hidden'}"
+                self._trajectory_selector_label(
+                    seed=seed,
+                    orbit=self._trajectory_orbits.get(seed.id),
+                ),
+                self._trajectory_list_label(
+                    seed=seed,
+                    orbit=self._trajectory_orbits.get(seed.id),
                 ),
                 seed.color,
                 seed.visible,
             )
-            for seed in self._trajectory_seeds.values()
+            for seed in sorted(self._trajectory_seeds.values(), key=lambda item: item.id)
         ]
         self.controls_panel.set_trajectory_items(
             trajectory_items,
@@ -876,6 +879,29 @@ class MainWindow(QMainWindow):
 
     def _normalized_phase_steps(self, n_phase: int, n_geom: int) -> int:
         return max(n_phase, n_geom + 1)
+
+    def _trajectory_selector_label(
+        self,
+        seed: TrajectorySeed,
+        orbit: Orbit | None,
+    ) -> str:
+        invalid_suffix = " [invalid]" if orbit is not None and not orbit.valid else ""
+        return (
+            f"#{seed.id} | wall={seed.wall_start} | "
+            f"d={seed.d0:.3f} | tau={seed.tau0:.3f}{invalid_suffix}"
+        )
+
+    def _trajectory_list_label(
+        self,
+        seed: TrajectorySeed,
+        orbit: Orbit | None,
+    ) -> str:
+        invalid_suffix = " [invalid]" if orbit is not None and not orbit.valid else ""
+        return (
+            f"#{seed.id} wall={seed.wall_start} "
+            f"d0={seed.d0:.3f} tau0={seed.tau0:.3f} "
+            f"{'visible' if seed.visible else 'hidden'}{invalid_suffix}"
+        )
 
     def _add_trajectory_seed(
         self,
