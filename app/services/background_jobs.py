@@ -85,6 +85,7 @@ class OrbitBuildWorker(QObject):
         max_trajectory_count: int = 0,
         lyapunov_seed: TrajectorySeed | None = None,
         lyapunov_config: LyapunovConfig | None = None,
+        existing_orbits: dict[int, Orbit] | None = None,
     ) -> None:
         super().__init__()
         self._generation_id = generation_id
@@ -106,6 +107,7 @@ class OrbitBuildWorker(QObject):
         self._max_trajectory_count = max_trajectory_count
         self._lyapunov_seed = lyapunov_seed
         self._lyapunov_config = lyapunov_config
+        self._existing_orbits = dict(existing_orbits or {})
         self._cancel_event = Event()
 
     def cancel(self) -> None:
@@ -168,6 +170,7 @@ class OrbitBuildWorker(QObject):
             steps=self._phase_steps,
             chunk_size=self._chunk_size,
             cancel_check=self._is_cancel_requested,
+            existing_orbit=self._existing_orbits.get(seed.id),
         ):
             if self._is_cancel_requested():
                 self.finished.emit(
@@ -279,6 +282,7 @@ class OrbitBuildWorker(QObject):
                 steps=self._phase_steps,
                 chunk_size=self._chunk_size,
                 cancel_check=self._is_cancel_requested,
+                existing_orbit=self._existing_orbits.get(seed.id),
             ):
                 if self._is_cancel_requested():
                     self.finished.emit(

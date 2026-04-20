@@ -43,6 +43,7 @@ class ControlsPanel(QWidget):
     scan_requested = Signal(str, int, int, float, float, float, float)
     manual_seed_requested = Signal(int, float, float)
     cancel_job_requested = Signal()
+    resume_job_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -81,6 +82,7 @@ class ControlsPanel(QWidget):
         self._lyapunov_value = QLabel("Lyapunov λ: -")
         self._job_status = QLabel("Job: idle")
         self._cancel_job_button = QPushButton("Cancel job")
+        self._resume_job_button = QPushButton("Resume job")
         self._parameter_status = QLabel("")
         self._angle_units = "rad"
 
@@ -152,6 +154,8 @@ class ControlsPanel(QWidget):
         self._trajectory_selector.setIconSize(QSize(12, 12))
         self._cancel_job_button.setEnabled(False)
         self._cancel_job_button.clicked.connect(self.cancel_job_requested.emit)
+        self._resume_job_button.setEnabled(False)
+        self._resume_job_button.clicked.connect(self.resume_job_requested.emit)
 
     def _build_trajectory_box(self) -> QGroupBox:
         box = QGroupBox("Trajectories")
@@ -299,6 +303,8 @@ class ControlsPanel(QWidget):
         scan_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         layout.addWidget(self._cancel_job_button)
         self._cancel_job_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout.addWidget(self._resume_job_button)
+        self._resume_job_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         actions_grid = QGridLayout()
         actions_grid.setHorizontalSpacing(6)
@@ -535,9 +541,16 @@ class ControlsPanel(QWidget):
         else:
             self._lyapunov_value.setText(f"Lyapunov λ: {estimate:.6f}")
 
-    def set_job_status(self, status: str, message: str, cancellable: bool) -> None:
+    def set_job_status(
+        self,
+        status: str,
+        message: str,
+        cancellable: bool,
+        resumable: bool = False,
+    ) -> None:
         self._job_status.setText(f"Job: {status} | {message}")
         self._cancel_job_button.setEnabled(cancellable)
+        self._resume_job_button.setEnabled(resumable)
 
     def _emit_parameters(self) -> None:
         self._clear_parameter_error()
