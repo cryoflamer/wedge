@@ -64,7 +64,7 @@ window:
 autosave:
   enabled: true
   path: autosave/session.yaml
-  restore_simulation_parameters: false
+  restore_simulation_parameters: true
 regions:
 - name: upper_sector
   type: predicate
