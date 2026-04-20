@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 import math
 import logging
 import sys
@@ -77,7 +78,7 @@ class MainWindow(QMainWindow):
         self._job_status_state = "idle"
         self._job_status_message = "Idle"
         self._job_last_percent = 0
-        self._pending_partial_results: dict[int, OrbitPartialResult] = {}
+        self._pending_partial_results: deque[OrbitPartialResult] = deque()
         self._autosave_restore_scheduled = False
 
         self.setWindowTitle(config.app.title)
@@ -1191,6 +1192,20 @@ class MainWindow(QMainWindow):
             return
         if payload.generation_id != self._job_generation:
             return
+        self._pending_partial_results.append(payload)
+        if not self._partial_update_timer.isActive():
+            self._partial_update_timer.start()
+
+    def _flush_partial_updates(self) -> None:
+        if not self._pending_partial_results:
+            return
+        payload = self._pending_partial_results.popleft()
+        self._apply_partial_payload(payload)
+        self.update_view()
+        if self._pending_partial_results:
+            self._partial_update_timer.start()
+
+    def _apply_partial_payload(self, payload: OrbitPartialResult) -> None:
         self._trajectory_seeds[payload.trajectory_id] = payload.seed
         self._trajectory_orbits[payload.trajectory_id] = payload.orbit
         self._trajectory_geometries[payload.trajectory_id] = payload.geometry
@@ -1200,24 +1215,6 @@ class MainWindow(QMainWindow):
             self._next_trajectory_id,
             payload.trajectory_id + 1,
         )
-        self.update_view()
-
-    def _flush_partial_updates(self) -> None:
-        if not self._pending_partial_results:
-            return
-        payloads = list(self._pending_partial_results.values())
-        self._pending_partial_results.clear()
-        for payload in payloads:
-            self._trajectory_seeds[payload.trajectory_id] = payload.seed
-            self._trajectory_orbits[payload.trajectory_id] = payload.orbit
-            self._trajectory_geometries[payload.trajectory_id] = payload.geometry
-            if self._selected_trajectory_id is None:
-                self._selected_trajectory_id = payload.trajectory_id
-            self._next_trajectory_id = max(
-                self._next_trajectory_id,
-                payload.trajectory_id + 1,
-            )
-        self.update_view()
 
     def _on_lyapunov_result(self, payload: object) -> None:
         if not isinstance(payload, LyapunovResultPayload):
@@ -1241,7 +1238,8 @@ class MainWindow(QMainWindow):
             return
         if payload.generation_id != self._job_generation:
             return
-        self._flush_partial_updates()
+        while self._pending_partial_results:
+            self._apply_partial_payload(self._pending_partial_results.popleft())
         self._job_status_state = payload.status
         if payload.status == "cancelled":
             self._job_status_message = (
