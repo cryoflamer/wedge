@@ -87,6 +87,10 @@ class MainWindow(QMainWindow):
         self._paused_job_payloads: list[dict[str, object]] = []
         self._next_job_payload_id = 1
         self._autosave_restore_scheduled = False
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setSingleShot(True)
+        self._autosave_timer.setInterval(50)
+        self._autosave_timer.timeout.connect(self._autosave_session)
 
         self.setWindowTitle(config.app.title)
         self.resize(config.window.width, config.window.height)
@@ -725,23 +729,27 @@ class MainWindow(QMainWindow):
         self._trajectory_seeds.pop(trajectory_id, None)
         self._trajectory_orbits.pop(trajectory_id, None)
         self._trajectory_geometries.pop(trajectory_id, None)
+        self._prune_job_payloads_for_existing_trajectories()
         self._selected_trajectory_id = (
             next(iter(self._trajectory_seeds.keys()))
             if self._trajectory_seeds
             else None
         )
         self._reset_replay_views()
-        self._autosave_session()
+        self._schedule_autosave()
         self.update_view()
         logger.info("Trajectory cleared: id=%s", trajectory_id)
 
     def _on_clear_all_trajectories(self) -> None:
+        self._cancel_current_job()
         self._trajectory_seeds.clear()
         self._trajectory_orbits.clear()
         self._trajectory_geometries.clear()
+        self._paused_job_payloads.clear()
+        self._active_job_payload = None
         self._selected_trajectory_id = None
         self._reset_replay_views()
-        self._autosave_session()
+        self._schedule_autosave()
         self.update_view()
         logger.info("All trajectories cleared")
 
@@ -1406,6 +1414,8 @@ class MainWindow(QMainWindow):
         self._status_label.setText(self._job_status_message)
         self._status_progress.setValue(100 if payload.status == "done" else 0)
         self._active_job_payload = None
+        self._current_job_worker = None
+        self._current_job_thread = None
         self._update_status_job_controls()
         self.controls_panel.set_job_status(
             status=self._job_status_state,
@@ -1413,9 +1423,7 @@ class MainWindow(QMainWindow):
             cancellable=False,
             resumable=bool(self._paused_job_payloads),
         )
-        self._current_job_worker = None
-        self._current_job_thread = None
-        self._autosave_session()
+        self._schedule_autosave()
         self._update_trajectory_views()
         self._update_panel_views()
         self._update_status_view()
@@ -1433,22 +1441,40 @@ class MainWindow(QMainWindow):
             return None
         return self._paused_job_payloads[-1]
 
+    def _prune_job_payloads_for_existing_trajectories(self) -> None:
+        existing_ids = set(self._trajectory_seeds.keys())
+        filtered_payloads: list[dict[str, object]] = []
+        for payload in self._paused_job_payloads:
+            seeds = payload.get("seeds")
+            if not isinstance(seeds, list):
+                continue
+            filtered_seeds = [
+                seed for seed in seeds
+                if getattr(seed, "id", None) in existing_ids
+            ]
+            if not filtered_seeds:
+                continue
+            next_payload = dict(payload)
+            next_payload["seeds"] = filtered_seeds
+            filtered_payloads.append(next_payload)
+        self._paused_job_payloads = filtered_payloads
+
     def _update_status_job_controls(self) -> None:
         running = self._current_job_worker is not None
         paused_count = len(self._paused_job_payloads)
-        visible = running or paused_count > 0
-        self._status_job_button.setVisible(visible)
-        self._status_jobs_selector.setVisible(not running and paused_count > 1)
         if running:
+            self._status_job_button.show()
             self._status_job_button.setText("Cancel")
             self._status_progress.setVisible(True)
             self._status_jobs_selector.hide()
             return
         paused_payload = self._latest_paused_job()
         if paused_payload is None:
+            self._status_job_button.hide()
             self._status_progress.setVisible(False)
             self._status_jobs_selector.hide()
             return
+        self._status_job_button.show()
         percent = int(paused_payload.get("progress_percent", 0))
         self._status_progress.setVisible(True)
         self._status_progress.setValue(percent)
@@ -1478,6 +1504,9 @@ class MainWindow(QMainWindow):
                     selected_index = index
             self._status_jobs_selector.setCurrentIndex(selected_index)
             del blocker
+            self._status_jobs_selector.show()
+        else:
+            self._status_jobs_selector.hide()
 
     def _on_status_job_button_clicked(self) -> None:
         if self._current_job_worker is not None:
@@ -1535,6 +1564,11 @@ class MainWindow(QMainWindow):
             start_message=start_message.replace("Starting", "Resuming"),
             resumable_payload=payload,
         )
+
+    def _schedule_autosave(self) -> None:
+        if not self._config.autosave.enabled:
+            return
+        self._autosave_timer.start()
 
 
 def run_app(config: Config, config_path: str) -> None:

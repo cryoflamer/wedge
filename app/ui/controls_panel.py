@@ -229,11 +229,16 @@ class ControlsPanel(QWidget):
         lyapunov_button.clicked.connect(self.compute_lyapunov_requested.emit)
         actions_grid.addWidget(lyapunov_button, 1, 0)
 
+        clear_all_button = QPushButton("Clear all")
+        clear_all_button.clicked.connect(self.clear_all_requested.emit)
+        actions_grid.addWidget(clear_all_button, 1, 1)
+
         for button in (
             toggle_button,
             clear_selected_button,
             add_button,
             lyapunov_button,
+            clear_all_button,
         ):
             button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
@@ -422,8 +427,6 @@ class ControlsPanel(QWidget):
         session_actions = QGridLayout()
         session_actions.setHorizontalSpacing(6)
         session_actions.setVerticalSpacing(4)
-        clear_all_button = QPushButton("Clear all")
-        clear_all_button.clicked.connect(self.clear_all_requested.emit)
         save_button = QPushButton("Save")
         save_button.clicked.connect(
             lambda checked=False: self.replay_action_requested.emit("save_session")
@@ -432,9 +435,8 @@ class ControlsPanel(QWidget):
         load_button.clicked.connect(
             lambda checked=False: self.replay_action_requested.emit("load_session")
         )
-        session_actions.addWidget(clear_all_button, 0, 0)
-        session_actions.addWidget(save_button, 0, 1)
-        session_actions.addWidget(load_button, 1, 0, 1, 2)
+        session_actions.addWidget(save_button, 0, 0)
+        session_actions.addWidget(load_button, 0, 1)
         session_section.content_layout().addLayout(session_actions)
         sections.append(session_section)
 
