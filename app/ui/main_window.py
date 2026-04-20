@@ -240,7 +240,7 @@ class MainWindow(QMainWindow):
                     seed=seed,
                     orbit=self._trajectory_orbits.get(seed.id),
                 ),
-                self._trajectory_list_label(
+                self._trajectory_tooltip_label(
                     seed=seed,
                     orbit=self._trajectory_orbits.get(seed.id),
                 ),
@@ -891,16 +891,24 @@ class MainWindow(QMainWindow):
             f"d={seed.d0:.3f} | tau={seed.tau0:.3f}{invalid_suffix}"
         )
 
-    def _trajectory_list_label(
+    def _trajectory_tooltip_label(
         self,
         seed: TrajectorySeed,
         orbit: Orbit | None,
     ) -> str:
         invalid_suffix = " [invalid]" if orbit is not None and not orbit.valid else ""
+        status = "visible" if seed.visible else "hidden"
+        reason = (
+            f"\nreason: {orbit.invalid_reason}"
+            if orbit is not None and orbit.invalid_reason
+            else ""
+        )
         return (
-            f"#{seed.id} wall={seed.wall_start} "
-            f"d0={seed.d0:.3f} tau0={seed.tau0:.3f} "
-            f"{'visible' if seed.visible else 'hidden'}{invalid_suffix}"
+            f"id: {seed.id}\n"
+            f"wall: {seed.wall_start}\n"
+            f"d0: {seed.d0:.6f}\n"
+            f"tau0: {seed.tau0:.6f}\n"
+            f"status: {status}{invalid_suffix}{reason}"
         )
 
     def _add_trajectory_seed(
