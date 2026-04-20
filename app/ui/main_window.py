@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Qt
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -102,6 +102,8 @@ class MainWindow(QMainWindow):
             Qt.ScrollBarAlwaysOff
         )
         self.controls_scroll.setWidget(self.controls_panel)
+        self._cancel_job_shortcut = QShortcut(QKeySequence(Qt.Key_Escape), self)
+        self._cancel_job_shortcut.activated.connect(self._cancel_current_job)
         self.replay_controller = ReplayController(
             delay_ms=config.replay.delay_ms,
             parent=self,
@@ -1072,7 +1074,10 @@ class MainWindow(QMainWindow):
         current = min(max(progress.current, 0), total) if total > 0 else 0
         percent = int((current / total) * 100.0) if total > 0 else 0
         self._job_status_state = progress.status
-        self._job_status_message = progress.message
+        if progress.status in ("running", "partial"):
+            self._job_status_message = f"{progress.message} | Press Esc to cancel"
+        else:
+            self._job_status_message = progress.message
         self._status_label.setText(self._job_status_message)
         self._status_progress.setValue(percent)
         self.controls_panel.set_job_status(
