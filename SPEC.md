@@ -718,46 +718,17 @@ project/
 ---
 
 ### Task 27. Додати reference trajectory mode
-- дозволити зберегти поточну траєкторію як reference overlay
-- reference trajectory не перебудовується при зміні `(alpha, beta)`
-- reference trajectory має явно позначатися як побудована для старих параметрів
-- metadata reference trajectory:
-  - source alpha
-  - source beta
-  - source seed
-  - original trajectory id
-- UI:
-  - кнопка `Freeze as Reference`
-  - toggle visibility для reference overlays
-  - окремий стиль рендеру (наприклад, тьмяна або dashed)
-- reference trajectories не входять у поточний physics state
-- reference trajectories використовуються лише для візуального порівняння
-- підтримати save/load у session
+Moved to GitHub Issues.
 
 ---
 
 ### Task 28. Додати snap-to-constraints для `(alpha, beta)`
-- підтримати snapping до:
-  - `beta = pi - alpha` (symmetric)
-  - boundary regions (optional)
-- при кліку:
-  - точка project-иться на найближчу криву
-- UI toggle:
-  - enable snapping
+Moved to GitHub Issues.
 
 ---
 
 ### Task 29. Додати режим trace boundary (advanced)
-- режим, у якому:
-  - `(alpha, beta)` змінюються плавно
-  - відслідковується зміна поведінки траєкторії
-- базова версія:
-  - змінюється один параметр (наприклад alpha)
-  - будується серія орбіт
-- мета:
-  - знаходження меж режимів
-- опціонально:
-  - логувати точки переходу
+Moved to GitHub Issues.
 
 ---
 
@@ -1285,177 +1256,16 @@ view:
 - job status винесений у status bar або компактний status area
 
 ### Task 36. Додати централізовану систему tooltip-ів для UI
-
-Потрібно додати зрозумілі tooltip-и для всіх основних елементів UI та винести їх у централізований реєстр.
-
-#### Мета
-Зробити UI більш інтуїтивним без читання коду або документації:
-- пояснити призначення кнопок, чекбоксів і полів
-- зменшити кількість “незрозумілих” елементів
-- покращити discoverability функціоналу
-
-#### Основна ідея
-Tooltip-и не повинні бути розкидані по коду.
-
-Потрібно:
-- створити єдиний registry tooltip-ів
-- всі UI-елементи беруть тексти тільки звідти
-
-#### Реалізація
-
-Створити файл:
-
-```
-app/ui/tooltips.py
-```
-
-Формат:
-
-```python
-TOOLTIPS = {
-    "apply": "Перебудувати всі траєкторії для поточних параметрів.",
-    "reset_phase_view": "Скинути zoom і pan фазових панелей.",
-    "selected_trajectory": "Вибір активної траєкторії для аналізу та replay.",
-    "add_trajectory": "Додати нову траєкторію з ручно заданими параметрами d, tau і wall.",
-    "scan": "Запустити генерацію багатьох траєкторій у заданому діапазоні.",
-    "replay_selected": "Запустити replay тільки для вибраної траєкторії.",
-    "replay_all": "Запустити replay для всіх видимих траєкторій.",
-    "pause": "Призупинити поточний процес або replay.",
-    "step": "Виконати один крок replay.",
-    "export_data": "Експортувати дані траєкторій у файл.",
-    "export_png": "Зберегти поточне зображення у PNG.",
-}
-```
-
-#### Використання
-У UI-коді:
-
-- кожен інтерактивний елемент повинен отримувати tooltip через ключ
-- заборонено хардкодити tooltip-и напряму в UI
-
-Приклад:
-
-```python
-button.setToolTip(TOOLTIPS["apply"])
-```
-
-#### Покриття
-Tooltip-и мають бути додані для:
-- всіх кнопок
-- dropdown-ів
-- чекбоксів
-- полів вводу (d, tau, alpha, beta, etc.)
-- ключових toggle-ів (show grid, show regions, etc.)
-
-#### Вимоги до текстів
-- короткі (1–2 рядки)
-- конкретні
-- описують результат дії
-- без зайвих технічних деталей
-
-Погано:
-- "Apply settings"
-
-Добре:
-- "Перебудувати всі траєкторії для поточних параметрів alpha і beta."
-
-#### Додатково (опційно)
-Можна додати:
-- status tips (показ у status bar при hover)
-- розширені tooltip-и для складних параметрів (heatmap, scan mode, etc.)
-
-#### Розширюваність
-Архітектура має дозволяти:
-- легко додавати нові tooltip-и
-- змінювати тексти без пошуку по всьому UI
-- потенційно перейти на YAML/JSON або локалізацію
-
-#### Acceptance criteria
-- всі основні UI-елементи мають tooltip-и
-- tooltip-и не захардкожені в UI-коді
-- тексти централізовані в одному місці
-- UI стає зрозумілішим без читання коду
+Moved to GitHub Issues.
 
 ### Task 37. Перенести таски з SPEC.md у GitHub Issues та перейти на GitHub workflow
+Moved to GitHub Issues.
 
-Потрібно перенести всі актуальні таски з SPEC.md у GitHub Issues через gh CLI та зробити GitHub основним джерелом правди для задач.
-
-#### Крок 1. Зчитати SPEC.md
-
-- знайти всі секції виду:
-  - `### Task N. ...`
-- для кожної таски витягнути:
-  - title
-  - повний markdown body
-- визначити:
-  - чи таска вже виконана
-  - чи вона ще актуальна
-
-#### Крок 2. Створити GitHub Issues
-
-Для кожної невиконаної таски:
-
-```bash
-gh issue create --title "<Task N. Title>" --body "<markdown body>"
-```
-
-Опційно додати label:
-- `ui`
-- `ux`
-- `math`
-- `performance`
-- `infra`
-
-#### Крок 3. Обробити виконані таски
-
-Для вже реалізованих задач:
-- не створювати issue
-  або:
-- створити і одразу закрити
-
-#### Крок 4. Оновити SPEC.md
-
-- прибрати або закоментити таски, які перенесені в GitHub
-- залишити тільки:
-  - архітектуру
-  - правила
-  - high-level backlog
-
-Додати розділ:
-
-```md
 ## GitHub workflow
-
-- Джерело правди для задач — GitHub Issues.
-- Нові задачі створюються через `gh issue create`.
-- Статус задач ведеться в GitHub.
-- SPEC.md використовується тільки для архітектури і правил.
-```
-
-#### Крок 5. Перевірка
-
-```bash
-gh issue list
-```
-
-Переконатися, що:
-- всі активні задачі створені
-- немає дублікатів
-
-#### Крок 6. Commit
-
-Commit message:
-
-```
-Перенесено таски з SPEC.md у GitHub Issues та оновлено workflow
-```
-
-#### Важливі правила
-
-- не змінювати зміст задач
-- не обрізати markdown
-- не створювати дублікати
-- працювати тільки з актуальним SPEC.md
+- Source of truth: GitHub Issues
+- New tasks are created via `gh issue create`
+- Task status is tracked in GitHub
+- SPEC.md is used for architecture and rules only
 
 #### Acceptance criteria
 
