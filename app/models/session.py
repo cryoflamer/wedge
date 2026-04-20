@@ -22,6 +22,7 @@ class Session:
     show_phase_grid: bool = True
     show_phase_minor_grid: bool = False
     show_seed_markers: bool = True
+    show_stationary_point: bool = True
     show_directrix: bool = False
     show_regions: bool = True
     show_region_labels: bool = True
