@@ -1191,9 +1191,16 @@ class MainWindow(QMainWindow):
             return
         if payload.generation_id != self._job_generation:
             return
-        self._pending_partial_results[payload.trajectory_id] = payload
-        if not self._partial_update_timer.isActive():
-            self._partial_update_timer.start()
+        self._trajectory_seeds[payload.trajectory_id] = payload.seed
+        self._trajectory_orbits[payload.trajectory_id] = payload.orbit
+        self._trajectory_geometries[payload.trajectory_id] = payload.geometry
+        if self._selected_trajectory_id is None:
+            self._selected_trajectory_id = payload.trajectory_id
+        self._next_trajectory_id = max(
+            self._next_trajectory_id,
+            payload.trajectory_id + 1,
+        )
+        self.update_view()
 
     def _flush_partial_updates(self) -> None:
         if not self._pending_partial_results:
