@@ -6,7 +6,7 @@ from collections.abc import Iterable
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QPen, QWheelEvent
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QToolTip, QVBoxLayout, QWidget
 
 from app.models.config import ViewConfig
 from app.models.orbit import Orbit, OrbitPoint
@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 class PhasePanel(QWidget):
     clicked = Signal(int, float, float)
     viewport_changed = Signal()
+    seed_drag_started = Signal(int)
+    seed_drag_finished = Signal(int, float, float)
 
     def __init__(
         self,
@@ -43,6 +45,8 @@ class PhasePanel(QWidget):
         self._zoom_anchor_canvas: QPointF | None = None
         self._zoom_rect_canvas: QRectF | None = None
         self._hover_point: QPointF | None = None
+        self._drag_seed_id: int | None = None
+        self._drag_seed_preview: tuple[float, float] | None = None
         self._click_threshold_px = 6.0
         self._padding = 24
         self._top_margin = 16
@@ -74,6 +78,22 @@ class PhasePanel(QWidget):
         self._update_hint()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.LeftButton:
+            dragged_seed_id = self._seed_at_position(event.position())
+            if dragged_seed_id is not None and self._view_config.show_seed_markers:
+                self._drag_seed_id = dragged_seed_id
+                self._drag_seed_preview = self._constrain_to_domain(
+                    *self._map_click(event.position())
+                )
+                self._last_click.setText(
+                    "drag: "
+                    f"d={self._drag_seed_preview[0]:.3f}, "
+                    f"tau={self._drag_seed_preview[1]:.3f}"
+                )
+                self.seed_drag_started.emit(dragged_seed_id)
+                self.update()
+                return
+
         if self._fixed_domain and event.button() == Qt.RightButton:
             logger.info(
                 "Phase interaction ignored: wall=%s fixed_domain=true button=%s",
@@ -123,6 +143,39 @@ class PhasePanel(QWidget):
             if plot.contains(event.position())
             else None
         )
+        if self._drag_seed_id is not None:
+            self._drag_seed_preview = self._constrain_to_domain(
+                *self._map_click(event.position())
+            )
+            self._last_click.setText(
+                "drag: "
+                f"d={self._drag_seed_preview[0]:.3f}, "
+                f"tau={self._drag_seed_preview[1]:.3f}"
+            )
+            seed = self._seeds.get(self._drag_seed_id)
+            if seed is not None and self._drag_seed_preview is not None:
+                QToolTip.showText(
+                    event.globalPosition().toPoint(),
+                    self._seed_tooltip_text(
+                        seed,
+                        self._drag_seed_preview[0],
+                        self._drag_seed_preview[1],
+                    ),
+                    self,
+                )
+            self.update()
+            return
+        hovered_seed_id = self._seed_at_position(event.position())
+        if hovered_seed_id is not None:
+            seed = self._seeds.get(hovered_seed_id)
+            if seed is not None:
+                QToolTip.showText(
+                    event.globalPosition().toPoint(),
+                    self._seed_tooltip_text(seed, seed.d0, seed.tau0),
+                    self,
+                )
+        else:
+            QToolTip.hideText()
         if (
             self._pan_anchor_canvas is None
             or self._pan_anchor_viewport is None
@@ -183,6 +236,22 @@ class PhasePanel(QWidget):
         self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.LeftButton and self._drag_seed_id is not None:
+            trajectory_id = self._drag_seed_id
+            preview = self._drag_seed_preview
+            self._drag_seed_id = None
+            self._drag_seed_preview = None
+            if preview is not None:
+                self._last_click.setText(
+                    f"drag: d={preview[0]:.3f}, tau={preview[1]:.3f}"
+                )
+                self.seed_drag_finished.emit(
+                    trajectory_id,
+                    preview[0],
+                    preview[1],
+                )
+            self.update()
+            return
         if event.button() == Qt.RightButton:
             self._pan_anchor_canvas = None
             self._pan_anchor_viewport = None
@@ -199,6 +268,7 @@ class PhasePanel(QWidget):
 
     def leaveEvent(self, event) -> None:
         self._hover_point = None
+        QToolTip.hideText()
         self.update()
         super().leaveEvent(event)
 
@@ -308,6 +378,46 @@ class PhasePanel(QWidget):
         d_value = d_min + (d_max - d_min) * x_ratio
         tau_value = tau_max - (tau_max - tau_min) * y_ratio
         return d_value, tau_value
+
+    def _constrain_to_domain(
+        self,
+        d_value: float,
+        tau_value: float,
+    ) -> tuple[float, float]:
+        if self._is_inside_domain(d_value, tau_value):
+            return d_value, tau_value
+
+        dx = d_value - 1.0
+        norm = math.hypot(dx, tau_value)
+        if norm <= 1.0e-12:
+            return 1.0, 0.0
+
+        radius = 1.0 - 1.0e-6
+        scale = radius / norm
+        return 1.0 + dx * scale, tau_value * scale
+
+    def _seed_at_position(self, point: QPointF) -> int | None:
+        hit_radius = 10.0
+        for trajectory_id, seed in reversed(list(self._seeds.items())):
+            if not seed.visible or seed.wall_start != self.wall:
+                continue
+            center = self._to_canvas(seed.d0, seed.tau0)
+            if math.hypot(center.x() - point.x(), center.y() - point.y()) <= hit_radius:
+                return trajectory_id
+        return None
+
+    def _seed_tooltip_text(
+        self,
+        seed: TrajectorySeed,
+        d_value: float,
+        tau_value: float,
+    ) -> str:
+        return (
+            f"trajectory id: {seed.id}\n"
+            f"wall: {seed.wall_start}\n"
+            f"d0: {d_value:.6f}\n"
+            f"tau0: {tau_value:.6f}"
+        )
 
     def _plot_rect(self) -> QRectF:
         available_width = max(self.width() - 2 * self._padding, 1)
@@ -677,12 +787,18 @@ class PhasePanel(QWidget):
             if not seed.visible or seed.wall_start != self.wall:
                 continue
 
-            center = self._to_canvas(seed.d0, seed.tau0)
-            is_selected = trajectory_id == self._selected_trajectory_id
+            d_value = seed.d0
+            tau_value = seed.tau0
+            is_dragged = trajectory_id == self._drag_seed_id
+            if is_dragged and self._drag_seed_preview is not None:
+                d_value, tau_value = self._drag_seed_preview
+
+            center = self._to_canvas(d_value, tau_value)
+            is_selected = trajectory_id == self._selected_trajectory_id or is_dragged
             base_color = QColor(seed.color)
 
-            outer_radius = 6 if is_selected else 5
-            inner_radius = 3 if is_selected else 2
+            outer_radius = 7 if is_dragged else (6 if is_selected else 5)
+            inner_radius = 4 if is_dragged else (3 if is_selected else 2)
 
             painter.setPen(QPen(QColor("#111111"), 2 if is_selected else 1.5))
             painter.setBrush(QColor("#ffffff"))
