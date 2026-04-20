@@ -937,6 +937,8 @@ class MainWindow(QMainWindow):
     ) -> str:
         invalid_suffix = " [invalid]" if orbit is not None and not orbit.valid else ""
         status = "visible" if seed.visible else "hidden"
+        steps_built = orbit.completed_steps if orbit is not None else 0
+        point_count = len(orbit.points) if orbit is not None else 0
         reason = (
             f"\nreason: {orbit.invalid_reason}"
             if orbit is not None and orbit.invalid_reason
@@ -947,6 +949,8 @@ class MainWindow(QMainWindow):
             f"wall: {seed.wall_start}\n"
             f"d0: {seed.d0:.6f}\n"
             f"tau0: {seed.tau0:.6f}\n"
+            f"steps built: {steps_built}\n"
+            f"points: {point_count}\n"
             f"status: {status}{invalid_suffix}{reason}"
         )
 
