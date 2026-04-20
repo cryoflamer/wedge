@@ -272,6 +272,12 @@ class MainWindow(QMainWindow):
         self.replay_controller.state_changed.connect(self._on_replay_state_changed)
 
     def update_view(self) -> None:
+        self._update_controls_config_view()
+        self._update_trajectory_views()
+        self._update_panel_views()
+        self._update_status_view()
+
+    def _update_controls_config_view(self) -> None:
         self.controls_panel.load_config(self._config)
         self.controls_panel.set_angle_units(self._angle_units)
         self.controls_panel.set_symmetric_mode(self._symmetric_mode)
@@ -299,6 +305,8 @@ class MainWindow(QMainWindow):
             self._config.simulation.beta,
         )
         self.angle_panel.set_regions(self._config.regions)
+
+    def _update_trajectory_views(self) -> None:
         trajectory_items = [
             (
                 seed.id,
@@ -334,6 +342,8 @@ class MainWindow(QMainWindow):
                 reason=selected_orbit.lyapunov_invalid_reason,
                 wall_divergence_count=selected_orbit.lyapunov_wall_divergence_count,
             )
+
+    def _update_panel_views(self) -> None:
         self.phase_panel_wall_1.set_trajectories(
             self._trajectory_seeds,
             self._trajectory_orbits,
@@ -352,6 +362,8 @@ class MainWindow(QMainWindow):
             self._selected_trajectory_id,
             self._active_segment_indices,
         )
+
+    def _update_status_view(self) -> None:
         self.controls_panel.set_job_status(
             status=self._job_status_state,
             message=self._job_status_message,
@@ -1201,7 +1213,9 @@ class MainWindow(QMainWindow):
             return
         payload = self._pending_partial_results.popleft()
         self._apply_partial_payload(payload)
-        self.update_view()
+        self._update_trajectory_views()
+        self._update_panel_views()
+        self._update_status_view()
         if self._pending_partial_results:
             self._partial_update_timer.start()
 
@@ -1258,7 +1272,9 @@ class MainWindow(QMainWindow):
         self._current_job_worker = None
         self._current_job_thread = None
         self._autosave_session()
-        self.update_view()
+        self._update_trajectory_views()
+        self._update_panel_views()
+        self._update_status_view()
 
 
 def run_app(config: Config, config_path: str) -> None:
