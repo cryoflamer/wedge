@@ -5,19 +5,19 @@ import logging
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QThread, Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
     QGridLayout,
+    QLabel,
     QMainWindow,
+    QProgressBar,
     QScrollArea,
     QWidget,
 )
 
-from app.core.geometry_builder import build_wedge_geometry
-from app.core.lyapunov import compute_finite_time_lyapunov
 from app.core.orbit_builder import build_orbit
 from app.models.config import Config
 from app.models.geometry import WedgeGeometry
@@ -25,9 +25,15 @@ from app.models.orbit import Orbit
 from app.models.session import Session
 from app.models.trajectory import TrajectorySeed
 from app.services.config_loader import save_runtime_config
+from app.services.background_jobs import (
+    JobFinished,
+    JobProgress,
+    LyapunovResultPayload,
+    OrbitBuildWorker,
+    OrbitPartialResult,
+)
 from app.services.data_export_service import export_orbit_data
 from app.services.export_service import export_widget_bundle_png
-from app.services.scan_sampler import generate_scan_points
 from app.services.session_service import load_session, save_session
 from app.ui.angle_panel import AnglePanel
 from app.ui.controls_panel import ControlsPanel
@@ -64,6 +70,11 @@ class MainWindow(QMainWindow):
             "#17becf",
         ]
         self._max_trajectory_count = 300
+        self._job_generation = 0
+        self._current_job_thread: QThread | None = None
+        self._current_job_worker: OrbitBuildWorker | None = None
+        self._job_status_state = "idle"
+        self._job_status_message = "Idle"
 
         self.setWindowTitle(config.app.title)
         self.resize(config.window.width, config.window.height)
@@ -96,6 +107,7 @@ class MainWindow(QMainWindow):
         )
 
         self._build_layout()
+        self._build_status_bar()
         self._connect_signals()
         self.update_view()
         self._restore_autosave_session()
@@ -133,6 +145,7 @@ class MainWindow(QMainWindow):
         self._window_position_restored = True
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self._cancel_current_job()
         self._config.window.width = self.width()
         self._config.window.height = self.height()
         self._config.window.x = self.x()
@@ -160,6 +173,16 @@ class MainWindow(QMainWindow):
         grid.setRowStretch(1, 1)
 
         self.setCentralWidget(central)
+
+    def _build_status_bar(self) -> None:
+        self._status_label = QLabel("Idle")
+        self._status_progress = QProgressBar()
+        self._status_progress.setRange(0, 100)
+        self._status_progress.setValue(0)
+        self._status_progress.setTextVisible(True)
+        self._status_progress.setMaximumWidth(220)
+        self.statusBar().addWidget(self._status_label, 1)
+        self.statusBar().addPermanentWidget(self._status_progress)
 
     def _connect_signals(self) -> None:
         self.phase_panel_wall_1.clicked.connect(self._on_phase_click)
@@ -203,6 +226,7 @@ class MainWindow(QMainWindow):
         self.controls_panel.replay_action_requested.connect(self._on_replay_action)
         self.controls_panel.scan_requested.connect(self._on_scan_requested)
         self.controls_panel.manual_seed_requested.connect(self._on_manual_seed_requested)
+        self.controls_panel.cancel_job_requested.connect(self._cancel_current_job)
         self.replay_controller.state_changed.connect(self._on_replay_state_changed)
 
     def update_view(self) -> None:
@@ -286,9 +310,14 @@ class MainWindow(QMainWindow):
             self._selected_trajectory_id,
             self._active_segment_indices,
         )
+        self.controls_panel.set_job_status(
+            status=self._job_status_state,
+            message=self._job_status_message,
+            cancellable=self._current_job_worker is not None,
+        )
 
     def _on_phase_click(self, wall: int, d_value: float, tau_value: float) -> None:
-        trajectory_id = self._add_trajectory_seed(wall, d_value, tau_value)
+        trajectory_id = self._queue_single_seed_build(wall, d_value, tau_value)
         if trajectory_id is None:
             logger.info("Phase panel click ignored: trajectory limit reached")
             return
@@ -309,7 +338,7 @@ class MainWindow(QMainWindow):
         d_value: float,
         tau_value: float,
     ) -> None:
-        trajectory_id = self._add_trajectory_seed(wall, d_value, tau_value)
+        trajectory_id = self._queue_single_seed_build(wall, d_value, tau_value)
         if trajectory_id is None:
             logger.info("Manual seed ignored: trajectory limit reached")
             return
@@ -345,7 +374,7 @@ class MainWindow(QMainWindow):
                 math.pi - self._config.simulation.alpha,
                 self._config.simulation.alpha,
             )
-            self._rebuild_orbits()
+            self._start_rebuild_job()
             self._reset_replay_views()
             self._autosave_session()
         self.update_view()
@@ -393,26 +422,7 @@ class MainWindow(QMainWindow):
             self.controls_panel.set_lyapunov_status("failed", 0, None, "missing_orbit")
             return
 
-        result = compute_finite_time_lyapunov(
-            seed=seed,
-            simulation_config=self._config.simulation,
-            lyapunov_config=self._config.lyapunov,
-        )
-        orbit.lyapunov_estimate = result.estimate
-        orbit.lyapunov_running = result.running_estimate
-        orbit.lyapunov_valid = result.status in ("done", "partial")
-        orbit.lyapunov_invalid_reason = result.reason
-        orbit.lyapunov_status = result.status
-        orbit.lyapunov_steps_used = result.steps_used
-        orbit.lyapunov_wall_divergence_count = result.wall_divergence_count
-        self.update_view()
-        logger.info(
-            "Lyapunov computed: id=%s status=%s steps=%s estimate=%s",
-            self._selected_trajectory_id,
-            result.status,
-            result.steps_used,
-            result.estimate,
-        )
+        self._start_lyapunov_job(seed)
 
     def _on_export_data(self) -> None:
         if self._selected_trajectory_id is None:
@@ -459,7 +469,7 @@ class MainWindow(QMainWindow):
         self._config.simulation.beta = beta
         self._config.simulation.n_phase_default = normalized_n_phase
         self._config.simulation.n_geom_default = n_geom
-        self._rebuild_orbits()
+        self._start_rebuild_job()
         self._reset_replay_views()
         self._autosave_session()
         self.update_view()
@@ -496,52 +506,14 @@ class MainWindow(QMainWindow):
             logger.info("Scan skipped: trajectory limit reached")
             return
 
-        generated_points = generate_scan_points(
+        self._start_scan_job(
             mode=mode,
             count=min(count, capacity),
+            wall=wall,
             d_min=d_min,
             d_max=d_max,
             tau_min=tau_min,
             tau_max=tau_max,
-        )
-
-        added = 0
-        for d_value, tau_value in generated_points:
-            if (1.0 - d_value) ** 2 + tau_value * tau_value >= 1.0:
-                continue
-
-            trajectory_id = self._next_trajectory_id
-            self._next_trajectory_id += 1
-            seed = TrajectorySeed(
-                id=trajectory_id,
-                wall_start=wall,
-                d0=d_value,
-                tau0=tau_value,
-                color=self._palette[(trajectory_id - 1) % len(self._palette)],
-            )
-            self._trajectory_seeds[trajectory_id] = seed
-            self._trajectory_orbits[trajectory_id] = self._build_orbit(seed)
-            self._trajectory_geometries[trajectory_id] = self._build_geometry(
-                self._trajectory_orbits[trajectory_id]
-            )
-            added += 1
-
-        if added == 0:
-            logger.info("Scan finished: no valid seeds inside domain")
-            return
-
-        if self._selected_trajectory_id is None:
-            self._selected_trajectory_id = next(iter(self._trajectory_seeds.keys()), None)
-
-        self._reset_replay_views()
-        self._autosave_session()
-        self.update_view()
-        logger.info(
-            "Scan finished: mode=%s wall=%s requested=%s added=%s",
-            mode,
-            wall,
-            count,
-            added,
         )
 
     def _on_trajectory_selected(self, trajectory_id: int) -> None:
@@ -577,6 +549,21 @@ class MainWindow(QMainWindow):
             trajectory_id: self._build_geometry(orbit)
             for trajectory_id, orbit in self._trajectory_orbits.items()
         }
+
+    def _cancel_current_job(self) -> None:
+        if self._current_job_worker is None:
+            return
+        self._current_job_worker.cancel()
+        self._set_job_progress(
+            JobProgress(
+                generation_id=self._job_generation,
+                job_kind="cancel",
+                status="cancelled",
+                current=0,
+                total=0,
+                message="Cancelling current job...",
+            )
+        )
 
     def _on_trajectory_visibility_toggled(self, trajectory_id: int) -> None:
         seed = self._trajectory_seeds.get(trajectory_id)
@@ -935,6 +922,215 @@ class MainWindow(QMainWindow):
             self._selected_trajectory_id = trajectory_id
         self._reset_replay_views()
         return trajectory_id
+
+    def _queue_single_seed_build(self, wall: int, d_value: float, tau_value: float) -> int | None:
+        if len(self._trajectory_seeds) >= self._max_trajectory_count:
+            return None
+
+        trajectory_id = self._next_trajectory_id
+        self._next_trajectory_id += 1
+        seed = TrajectorySeed(
+            id=trajectory_id,
+            wall_start=wall,
+            d0=d_value,
+            tau0=tau_value,
+            color=self._palette[(trajectory_id - 1) % len(self._palette)],
+        )
+        self._trajectory_seeds[trajectory_id] = seed
+        self._trajectory_orbits[trajectory_id] = Orbit(trajectory_id=trajectory_id)
+        self._trajectory_geometries[trajectory_id] = WedgeGeometry()
+        if self._selected_trajectory_id is None:
+            self._selected_trajectory_id = trajectory_id
+        self._reset_replay_views()
+        self.update_view()
+        self._start_worker(
+            OrbitBuildWorker(
+                generation_id=self._next_generation_id(),
+                job_kind="single_build",
+                simulation_config=self._config.simulation,
+                max_reflections=self._config.simulation.n_geom_default,
+                phase_steps=self._normalized_phase_steps(
+                    self._config.simulation.n_phase_default,
+                    self._config.simulation.n_geom_default,
+                ),
+                chunk_size=self._config.background.build_chunk_size,
+                seeds=[seed],
+            )
+        )
+        return trajectory_id
+
+    def _start_rebuild_job(self) -> None:
+        self._trajectory_orbits = {}
+        self._trajectory_geometries = {}
+        self.update_view()
+        self._start_worker(
+            OrbitBuildWorker(
+                generation_id=self._next_generation_id(),
+                job_kind="rebuild",
+                simulation_config=self._config.simulation,
+                max_reflections=self._config.simulation.n_geom_default,
+                phase_steps=self._normalized_phase_steps(
+                    self._config.simulation.n_phase_default,
+                    self._config.simulation.n_geom_default,
+                ),
+                chunk_size=self._config.background.build_chunk_size,
+                seeds=sorted(self._trajectory_seeds.values(), key=lambda item: item.id),
+            )
+        )
+
+    def _start_scan_job(
+        self,
+        mode: str,
+        count: int,
+        wall: int,
+        d_min: float,
+        d_max: float,
+        tau_min: float,
+        tau_max: float,
+    ) -> None:
+        self._start_worker(
+            OrbitBuildWorker(
+                generation_id=self._next_generation_id(),
+                job_kind="scan",
+                simulation_config=self._config.simulation,
+                max_reflections=self._config.simulation.n_geom_default,
+                phase_steps=self._normalized_phase_steps(
+                    self._config.simulation.n_phase_default,
+                    self._config.simulation.n_geom_default,
+                ),
+                chunk_size=self._config.background.build_chunk_size,
+                scan_mode=mode,
+                scan_count=count,
+                scan_wall=wall,
+                scan_d_min=d_min,
+                scan_d_max=d_max,
+                scan_tau_min=tau_min,
+                scan_tau_max=tau_max,
+                next_trajectory_id=self._next_trajectory_id,
+                palette=self._palette,
+                max_trajectory_count=max(self._max_trajectory_count - len(self._trajectory_seeds), 0),
+            )
+        )
+
+    def _start_lyapunov_job(self, seed: TrajectorySeed) -> None:
+        self._start_worker(
+            OrbitBuildWorker(
+                generation_id=self._next_generation_id(),
+                job_kind="lyapunov",
+                simulation_config=self._config.simulation,
+                max_reflections=self._config.simulation.n_geom_default,
+                phase_steps=self._normalized_phase_steps(
+                    self._config.simulation.n_phase_default,
+                    self._config.simulation.n_geom_default,
+                ),
+                chunk_size=self._config.background.build_chunk_size,
+                lyapunov_seed=seed,
+                lyapunov_config=self._config.lyapunov,
+            )
+        )
+
+    def _next_generation_id(self) -> int:
+        self._job_generation += 1
+        return self._job_generation
+
+    def _start_worker(self, worker: OrbitBuildWorker) -> None:
+        self._cancel_current_job()
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(self._on_job_progress)
+        worker.partial_result.connect(self._on_job_partial_result)
+        worker.lyapunov_result.connect(self._on_lyapunov_result)
+        worker.finished.connect(self._on_job_finished)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        self._current_job_thread = thread
+        self._current_job_worker = worker
+        self._set_job_progress(
+            JobProgress(
+                generation_id=self._job_generation,
+                job_kind="start",
+                status="running",
+                current=0,
+                total=0,
+                message="Starting background job...",
+            )
+        )
+        thread.start()
+
+    def _on_job_progress(self, progress: object) -> None:
+        if not isinstance(progress, JobProgress):
+            return
+        if progress.generation_id != self._job_generation:
+            return
+        self._set_job_progress(progress)
+
+    def _set_job_progress(self, progress: JobProgress) -> None:
+        total = max(progress.total, 0)
+        current = min(max(progress.current, 0), total) if total > 0 else 0
+        percent = int((current / total) * 100.0) if total > 0 else 0
+        self._job_status_state = progress.status
+        self._job_status_message = progress.message
+        self._status_label.setText(self._job_status_message)
+        self._status_progress.setValue(percent)
+        self.controls_panel.set_job_status(
+            status=self._job_status_state,
+            message=self._job_status_message,
+            cancellable=self._current_job_worker is not None and progress.status in ("running", "partial"),
+        )
+
+    def _on_job_partial_result(self, payload: object) -> None:
+        if not isinstance(payload, OrbitPartialResult):
+            return
+        if payload.generation_id != self._job_generation:
+            return
+        self._trajectory_seeds[payload.trajectory_id] = payload.seed
+        self._trajectory_orbits[payload.trajectory_id] = payload.orbit
+        self._trajectory_geometries[payload.trajectory_id] = payload.geometry
+        if self._selected_trajectory_id is None:
+            self._selected_trajectory_id = payload.trajectory_id
+        if payload.replace:
+            self._next_trajectory_id = max(self._next_trajectory_id, payload.trajectory_id + 1)
+        else:
+            self._next_trajectory_id = max(self._next_trajectory_id, payload.trajectory_id + 1)
+        self.update_view()
+
+    def _on_lyapunov_result(self, payload: object) -> None:
+        if not isinstance(payload, LyapunovResultPayload):
+            return
+        if payload.generation_id != self._job_generation:
+            return
+        orbit = self._trajectory_orbits.get(payload.trajectory_id)
+        if orbit is None:
+            return
+        orbit.lyapunov_estimate = payload.estimate
+        orbit.lyapunov_running = payload.running_estimate
+        orbit.lyapunov_valid = payload.status in ("done", "partial")
+        orbit.lyapunov_invalid_reason = payload.reason
+        orbit.lyapunov_status = payload.status
+        orbit.lyapunov_steps_used = payload.steps_used
+        orbit.lyapunov_wall_divergence_count = payload.wall_divergence_count
+        self.update_view()
+
+    def _on_job_finished(self, payload: object) -> None:
+        if not isinstance(payload, JobFinished):
+            return
+        if payload.generation_id != self._job_generation:
+            return
+        self._job_status_state = payload.status
+        self._job_status_message = payload.message
+        self._status_label.setText(self._job_status_message)
+        self._status_progress.setValue(100 if payload.status == "done" else 0)
+        self.controls_panel.set_job_status(
+            status=self._job_status_state,
+            message=self._job_status_message,
+            cancellable=False,
+        )
+        self._current_job_worker = None
+        self._current_job_thread = None
+        self._autosave_session()
+        self.update_view()
 
 
 def run_app(config: Config, config_path: str) -> None:

@@ -7,6 +7,7 @@ import yaml
 from app.models.config import (
     AppConfig,
     AutosaveConfig,
+    BackgroundConfig,
     Config,
     ExportConfig,
     LyapunovConfig,
@@ -27,6 +28,7 @@ def load_config(path: str | Path) -> Config:
     app_data = data.get("app", {})
     simulation_data = data.get("simulation", {})
     replay_data = data.get("replay", {})
+    background_data = data.get("background", {})
     lyapunov_data = data.get("lyapunov", {})
     export_data = data.get("export", {})
     view_data = data.get("view", {})
@@ -52,6 +54,9 @@ def load_config(path: str | Path) -> Config:
             selected_only_by_default=bool(
                 replay_data.get("selected_only_by_default", True)
             ),
+        ),
+        background=BackgroundConfig(
+            build_chunk_size=int(background_data.get("build_chunk_size", 16)),
         ),
         lyapunov=LyapunovConfig(
             delta0=float(lyapunov_data.get("delta0", 1.0e-6)),

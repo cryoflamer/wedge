@@ -42,6 +42,7 @@ class ControlsPanel(QWidget):
     replay_action_requested = Signal(str)
     scan_requested = Signal(str, int, int, float, float, float, float)
     manual_seed_requested = Signal(int, float, float)
+    cancel_job_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -78,6 +79,8 @@ class ControlsPanel(QWidget):
         self._lyapunov_status = QLabel("Lyapunov: not computed")
         self._lyapunov_steps = QLabel("Lyapunov steps: -")
         self._lyapunov_value = QLabel("Lyapunov λ: -")
+        self._job_status = QLabel("Job: idle")
+        self._cancel_job_button = QPushButton("Cancel job")
         self._parameter_status = QLabel("")
         self._angle_units = "rad"
 
@@ -147,6 +150,8 @@ class ControlsPanel(QWidget):
             QComboBox.SizeAdjustPolicy.AdjustToContents
         )
         self._trajectory_selector.setIconSize(QSize(12, 12))
+        self._cancel_job_button.setEnabled(False)
+        self._cancel_job_button.clicked.connect(self.cancel_job_requested.emit)
 
     def _build_trajectory_box(self) -> QGroupBox:
         box = QGroupBox("Trajectories")
@@ -201,6 +206,7 @@ class ControlsPanel(QWidget):
         layout.addWidget(self._lyapunov_status)
         layout.addWidget(self._lyapunov_steps)
         layout.addWidget(self._lyapunov_value)
+        layout.addWidget(self._job_status)
 
         manual_form = QFormLayout()
         manual_form.setContentsMargins(0, 0, 0, 0)
@@ -291,6 +297,8 @@ class ControlsPanel(QWidget):
         scan_button.clicked.connect(self._emit_scan_request)
         layout.addWidget(scan_button)
         scan_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout.addWidget(self._cancel_job_button)
+        self._cancel_job_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         actions_grid = QGridLayout()
         actions_grid.setHorizontalSpacing(6)
@@ -526,6 +534,10 @@ class ControlsPanel(QWidget):
             self._lyapunov_value.setText("Lyapunov λ: -")
         else:
             self._lyapunov_value.setText(f"Lyapunov λ: {estimate:.6f}")
+
+    def set_job_status(self, status: str, message: str, cancellable: bool) -> None:
+        self._job_status.setText(f"Job: {status} | {message}")
+        self._cancel_job_button.setEnabled(cancellable)
 
     def _emit_parameters(self) -> None:
         self._clear_parameter_error()
