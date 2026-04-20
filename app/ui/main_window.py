@@ -1138,7 +1138,14 @@ class MainWindow(QMainWindow):
                 ),
                 chunk_size=self._config.background.build_chunk_size,
                 seeds=[seed],
-            )
+            ),
+            start_message=f"Building trajectory #{seed.id}",
+            resumable_payload={
+                "job_kind": "single_build",
+                "seeds": [seed],
+                "start_message": f"Building trajectory #{seed.id}",
+                "title": f"Trajectory #{seed.id}",
+            },
         )
         return trajectory_id
 
@@ -1537,8 +1544,6 @@ class MainWindow(QMainWindow):
         start_message = str(
             payload.get("start_message", "Resuming job...")
         )
-        if job_kind != "rebuild":
-            return
         seeds = payload.get("seeds")
         if not isinstance(seeds, list):
             return
@@ -1547,23 +1552,43 @@ class MainWindow(QMainWindow):
             item for item in self._paused_job_payloads
             if int(item.get("job_id", -2)) != job_id
         ]
-        self._start_worker(
-            OrbitBuildWorker(
-                generation_id=self._next_generation_id(),
-                job_kind="rebuild",
-                simulation_config=self._config.simulation,
-                max_reflections=self._config.simulation.n_geom_default,
-                phase_steps=self._normalized_phase_steps(
-                    self._config.simulation.n_phase_default,
-                    self._config.simulation.n_geom_default,
+        if job_kind == "rebuild":
+            self._start_worker(
+                OrbitBuildWorker(
+                    generation_id=self._next_generation_id(),
+                    job_kind="rebuild",
+                    simulation_config=self._config.simulation,
+                    max_reflections=self._config.simulation.n_geom_default,
+                    phase_steps=self._normalized_phase_steps(
+                        self._config.simulation.n_phase_default,
+                        self._config.simulation.n_geom_default,
+                    ),
+                    chunk_size=self._config.background.build_chunk_size,
+                    seeds=seeds,
+                    existing_orbits=self._trajectory_orbits,
                 ),
-                chunk_size=self._config.background.build_chunk_size,
-                seeds=seeds,
-                existing_orbits=self._trajectory_orbits,
-            ),
-            start_message=start_message.replace("Starting", "Resuming"),
-            resumable_payload=payload,
-        )
+                start_message=start_message.replace("Starting", "Resuming"),
+                resumable_payload=payload,
+            )
+            return
+        if job_kind == "single_build":
+            self._start_worker(
+                OrbitBuildWorker(
+                    generation_id=self._next_generation_id(),
+                    job_kind="single_build",
+                    simulation_config=self._config.simulation,
+                    max_reflections=self._config.simulation.n_geom_default,
+                    phase_steps=self._normalized_phase_steps(
+                        self._config.simulation.n_phase_default,
+                        self._config.simulation.n_geom_default,
+                    ),
+                    chunk_size=self._config.background.build_chunk_size,
+                    seeds=seeds,
+                    existing_orbits=self._trajectory_orbits,
+                ),
+                start_message=start_message.replace("Building", "Resuming"),
+                resumable_payload=payload,
+            )
 
     def _schedule_autosave(self) -> None:
         if not self._config.autosave.enabled:
