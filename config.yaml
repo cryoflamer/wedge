@@ -31,6 +31,7 @@ export:
 view:
   show_phase_grid: true
   show_phase_minor_grid: false
+  show_seed_markers: true
   phase_grid:
     major_step_d: 0.1
     major_step_tau: 0.1

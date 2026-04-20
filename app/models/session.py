@@ -19,5 +19,6 @@ class Session:
     symmetric_mode: bool = False
     export_mode: str = "color"
     phase_fixed_domain: bool = True
+    show_seed_markers: bool = True
     phase_viewport_wall_1: tuple[float, float, float, float] | None = None
     phase_viewport_wall_2: tuple[float, float, float, float] | None = None

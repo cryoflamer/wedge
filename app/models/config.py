@@ -70,6 +70,7 @@ class PhaseGridConfig:
 class ViewConfig:
     show_phase_grid: bool = True
     show_phase_minor_grid: bool = False
+    show_seed_markers: bool = True
     phase_grid: PhaseGridConfig = field(default_factory=PhaseGridConfig)
     show_labels: bool = True
     show_directrix: bool = False

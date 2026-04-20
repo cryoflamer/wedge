@@ -23,6 +23,7 @@ def save_session(session: Session, output_path: str | Path) -> Path:
         "symmetric_mode": session.symmetric_mode,
         "export_mode": session.export_mode,
         "phase_fixed_domain": session.phase_fixed_domain,
+        "show_seed_markers": session.show_seed_markers,
         "trajectories": [
             {
                 "id": trajectory.id,
@@ -77,6 +78,7 @@ def load_session(input_path: str | Path) -> Session:
         symmetric_mode=bool(data.get("symmetric_mode", False)),
         export_mode=str(data.get("export_mode", "color")),
         phase_fixed_domain=bool(data.get("phase_fixed_domain", True)),
+        show_seed_markers=bool(data.get("show_seed_markers", True)),
         trajectories=trajectories,
         phase_viewport_wall_1=_as_viewport(data.get("phase_viewport_wall_1")),
         phase_viewport_wall_2=_as_viewport(data.get("phase_viewport_wall_2")),

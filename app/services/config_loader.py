@@ -91,6 +91,9 @@ def load_config(path: str | Path) -> Config:
                     phase_grid_data.get("show_minor", False),
                 )
             ),
+            show_seed_markers=bool(
+                view_data.get("show_seed_markers", True)
+            ),
             phase_grid=PhaseGridConfig(
                 major_step_d=float(phase_grid_data.get("major_step_d", 0.1)),
                 major_step_tau=float(phase_grid_data.get("major_step_tau", 0.1)),
