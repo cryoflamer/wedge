@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
@@ -80,6 +82,8 @@ class WedgePanel(QWidget):
 
     def _all_points(self) -> list[tuple[float, float]]:
         points: list[tuple[float, float]] = [(0.0, 0.0)]
+        if self._view_config.show_directrix:
+            points.append((0.0, 1.0))
         for geometry in self._geometries.values():
             for wall in geometry.walls:
                 points.append((wall.start.x, wall.start.y))
@@ -137,9 +141,75 @@ class WedgePanel(QWidget):
         painter.drawRect(self.rect().adjusted(0, 0, -1, -1))
         painter.drawRect(self._plot_rect())
 
+        self._draw_axes(painter)
+        self._draw_directrix(painter)
         self._draw_walls(painter)
         self._draw_segments(painter)
         self._draw_reflections(painter)
+
+    def _draw_axes(self, painter: QPainter) -> None:
+        min_x, max_x, min_y, max_y = self._geometry_bounds()
+        plot = self._plot_rect()
+        tick_length = 5.0
+        axis_color = QColor(125, 125, 125, 220)
+        text_color = QColor(90, 90, 90)
+        font_metrics = painter.fontMetrics()
+
+        x_ticks = self._tick_values(min_x, max_x)
+        y_ticks = self._tick_values(min_y, max_y)
+
+        painter.save()
+        painter.setPen(QPen(axis_color, 1))
+        for tick in x_ticks:
+            point = self._to_canvas(tick, min_y)
+            painter.drawLine(
+                QPointF(point.x(), plot.bottom() - tick_length),
+                QPointF(point.x(), plot.bottom()),
+            )
+            label = self._format_tick_label(tick, x_ticks.step)
+            label_width = font_metrics.horizontalAdvance(label)
+            text_x = max(
+                plot.left() + 2.0,
+                min(point.x() - label_width / 2.0, plot.right() - label_width - 2.0),
+            )
+            painter.setPen(text_color)
+            painter.drawText(
+                QPointF(text_x, plot.bottom() - 6.0),
+                label,
+            )
+            painter.setPen(QPen(axis_color, 1))
+
+        for tick in y_ticks:
+            point = self._to_canvas(min_x, tick)
+            painter.drawLine(
+                QPointF(plot.left(), point.y()),
+                QPointF(plot.left() + tick_length, point.y()),
+            )
+            label = self._format_tick_label(tick, y_ticks.step)
+            text_y = max(
+                plot.top() + font_metrics.ascent() + 2.0,
+                min(point.y() + font_metrics.ascent() / 2.5, plot.bottom() - 2.0),
+            )
+            painter.setPen(text_color)
+            painter.drawText(
+                QPointF(plot.left() + tick_length + 4.0, text_y),
+                label,
+            )
+            painter.setPen(QPen(axis_color, 1))
+        painter.restore()
+
+    def _draw_directrix(self, painter: QPainter) -> None:
+        if not self._view_config.show_directrix:
+            return
+
+        min_x, max_x, _, _ = self._geometry_bounds()
+        if abs(max_x - min_x) <= 1.0e-9:
+            max_x = min_x + 1.0
+
+        painter.setPen(QPen(QColor(136, 136, 136, 180), 1, Qt.DashLine))
+        start = self._to_canvas(min_x, 1.0)
+        end = self._to_canvas(max_x, 1.0)
+        painter.drawLine(start, end)
 
     def _draw_walls(self, painter: QPainter) -> None:
         if not self._geometries:
@@ -209,3 +279,49 @@ class WedgePanel(QWidget):
                     continue
                 point = self._to_canvas(reflection.point.x, reflection.point.y)
                 painter.drawEllipse(point, radius, radius)
+
+    def _tick_values(self, min_value: float, max_value: float) -> "_TickValues":
+        span = max(max_value - min_value, 1.0e-9)
+        step = self._nice_tick_step(span / 4.0)
+        start = math.ceil(min_value / step) * step
+        values: list[float] = []
+        current = start
+        limit = max_value + step * 0.5
+        while current <= limit:
+            values.append(0.0 if abs(current) <= 1.0e-12 else current)
+            current += step
+        return _TickValues(values=values, step=step)
+
+    def _nice_tick_step(self, raw_step: float) -> float:
+        if raw_step <= 0.0:
+            return 1.0
+
+        exponent = math.floor(math.log10(raw_step))
+        fraction = raw_step / (10 ** exponent)
+        if fraction <= 1.0:
+            nice_fraction = 1.0
+        elif fraction <= 2.0:
+            nice_fraction = 2.0
+        elif fraction <= 5.0:
+            nice_fraction = 5.0
+        else:
+            nice_fraction = 10.0
+        return nice_fraction * (10 ** exponent)
+
+    def _format_tick_label(self, value: float, step: float) -> str:
+        if step >= 1.0:
+            return f"{value:.0f}"
+        if step >= 0.1:
+            return f"{value:.1f}"
+        if step >= 0.01:
+            return f"{value:.2f}"
+        return f"{value:.3f}"
+
+
+class _TickValues:
+    def __init__(self, values: list[float], step: float) -> None:
+        self.values = values
+        self.step = step
+
+    def __iter__(self):
+        return iter(self.values)
