@@ -574,9 +574,9 @@ class PhasePanel(QWidget):
             active_radius = self._view_config.phase_point_radius + 2
             painter.drawEllipse(active_canvas_point, active_radius, active_radius)
 
+        self._draw_seed_markers(painter, plot)
         painter.restore()
         self._draw_axis_labels(painter, plot)
-        self._draw_seed_markers(painter)
         if hover_label_text is not None:
             self._draw_hover_label(painter, plot, hover_label_text)
 
@@ -777,11 +777,12 @@ class PhasePanel(QWidget):
 
         painter.drawEllipse(canvas_point, radius, radius)
 
-    def _draw_seed_markers(self, painter: QPainter) -> None:
+    def _draw_seed_markers(self, painter: QPainter, plot: QRectF) -> None:
         if not self._view_config.show_seed_markers:
             return
 
         painter.save()
+        painter.setClipRect(plot, Qt.IntersectClip)
         painter.setRenderHint(QPainter.Antialiasing)
         for trajectory_id, seed in self._seeds.items():
             if not seed.visible or seed.wall_start != self.wall:
