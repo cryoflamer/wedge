@@ -42,6 +42,9 @@ class ControlsPanel(QWidget):
     replay_action_requested = Signal(str)
     scan_requested = Signal(str, int, int, float, float, float, float)
     manual_seed_requested = Signal(int, float, float)
+    cancel_job_requested = Signal()
+    resume_job_requested = Signal()
+    fast_build_changed = Signal(bool)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -52,6 +55,7 @@ class ControlsPanel(QWidget):
         self._n_phase_edit = QLineEdit()
         self._n_geom_edit = QLineEdit()
         self._fixed_domain_checkbox = QCheckBox("Fixed domain (disable for zoom/pan)")
+        self._fast_build_checkbox = QCheckBox("Fast build")
         self._symmetric_mode_checkbox = QCheckBox("Symmetric wedge mode")
         self._show_regions_checkbox = QCheckBox("Show regions")
         self._show_region_labels_checkbox = QCheckBox("Show region labels")
@@ -78,6 +82,9 @@ class ControlsPanel(QWidget):
         self._lyapunov_status = QLabel("Lyapunov: not computed")
         self._lyapunov_steps = QLabel("Lyapunov steps: -")
         self._lyapunov_value = QLabel("Lyapunov λ: -")
+        self._job_status = QLabel("Job: idle")
+        self._cancel_job_button = QPushButton("Cancel job")
+        self._resume_job_button = QPushButton("Resume job")
         self._parameter_status = QLabel("")
         self._angle_units = "rad"
 
@@ -105,6 +112,7 @@ class ControlsPanel(QWidget):
         self._fixed_domain_checkbox.toggled.connect(
             self.phase_view_mode_changed.emit
         )
+        self._fast_build_checkbox.toggled.connect(self.fast_build_changed.emit)
         self._symmetric_mode_checkbox.toggled.connect(
             self._on_symmetric_mode_toggled
         )
@@ -147,6 +155,10 @@ class ControlsPanel(QWidget):
             QComboBox.SizeAdjustPolicy.AdjustToContents
         )
         self._trajectory_selector.setIconSize(QSize(12, 12))
+        self._cancel_job_button.setEnabled(False)
+        self._cancel_job_button.clicked.connect(self.cancel_job_requested.emit)
+        self._resume_job_button.setEnabled(False)
+        self._resume_job_button.clicked.connect(self.resume_job_requested.emit)
 
     def _build_trajectory_box(self) -> QGroupBox:
         box = QGroupBox("Trajectories")
@@ -201,6 +213,7 @@ class ControlsPanel(QWidget):
         layout.addWidget(self._lyapunov_status)
         layout.addWidget(self._lyapunov_steps)
         layout.addWidget(self._lyapunov_value)
+        layout.addWidget(self._job_status)
 
         manual_form = QFormLayout()
         manual_form.setContentsMargins(0, 0, 0, 0)
@@ -237,6 +250,7 @@ class ControlsPanel(QWidget):
         right_layout.setSpacing(4)
         right_layout.addWidget(self._symmetric_mode_checkbox)
         right_layout.addWidget(self._fixed_domain_checkbox)
+        right_layout.addWidget(self._fast_build_checkbox)
         right_layout.addWidget(self._show_regions_checkbox)
         right_layout.addWidget(self._show_region_labels_checkbox)
         right_layout.addWidget(self._show_region_legend_checkbox)
@@ -291,6 +305,10 @@ class ControlsPanel(QWidget):
         scan_button.clicked.connect(self._emit_scan_request)
         layout.addWidget(scan_button)
         scan_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout.addWidget(self._cancel_job_button)
+        self._cancel_job_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout.addWidget(self._resume_job_button)
+        self._resume_job_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         actions_grid = QGridLayout()
         actions_grid.setHorizontalSpacing(6)
@@ -350,6 +368,9 @@ class ControlsPanel(QWidget):
             resolution=config.view.heatmap_resolution,
             normalization=config.view.heatmap_normalization,
         )
+        blocker = QSignalBlocker(self._fast_build_checkbox)
+        self._fast_build_checkbox.setChecked(config.background.fast_build)
+        del blocker
 
     def set_angle_units(self, units: str) -> None:
         normalized_units = units.strip().lower() if units.strip() else "rad"
@@ -526,6 +547,17 @@ class ControlsPanel(QWidget):
             self._lyapunov_value.setText("Lyapunov λ: -")
         else:
             self._lyapunov_value.setText(f"Lyapunov λ: {estimate:.6f}")
+
+    def set_job_status(
+        self,
+        status: str,
+        message: str,
+        cancellable: bool,
+        resumable: bool = False,
+    ) -> None:
+        self._job_status.setText(f"Job: {status} | {message}")
+        self._cancel_job_button.setEnabled(cancellable)
+        self._resume_job_button.setEnabled(resumable)
 
     def _emit_parameters(self) -> None:
         self._clear_parameter_error()

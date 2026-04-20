@@ -7,6 +7,7 @@ import yaml
 from app.models.config import (
     AppConfig,
     AutosaveConfig,
+    BackgroundConfig,
     Config,
     ExportConfig,
     LyapunovConfig,
@@ -27,6 +28,7 @@ def load_config(path: str | Path) -> Config:
     app_data = data.get("app", {})
     simulation_data = data.get("simulation", {})
     replay_data = data.get("replay", {})
+    background_data = data.get("background", {})
     lyapunov_data = data.get("lyapunov", {})
     export_data = data.get("export", {})
     view_data = data.get("view", {})
@@ -52,6 +54,10 @@ def load_config(path: str | Path) -> Config:
             selected_only_by_default=bool(
                 replay_data.get("selected_only_by_default", True)
             ),
+        ),
+        background=BackgroundConfig(
+            build_chunk_size=int(background_data.get("build_chunk_size", 16)),
+            fast_build=bool(background_data.get("fast_build", False)),
         ),
         lyapunov=LyapunovConfig(
             delta0=float(lyapunov_data.get("delta0", 1.0e-6)),
@@ -165,6 +171,12 @@ def save_runtime_config(config: Config, path: str | Path) -> Path:
         "x": config.window.x,
         "y": config.window.y,
     }
+    background_payload = payload.get("background", {})
+    if not isinstance(background_payload, dict):
+        background_payload = {}
+    background_payload["build_chunk_size"] = config.background.build_chunk_size
+    background_payload["fast_build"] = config.background.fast_build
+    payload["background"] = background_payload
 
     with config_path.open("w", encoding="utf-8") as file:
         yaml.safe_dump(payload, file, sort_keys=False)

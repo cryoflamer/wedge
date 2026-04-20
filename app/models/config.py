@@ -28,6 +28,12 @@ class ReplayConfig:
 
 
 @dataclass
+class BackgroundConfig:
+    build_chunk_size: int = 16
+    fast_build: bool = False
+
+
+@dataclass
 class LyapunovConfig:
     delta0: float = 1.0e-6
     transient_steps: int = 10
@@ -85,6 +91,7 @@ class Config:
     lyapunov: LyapunovConfig
     export: ExportConfig
     view: ViewConfig
+    background: BackgroundConfig = field(default_factory=BackgroundConfig)
     window: WindowConfig = field(default_factory=WindowConfig)
     autosave: AutosaveConfig = field(default_factory=AutosaveConfig)
     regions: list[RegionDescription] = field(default_factory=list)

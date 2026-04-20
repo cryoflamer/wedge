@@ -1130,6 +1130,160 @@ view:
 - selected trajectory синхронізується з replay та inspector
 - UI стає компактнішим і зручнішим для роботи з багатьма trajectory
 
+### Task 35. Переробити controls panel у компактний section-based UI
+
+Потрібно зменшити візуальне перевантаження правої панелі керування і зробити UI компактнішим та більш сценарно-орієнтованим.
+
+#### Проблема
+Поточна controls panel перевантажена:
+- забагато кнопок одночасно видно
+- змішані різні режими роботи:
+  - вибір траєкторії
+  - ручне додавання
+  - scan
+  - replay
+  - export
+  - session
+  - view toggles
+- при великій кількості опцій користувачу важко швидко знайти потрібну дію
+- права панель виглядає як суцільний список контролів без чіткої ієрархії
+
+#### Загальна ідея
+Потрібно перейти до section-based layout:
+- часті дії мають бути завжди видимими
+- рідкісні або допоміжні дії мають бути в collapsible sections
+- UI має бути згрупований за сценаріями використання, а не просто за типами віджетів
+
+#### Базова структура controls panel
+
+##### Завжди видимі секції
+1. `Trajectory`
+2. `Parameters`
+3. `Replay`
+
+##### Згорнуті за замовчуванням секції
+4. `Add trajectory`
+5. `Scan`
+6. `View options`
+7. `Export`
+8. `Session`
+
+#### Секція `Trajectory`
+Має містити:
+- dropdown / combo box:
+  - `Selected trajectory`
+- компактний набір action-кнопок:
+  - `Hide/Show`
+  - `Clear`
+  - `Add`
+
+Нижче показувати короткий summary для вибраної траєкторії:
+- `wall`
+- `d0`
+- `tau0`
+- `status`
+- `Lyapunov`
+
+Ця секція є основною точкою входу для роботи з вибраною траєкторією.
+
+#### Секція `Parameters`
+Має залишатися завжди відкритою і містити:
+- `Units`
+- `alpha`
+- `beta`
+- `N_phase`
+- `N_geom`
+
+А також ключові глобальні режими:
+- `Symmetric wedge mode`
+- `Fixed domain`
+- `Fast build`
+
+#### Секція `Replay`
+Має містити тільки керування відтворенням:
+- `Play selected`
+- `Play all`
+- `Pause`
+- `Resume`
+- `Step`
+- `Reset`
+
+Кнопки мають бути компактно згруповані, бажано у 1–2 рядки.
+
+#### Секція `Add trajectory`
+Має бути collapsible block для ручного вводу seed:
+- `d`
+- `tau`
+- `wall`
+- `Add trajectory`
+
+Опційно:
+- `Update selected`
+- `Copy seed from selected`
+
+#### Секція `Scan`
+Має бути окремим collapsible block і містити:
+- `scan mode`
+- `scan wall`
+- `scan count`
+- `scan d min/max`
+- `scan tau min/max`
+- `Run scan`
+
+Також тут можна показувати progress scan job.
+
+#### Секція `View options`
+Має містити toggles, які не потрібні постійно:
+- `Show regions`
+- `Show region labels`
+- `Show legend`
+- `Show branch markers`
+- `Show heatmap`
+- `Show grid`
+- `Show minor grid` (якщо буде реалізовано)
+
+#### Секція `Export`
+Має бути окремим collapsible block:
+- `export mode`
+- `mono preset`
+- `data format`
+- `PNG`
+- `Export data`
+
+#### Секція `Session`
+Має містити:
+- `Save`
+- `Load`
+
+#### Status / job information
+Інформацію про job status краще не тримати як окремий великий блок усередині controls panel.
+
+Потрібно перенести job status у status bar або compact status line:
+- `Building... 420 / 1000 | Press Esc to cancel`
+- `Scan running... 34 / 200 | Press Esc to cancel`
+- `Done`
+- `Cancelled`
+- `Failed`
+
+#### Вимоги до компактності
+- уникати великих вертикальних списків кнопок
+- мінімізувати постійно видимі рідковживані елементи
+- дії, які не потрібні щосекунди, мають бути сховані в collapsible sections
+- використовувати короткі й однорідні підписи кнопок
+
+#### Поведінка
+- стан розкриття/згортання секцій можна опційно зберігати в session
+- при зміні selected trajectory секція `Trajectory` має оновлювати summary автоматично
+- усі поточні функції мають зберегтись, змінюється тільки організація UI
+
+#### Acceptance criteria
+- права панель стає помітно компактнішою
+- основні дії доступні без зайвого scroll
+- рідкісні режими не засмічують головний інтерфейс
+- trajectory selection, parameters і replay лишаються швидко доступними
+- scan / export / manual add / session переміщені в collapsible sections
+- job status винесений у status bar або компактний status area
+
 ## 17. Мінімальний MVP
 
 Перша робоча версія має вміти:
