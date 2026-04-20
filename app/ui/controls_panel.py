@@ -16,7 +16,6 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
-    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -83,16 +82,14 @@ class ControlsPanel(QWidget):
         self._lyapunov_value = QLabel("Lyapunov λ: -")
         self._parameter_status = QLabel("")
         self._angle_units = "rad"
-        self._details_tabs = QTabWidget()
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(8)
         main_layout.addWidget(self._build_trajectory_box())
-        self._details_tabs.addTab(self._build_parameters_box(), "Parameters")
-        self._details_tabs.addTab(self._build_controls_box(), "Controls")
-        self._details_tabs.setDocumentMode(True)
-        main_layout.addWidget(self._details_tabs, 1)
+        main_layout.addWidget(self._build_parameters_box())
+        main_layout.addWidget(self._build_controls_box())
+        main_layout.addStretch(1)
 
         self._trajectory_list.currentItemChanged.connect(
             self._on_current_item_changed

@@ -5,12 +5,14 @@ import logging
 import sys
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
     QGridLayout,
     QMainWindow,
+    QScrollArea,
     QWidget,
 )
 
@@ -82,6 +84,12 @@ class MainWindow(QMainWindow):
         self.wedge_panel = WedgePanel(view_config=config.view)
         self.angle_panel = AnglePanel(view_config=config.view)
         self.controls_panel = ControlsPanel()
+        self.controls_scroll = QScrollArea()
+        self.controls_scroll.setWidgetResizable(True)
+        self.controls_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarAlwaysOff
+        )
+        self.controls_scroll.setWidget(self.controls_panel)
         self.replay_controller = ReplayController(
             delay_ms=config.replay.delay_ms,
             parent=self,
@@ -143,7 +151,7 @@ class MainWindow(QMainWindow):
         grid.addWidget(self.phase_panel_wall_2, 0, 1)
         grid.addWidget(self.wedge_panel, 1, 0)
         grid.addWidget(self.angle_panel, 1, 1)
-        grid.addWidget(self.controls_panel, 0, 2, 2, 1)
+        grid.addWidget(self.controls_scroll, 0, 2, 2, 1)
 
         grid.setColumnStretch(0, 3)
         grid.setColumnStretch(1, 3)
