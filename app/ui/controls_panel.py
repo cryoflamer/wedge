@@ -135,6 +135,7 @@ class ControlsPanel(QWidget):
         self._trajectory_lyapunov_summary = QLabel("Lyapunov: -")
         self._angle_units = "rad"
         self._add_section: CollapsibleSection | None = None
+        self._scan_section: CollapsibleSection | None = None
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -366,6 +367,7 @@ class ControlsPanel(QWidget):
         sections.append(self._add_section)
 
         scan_section = CollapsibleSection("Scan", expanded=False)
+        self._scan_section = scan_section
         scan_form = QFormLayout()
         scan_form.setContentsMargins(0, 0, 0, 0)
         scan_form.setHorizontalSpacing(6)
@@ -856,3 +858,7 @@ class ControlsPanel(QWidget):
         if self._add_section is not None:
             self._add_section.set_expanded(True)
         self._manual_d_edit.setFocus()
+
+    def expand_scan_section(self) -> None:
+        if self._scan_section is not None:
+            self._scan_section.set_expanded(True)
