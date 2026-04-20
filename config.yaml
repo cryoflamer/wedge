@@ -13,6 +13,7 @@ replay:
   selected_only_by_default: true
 background:
   build_chunk_size: 16
+  fast_build: true
 lyapunov:
   delta0: 1.0e-06
   transient_steps: 10
@@ -40,9 +41,9 @@ view:
   geometry_point_radius: 2
   angle_hover_tooltip: true
 window:
-  width: 1866
-  height: 1543
-  x: 279
+  width: 2560
+  height: 1549
+  x: 0
   y: 27
 autosave:
   enabled: true
