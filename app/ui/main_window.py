@@ -44,6 +44,7 @@ from app.ui.angle_panel import AnglePanel
 from app.ui.controls_panel import ControlsPanel
 from app.ui.phase_panel import PhasePanel
 from app.ui.replay_controller import ReplayController
+from app.ui.tooltips import apply_tooltip
 from app.ui.wedge_panel import WedgePanel
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,7 @@ class MainWindow(QMainWindow):
 
         self._build_layout()
         self._build_status_bar()
+        self._apply_tooltips()
         QApplication.instance().installEventFilter(self)
         self._connect_signals()
         self.update_view()
@@ -248,6 +250,17 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self._status_job_button)
         self.statusBar().addPermanentWidget(self._status_progress)
         self.statusBar().addPermanentWidget(self._status_fast_build)
+
+    def _apply_tooltips(self) -> None:
+        apply_tooltip(self.phase_panel_wall_1, "phase_panel_wall_1")
+        apply_tooltip(self.phase_panel_wall_2, "phase_panel_wall_2")
+        apply_tooltip(self.wedge_panel, "wedge_panel")
+        apply_tooltip(self.angle_panel, "angle_panel")
+        apply_tooltip(self._status_label, "status_label")
+        apply_tooltip(self._status_jobs_selector, "status_jobs_selector")
+        apply_tooltip(self._status_progress, "status_progress")
+        apply_tooltip(self._status_fast_build, "status_fast_build")
+        self._sync_status_job_button_tooltip()
 
     def _connect_signals(self) -> None:
         self.phase_panel_wall_1.clicked.connect(self._on_phase_click)
@@ -421,12 +434,19 @@ class MainWindow(QMainWindow):
         blocker = QSignalBlocker(self._status_fast_build)
         self._status_fast_build.setChecked(self._config.background.fast_build)
         del blocker
+        self._sync_status_job_button_tooltip()
         self.controls_panel.set_job_status(
             status=self._job_status_state,
             message=self._job_status_message,
             cancellable=self._current_job_worker is not None,
             resumable=bool(self._paused_job_payloads) and self._current_job_worker is None,
         )
+
+    def _sync_status_job_button_tooltip(self) -> None:
+        if self._status_job_button.text().strip().lower() == "resume":
+            apply_tooltip(self._status_job_button, "status_job_button_resume")
+            return
+        apply_tooltip(self._status_job_button, "status_job_button_cancel")
 
     def _on_phase_click(self, wall: int, d_value: float, tau_value: float) -> None:
         trajectory_id = self._queue_single_seed_build(wall, d_value, tau_value)
