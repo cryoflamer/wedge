@@ -1155,7 +1155,7 @@ class MainWindow(QMainWindow):
             f"id: {seed.id}\n"
             f"wall: {seed.wall_start}\n"
             f"d0: {seed.d0:.6f}\n"
-            f"tau0: {seed.tau0:.6f}\n"
+            f"τ0: {seed.tau0:.6f}\n"
             f"steps built: {steps_built}\n"
             f"points: {point_count}\n"
             f"status: {status}{invalid_suffix}{reason}"

@@ -132,7 +132,7 @@ class ControlsPanel(QWidget):
         self._parameter_status = QLabel("")
         self._trajectory_wall_summary = QLabel("wall: -")
         self._trajectory_d_summary = QLabel("d0: -")
-        self._trajectory_tau_summary = QLabel("tau0: -")
+        self._trajectory_tau_summary = QLabel("τ0: -")
         self._trajectory_state_summary = QLabel("status: -")
         self._trajectory_lyapunov_summary = QLabel("Lyapunov: -")
         self._angle_units = "rad"
@@ -296,8 +296,8 @@ class ControlsPanel(QWidget):
         left_layout = QFormLayout()
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.addRow("Units", self._angle_units_combo)
-        left_layout.addRow("alpha", self._alpha_edit)
-        left_layout.addRow("beta", self._beta_edit)
+        left_layout.addRow("α", self._alpha_edit)
+        left_layout.addRow("β", self._beta_edit)
         left_layout.addRow("N_phase", self._n_phase_edit)
         left_layout.addRow("N_geom", self._n_geom_edit)
 
@@ -376,7 +376,7 @@ class ControlsPanel(QWidget):
         add_form.setHorizontalSpacing(6)
         add_form.setVerticalSpacing(4)
         add_form.addRow("d", self._manual_d_edit)
-        add_form.addRow("tau", self._manual_tau_edit)
+        add_form.addRow("τ", self._manual_tau_edit)
         add_form.addRow("wall", self._manual_wall_combo)
         self._add_section.content_layout().addLayout(add_form)
         add_trajectory_button = QPushButton("Add trajectory")
@@ -400,8 +400,8 @@ class ControlsPanel(QWidget):
         scan_form.addRow("Count", self._scan_count_edit)
         scan_form.addRow("d min", self._scan_d_min_edit)
         scan_form.addRow("d max", self._scan_d_max_edit)
-        scan_form.addRow("tau min", self._scan_tau_min_edit)
-        scan_form.addRow("tau max", self._scan_tau_max_edit)
+        scan_form.addRow("τ min", self._scan_tau_min_edit)
+        scan_form.addRow("τ max", self._scan_tau_max_edit)
         scan_section.content_layout().addLayout(scan_form)
         scan_actions = QGridLayout()
         scan_actions.setHorizontalSpacing(6)
@@ -731,7 +731,7 @@ class ControlsPanel(QWidget):
     ) -> None:
         self._trajectory_wall_summary.setText(f"wall: {wall}")
         self._trajectory_d_summary.setText(f"d0: {d0}")
-        self._trajectory_tau_summary.setText(f"tau0: {tau0}")
+        self._trajectory_tau_summary.setText(f"τ0: {tau0}")
         self._trajectory_state_summary.setText(f"status: {status}")
         self._trajectory_lyapunov_summary.setText(f"Lyapunov: {lyapunov}")
 
