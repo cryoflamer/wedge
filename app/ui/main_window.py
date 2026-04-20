@@ -6,7 +6,7 @@ import logging
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QThread, QTimer, Qt
+from PySide6.QtCore import QEvent, QObject, QSignalBlocker, QThread, QTimer, Qt
 from PySide6.QtGui import QCloseEvent, QKeyEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
