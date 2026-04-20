@@ -718,46 +718,17 @@ project/
 ---
 
 ### Task 27. Додати reference trajectory mode
-- дозволити зберегти поточну траєкторію як reference overlay
-- reference trajectory не перебудовується при зміні `(alpha, beta)`
-- reference trajectory має явно позначатися як побудована для старих параметрів
-- metadata reference trajectory:
-  - source alpha
-  - source beta
-  - source seed
-  - original trajectory id
-- UI:
-  - кнопка `Freeze as Reference`
-  - toggle visibility для reference overlays
-  - окремий стиль рендеру (наприклад, тьмяна або dashed)
-- reference trajectories не входять у поточний physics state
-- reference trajectories використовуються лише для візуального порівняння
-- підтримати save/load у session
+Moved to GitHub Issues.
 
 ---
 
 ### Task 28. Додати snap-to-constraints для `(alpha, beta)`
-- підтримати snapping до:
-  - `beta = pi - alpha` (symmetric)
-  - boundary regions (optional)
-- при кліку:
-  - точка project-иться на найближчу криву
-- UI toggle:
-  - enable snapping
+Moved to GitHub Issues.
 
 ---
 
 ### Task 29. Додати режим trace boundary (advanced)
-- режим, у якому:
-  - `(alpha, beta)` змінюються плавно
-  - відслідковується зміна поведінки траєкторії
-- базова версія:
-  - змінюється один параметр (наприклад alpha)
-  - будується серія орбіт
-- мета:
-  - знаходження меж режимів
-- опціонально:
-  - логувати точки переходу
+Moved to GitHub Issues.
 
 ---
 
@@ -1283,6 +1254,24 @@ view:
 - trajectory selection, parameters і replay лишаються швидко доступними
 - scan / export / manual add / session переміщені в collapsible sections
 - job status винесений у status bar або компактний status area
+
+### Task 36. Додати централізовану систему tooltip-ів для UI
+Moved to GitHub Issues.
+
+### Task 37. Перенести таски з SPEC.md у GitHub Issues та перейти на GitHub workflow
+Moved to GitHub Issues.
+
+## GitHub workflow
+- Source of truth: GitHub Issues
+- New tasks are created via `gh issue create`
+- Task status is tracked in GitHub
+- SPEC.md is used for architecture and rules only
+
+#### Acceptance criteria
+
+- всі задачі доступні через GitHub Issues
+- SPEC.md більше не використовується як task tracker
+- подальша робота ведеться через GitHub
 
 ## 17. Мінімальний MVP
 

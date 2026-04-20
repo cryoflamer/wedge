@@ -6,15 +6,18 @@ import logging
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QThread, QTimer, Qt
+from PySide6.QtCore import QEvent, QObject, QSignalBlocker, QThread, QTimer, Qt
 from PySide6.QtGui import QCloseEvent, QKeyEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
+    QComboBox,
     QFileDialog,
     QGridLayout,
     QLabel,
     QMainWindow,
     QProgressBar,
+    QPushButton,
     QScrollArea,
     QWidget,
 )
@@ -80,8 +83,14 @@ class MainWindow(QMainWindow):
         self._job_last_percent = 0
         self._pending_partial_results: deque[OrbitPartialResult] = deque()
         self._pending_finished_payload: JobFinished | None = None
-        self._resumable_job_payload: dict[str, object] | None = None
+        self._active_job_payload: dict[str, object] | None = None
+        self._paused_job_payloads: list[dict[str, object]] = []
+        self._next_job_payload_id = 1
         self._autosave_restore_scheduled = False
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setSingleShot(True)
+        self._autosave_timer.setInterval(50)
+        self._autosave_timer.timeout.connect(self._autosave_session)
 
         self.setWindowTitle(config.app.title)
         self.resize(config.window.width, config.window.height)
@@ -219,14 +228,26 @@ class MainWindow(QMainWindow):
 
     def _build_status_bar(self) -> None:
         self._status_label = QLabel("Idle")
+        self._status_job_button = QPushButton("Cancel")
+        self._status_job_button.clicked.connect(self._on_status_job_button_clicked)
+        self._status_job_button.hide()
+        self._status_jobs_selector = QComboBox()
+        self._status_jobs_selector.setMinimumWidth(180)
+        self._status_jobs_selector.hide()
         self._status_progress = QProgressBar()
         self._status_progress.setRange(0, 100)
         self._status_progress.setValue(0)
         self._status_progress.setTextVisible(True)
         self._status_progress.setMaximumWidth(220)
         self._status_progress.hide()
+        self._status_fast_build = QCheckBox("Fast build")
+        self._status_fast_build.setChecked(self._config.background.fast_build)
+        self._status_fast_build.toggled.connect(self._on_fast_build_changed)
         self.statusBar().addWidget(self._status_label, 1)
+        self.statusBar().addPermanentWidget(self._status_jobs_selector)
+        self.statusBar().addPermanentWidget(self._status_job_button)
         self.statusBar().addPermanentWidget(self._status_progress)
+        self.statusBar().addPermanentWidget(self._status_fast_build)
 
     def _connect_signals(self) -> None:
         self.phase_panel_wall_1.clicked.connect(self._on_phase_click)
@@ -270,9 +291,6 @@ class MainWindow(QMainWindow):
         self.controls_panel.replay_action_requested.connect(self._on_replay_action)
         self.controls_panel.scan_requested.connect(self._on_scan_requested)
         self.controls_panel.manual_seed_requested.connect(self._on_manual_seed_requested)
-        self.controls_panel.cancel_job_requested.connect(self._cancel_current_job)
-        self.controls_panel.resume_job_requested.connect(self._resume_last_job)
-        self.controls_panel.fast_build_changed.connect(self._on_fast_build_changed)
         self.replay_controller.state_changed.connect(self._on_replay_state_changed)
 
     def update_view(self) -> None:
@@ -336,6 +354,11 @@ class MainWindow(QMainWindow):
             if self._selected_trajectory_id is not None
             else None
         )
+        selected_seed = (
+            self._trajectory_seeds.get(self._selected_trajectory_id)
+            if self._selected_trajectory_id is not None
+            else None
+        )
         if selected_orbit is None:
             self.controls_panel.set_lyapunov_status("not computed", 0, None)
         else:
@@ -345,6 +368,33 @@ class MainWindow(QMainWindow):
                 estimate=selected_orbit.lyapunov_estimate,
                 reason=selected_orbit.lyapunov_invalid_reason,
                 wall_divergence_count=selected_orbit.lyapunov_wall_divergence_count,
+            )
+        if selected_seed is None:
+            self.controls_panel.set_selected_trajectory_summary(
+                wall="-",
+                d0="-",
+                tau0="-",
+                status="-",
+                lyapunov="-",
+            )
+        else:
+            status_text = "pending"
+            if selected_orbit is not None:
+                status_text = "valid" if selected_orbit.valid else (
+                    selected_orbit.invalid_reason or "invalid"
+                )
+            lyapunov_text = "-"
+            if selected_orbit is not None:
+                if selected_orbit.lyapunov_estimate is not None:
+                    lyapunov_text = f"{selected_orbit.lyapunov_estimate:.6f}"
+                else:
+                    lyapunov_text = selected_orbit.lyapunov_status
+            self.controls_panel.set_selected_trajectory_summary(
+                wall=str(selected_seed.wall_start),
+                d0=f"{selected_seed.d0:.6f}",
+                tau0=f"{selected_seed.tau0:.6f}",
+                status=status_text,
+                lyapunov=lyapunov_text,
             )
 
     def _update_panel_views(self) -> None:
@@ -368,11 +418,14 @@ class MainWindow(QMainWindow):
         )
 
     def _update_status_view(self) -> None:
+        blocker = QSignalBlocker(self._status_fast_build)
+        self._status_fast_build.setChecked(self._config.background.fast_build)
+        del blocker
         self.controls_panel.set_job_status(
             status=self._job_status_state,
             message=self._job_status_message,
             cancellable=self._current_job_worker is not None,
-            resumable=self._resumable_job_payload is not None and self._current_job_worker is None,
+            resumable=bool(self._paused_job_payloads) and self._current_job_worker is None,
         )
 
     def _on_phase_click(self, wall: int, d_value: float, tau_value: float) -> None:
@@ -472,6 +525,7 @@ class MainWindow(QMainWindow):
 
     def _on_fast_build_changed(self, enabled: bool) -> None:
         self._config.background.fast_build = enabled
+        self._status_fast_build.setChecked(enabled)
         self._autosave_session()
         self.update_view()
 
@@ -624,23 +678,28 @@ class MainWindow(QMainWindow):
             return
         worker = self._current_job_worker
         worker.cancel()
+        if self._active_job_payload is not None:
+            paused_payload = dict(self._active_job_payload)
+            paused_payload["paused"] = True
+            self._store_paused_job(paused_payload)
         self._job_generation += 1
         self._current_job_worker = None
         self._current_job_thread = None
         self._pending_partial_results.clear()
         self._partial_update_timer.stop()
         self._pending_finished_payload = None
+        self._active_job_payload = None
         self._job_status_state = "cancelled"
         self._job_status_message = (
             f"Job interrupted at {self._job_last_percent}%"
         )
         self._status_label.setText(self._job_status_message)
-        self._status_progress.setVisible(self._resumable_job_payload is not None)
+        self._update_status_job_controls()
         self.controls_panel.set_job_status(
             status=self._job_status_state,
             message=self._job_status_message,
             cancellable=False,
-            resumable=self._resumable_job_payload is not None,
+            resumable=bool(self._paused_job_payloads),
         )
 
     def _on_cancel_shortcut(self) -> None:
@@ -670,23 +729,27 @@ class MainWindow(QMainWindow):
         self._trajectory_seeds.pop(trajectory_id, None)
         self._trajectory_orbits.pop(trajectory_id, None)
         self._trajectory_geometries.pop(trajectory_id, None)
+        self._prune_job_payloads_for_existing_trajectories()
         self._selected_trajectory_id = (
             next(iter(self._trajectory_seeds.keys()))
             if self._trajectory_seeds
             else None
         )
         self._reset_replay_views()
-        self._autosave_session()
+        self._schedule_autosave()
         self.update_view()
         logger.info("Trajectory cleared: id=%s", trajectory_id)
 
     def _on_clear_all_trajectories(self) -> None:
+        self._cancel_current_job()
         self._trajectory_seeds.clear()
         self._trajectory_orbits.clear()
         self._trajectory_geometries.clear()
+        self._paused_job_payloads.clear()
+        self._active_job_payload = None
         self._selected_trajectory_id = None
         self._reset_replay_views()
-        self._autosave_session()
+        self._schedule_autosave()
         self.update_view()
         logger.info("All trajectories cleared")
 
@@ -1075,7 +1138,14 @@ class MainWindow(QMainWindow):
                 ),
                 chunk_size=self._config.background.build_chunk_size,
                 seeds=[seed],
-            )
+            ),
+            start_message=f"Building trajectory #{seed.id}",
+            resumable_payload={
+                "job_kind": "single_build",
+                "seeds": [seed],
+                "start_message": f"Building trajectory #{seed.id}",
+                "title": f"Trajectory #{seed.id}",
+            },
         )
         return trajectory_id
 
@@ -1102,6 +1172,7 @@ class MainWindow(QMainWindow):
                 "job_kind": "rebuild",
                 "seeds": list(seeds),
                 "start_message": job_message,
+                "title": job_message,
             },
         )
 
@@ -1179,7 +1250,16 @@ class MainWindow(QMainWindow):
         thread.finished.connect(thread.deleteLater)
         self._current_job_thread = thread
         self._current_job_worker = worker
-        self._resumable_job_payload = resumable_payload
+        if resumable_payload is not None:
+            payload = dict(resumable_payload)
+            payload.setdefault("job_id", self._next_job_payload_id)
+            if payload["job_id"] == self._next_job_payload_id:
+                self._next_job_payload_id += 1
+            payload["progress_percent"] = 0
+            payload["message"] = start_message
+            self._active_job_payload = payload
+        else:
+            self._active_job_payload = None
         self._set_job_progress(
             JobProgress(
                 generation_id=self._job_generation,
@@ -1209,7 +1289,7 @@ class MainWindow(QMainWindow):
                     status=self._job_status_state,
                     message=self._job_status_message,
                     cancellable=self._current_job_worker is not None,
-                    resumable=self._resumable_job_payload is not None and self._current_job_worker is None,
+                    resumable=bool(self._paused_job_payloads) and self._current_job_worker is None,
                 )
             return
         self._set_job_progress(progress)
@@ -1221,18 +1301,21 @@ class MainWindow(QMainWindow):
         self._job_status_state = progress.status
         if progress.status in ("running", "partial"):
             self._job_last_percent = percent
+        if self._active_job_payload is not None:
+            self._active_job_payload["progress_percent"] = percent
+            self._active_job_payload["message"] = progress.message
         if progress.status in ("running", "partial"):
             self._job_status_message = f"{progress.message} | Press Esc to cancel"
         else:
             self._job_status_message = progress.message
         self._status_label.setText(self._job_status_message)
         self._status_progress.setValue(percent)
-        self._status_progress.setVisible(progress.status in ("running", "partial"))
+        self._update_status_job_controls()
         self.controls_panel.set_job_status(
             status=self._job_status_state,
             message=self._job_status_message,
             cancellable=self._current_job_worker is not None and progress.status in ("running", "partial"),
-            resumable=self._resumable_job_payload is not None and self._current_job_worker is None,
+            resumable=bool(self._paused_job_payloads) and self._current_job_worker is None,
         )
 
     def _on_job_partial_result(self, payload: object) -> None:
@@ -1335,54 +1418,182 @@ class MainWindow(QMainWindow):
             )
         else:
             self._job_status_message = payload.message
-            self._resumable_job_payload = None
         self._status_label.setText(self._job_status_message)
-        self._status_progress.setVisible(False)
         self._status_progress.setValue(100 if payload.status == "done" else 0)
+        self._active_job_payload = None
+        self._current_job_worker = None
+        self._current_job_thread = None
+        self._update_status_job_controls()
         self.controls_panel.set_job_status(
             status=self._job_status_state,
             message=self._job_status_message,
             cancellable=False,
-            resumable=self._resumable_job_payload is not None,
+            resumable=bool(self._paused_job_payloads),
         )
-        self._current_job_worker = None
-        self._current_job_thread = None
-        self._autosave_session()
+        self._schedule_autosave()
         self._update_trajectory_views()
         self._update_panel_views()
         self._update_status_view()
 
+    def _store_paused_job(self, payload: dict[str, object]) -> None:
+        job_id = int(payload.get("job_id", 0))
+        self._paused_job_payloads = [
+            item for item in self._paused_job_payloads
+            if int(item.get("job_id", -1)) != job_id
+        ]
+        self._paused_job_payloads.append(payload)
+
+    def _latest_paused_job(self) -> dict[str, object] | None:
+        if not self._paused_job_payloads:
+            return None
+        return self._paused_job_payloads[-1]
+
+    def _prune_job_payloads_for_existing_trajectories(self) -> None:
+        existing_ids = set(self._trajectory_seeds.keys())
+        filtered_payloads: list[dict[str, object]] = []
+        for payload in self._paused_job_payloads:
+            seeds = payload.get("seeds")
+            if not isinstance(seeds, list):
+                continue
+            filtered_seeds = [
+                seed for seed in seeds
+                if getattr(seed, "id", None) in existing_ids
+            ]
+            if not filtered_seeds:
+                continue
+            next_payload = dict(payload)
+            next_payload["seeds"] = filtered_seeds
+            filtered_payloads.append(next_payload)
+        self._paused_job_payloads = filtered_payloads
+
+    def _update_status_job_controls(self) -> None:
+        running = self._current_job_worker is not None
+        paused_count = len(self._paused_job_payloads)
+        if running:
+            self._status_job_button.show()
+            self._status_job_button.setText("Cancel")
+            self._status_progress.setVisible(True)
+            self._status_jobs_selector.hide()
+            return
+        paused_payload = self._latest_paused_job()
+        if paused_payload is None:
+            self._status_job_button.hide()
+            self._status_progress.setVisible(False)
+            self._status_jobs_selector.hide()
+            return
+        self._status_job_button.show()
+        percent = int(paused_payload.get("progress_percent", 0))
+        self._status_progress.setVisible(True)
+        self._status_progress.setValue(percent)
+        title = str(paused_payload.get("title", "Paused job"))
+        self._job_status_state = "paused"
+        self._job_status_message = (
+            f"{title} paused at {percent}%"
+            if paused_count == 1
+            else f"{paused_count} paused jobs"
+        )
+        self._status_label.setText(self._job_status_message)
+        self._status_job_button.setText("Resume")
+        if paused_count > 1:
+            blocker = QSignalBlocker(self._status_jobs_selector)
+            current_job_id = self._status_jobs_selector.currentData()
+            self._status_jobs_selector.clear()
+            selected_index = 0
+            for index, payload in enumerate(self._paused_job_payloads):
+                item_title = str(payload.get("title", "Paused job"))
+                item_percent = int(payload.get("progress_percent", 0))
+                job_id = int(payload.get("job_id", index))
+                self._status_jobs_selector.addItem(
+                    f"{item_title} ({item_percent}%)",
+                    job_id,
+                )
+                if current_job_id == job_id:
+                    selected_index = index
+            self._status_jobs_selector.setCurrentIndex(selected_index)
+            del blocker
+            self._status_jobs_selector.show()
+        else:
+            self._status_jobs_selector.hide()
+
+    def _on_status_job_button_clicked(self) -> None:
+        if self._current_job_worker is not None:
+            self._cancel_current_job()
+            return
+        if len(self._paused_job_payloads) == 1:
+            self._resume_job(self._paused_job_payloads[0])
+            return
+        if len(self._paused_job_payloads) > 1:
+            selected_job_id = self._status_jobs_selector.currentData()
+            for payload in self._paused_job_payloads:
+                if int(payload.get("job_id", -1)) == int(selected_job_id):
+                    self._resume_job(payload)
+                    return
+
     def _resume_last_job(self) -> None:
         if self._current_job_worker is not None:
             return
-        if self._resumable_job_payload is None:
+        latest = self._latest_paused_job()
+        if latest is None:
             return
-        job_kind = str(self._resumable_job_payload.get("job_kind", "")).strip()
+        self._resume_job(latest)
+
+    def _resume_job(self, payload: dict[str, object]) -> None:
+        if self._current_job_worker is not None:
+            return
+        job_kind = str(payload.get("job_kind", "")).strip()
         start_message = str(
-            self._resumable_job_payload.get("start_message", "Resuming job...")
+            payload.get("start_message", "Resuming job...")
         )
-        if job_kind != "rebuild":
-            return
-        seeds = self._resumable_job_payload.get("seeds")
+        seeds = payload.get("seeds")
         if not isinstance(seeds, list):
             return
-        self._start_worker(
-            OrbitBuildWorker(
-                generation_id=self._next_generation_id(),
-                job_kind="rebuild",
-                simulation_config=self._config.simulation,
-                max_reflections=self._config.simulation.n_geom_default,
-                phase_steps=self._normalized_phase_steps(
-                    self._config.simulation.n_phase_default,
-                    self._config.simulation.n_geom_default,
+        job_id = int(payload.get("job_id", -1))
+        self._paused_job_payloads = [
+            item for item in self._paused_job_payloads
+            if int(item.get("job_id", -2)) != job_id
+        ]
+        if job_kind == "rebuild":
+            self._start_worker(
+                OrbitBuildWorker(
+                    generation_id=self._next_generation_id(),
+                    job_kind="rebuild",
+                    simulation_config=self._config.simulation,
+                    max_reflections=self._config.simulation.n_geom_default,
+                    phase_steps=self._normalized_phase_steps(
+                        self._config.simulation.n_phase_default,
+                        self._config.simulation.n_geom_default,
+                    ),
+                    chunk_size=self._config.background.build_chunk_size,
+                    seeds=seeds,
+                    existing_orbits=self._trajectory_orbits,
                 ),
-                chunk_size=self._config.background.build_chunk_size,
-                seeds=seeds,
-                existing_orbits=self._trajectory_orbits,
-            ),
-            start_message=start_message.replace("Starting", "Resuming"),
-            resumable_payload=self._resumable_job_payload,
-        )
+                start_message=start_message.replace("Starting", "Resuming"),
+                resumable_payload=payload,
+            )
+            return
+        if job_kind == "single_build":
+            self._start_worker(
+                OrbitBuildWorker(
+                    generation_id=self._next_generation_id(),
+                    job_kind="single_build",
+                    simulation_config=self._config.simulation,
+                    max_reflections=self._config.simulation.n_geom_default,
+                    phase_steps=self._normalized_phase_steps(
+                        self._config.simulation.n_phase_default,
+                        self._config.simulation.n_geom_default,
+                    ),
+                    chunk_size=self._config.background.build_chunk_size,
+                    seeds=seeds,
+                    existing_orbits=self._trajectory_orbits,
+                ),
+                start_message=start_message.replace("Building", "Resuming"),
+                resumable_payload=payload,
+            )
+
+    def _schedule_autosave(self) -> None:
+        if not self._config.autosave.enabled:
+            return
+        self._autosave_timer.start()
 
 
 def run_app(config: Config, config_path: str) -> None:
