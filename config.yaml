@@ -13,7 +13,7 @@ replay:
   selected_only_by_default: true
 background:
   build_chunk_size: 16
-  fast_build: false
+  fast_build: true
 lyapunov:
   delta0: 1.0e-06
   transient_steps: 10
@@ -32,6 +32,7 @@ view:
   show_phase_grid: true
   show_phase_minor_grid: false
   show_seed_markers: true
+  show_stationary_point: true
   phase_grid:
     major_step_d: 0.1
     major_step_tau: 0.1
@@ -64,7 +65,7 @@ window:
 autosave:
   enabled: true
   path: autosave/session.yaml
-  restore_simulation_parameters: false
+  restore_simulation_parameters: true
 regions:
 - name: upper_sector
   type: predicate

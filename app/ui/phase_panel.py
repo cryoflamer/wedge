@@ -47,6 +47,7 @@ class PhasePanel(QWidget):
         self._hover_point: QPointF | None = None
         self._drag_seed_id: int | None = None
         self._drag_seed_preview: tuple[float, float] | None = None
+        self._stationary_point: tuple[float, float] | None = None
         self._click_threshold_px = 6.0
         self._padding = 24
         self._top_margin = 16
@@ -332,6 +333,13 @@ class PhasePanel(QWidget):
         self._active_frames = active_frames or {}
         self.update()
 
+    def set_stationary_point(
+        self,
+        point: tuple[float, float] | None,
+    ) -> None:
+        self._stationary_point = point
+        self.update()
+
     def set_fixed_domain_mode(self, fixed_domain: bool) -> None:
         self._fixed_domain = fixed_domain
         self._zoom_anchor_canvas = None
@@ -575,6 +583,7 @@ class PhasePanel(QWidget):
             painter.drawEllipse(active_canvas_point, active_radius, active_radius)
 
         self._draw_seed_markers(painter, plot)
+        self._draw_stationary_point(painter, plot)
         painter.restore()
         self._draw_axis_labels(painter, plot)
         if hover_label_text is not None:
@@ -813,6 +822,47 @@ class PhasePanel(QWidget):
                 painter.setPen(QPen(base_color, 1.5))
                 painter.setBrush(Qt.NoBrush)
                 painter.drawEllipse(center, outer_radius + 2, outer_radius + 2)
+        painter.restore()
+
+    def _draw_stationary_point(self, painter: QPainter, plot: QRectF) -> None:
+        if not self._view_config.show_stationary_point:
+            return
+        if self._stationary_point is None:
+            return
+
+        d_value, tau_value = self._stationary_point
+        d_min, d_max, tau_min, tau_max = self._viewport
+        if (
+            d_value < d_min
+            or d_value > d_max
+            or tau_value < tau_min
+            or tau_value > tau_max
+        ):
+            return
+
+        center = self._to_canvas(d_value, tau_value)
+        if not plot.adjusted(-2.0, -2.0, 2.0, 2.0).contains(center):
+            return
+
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(QPen(QColor("#111111"), 2))
+        painter.setBrush(QColor("#ffd54f"))
+        painter.drawEllipse(center, 6, 6)
+        painter.setPen(QPen(QColor("#ffffff"), 2))
+        painter.drawLine(
+            QPointF(center.x() - 3.0, center.y()),
+            QPointF(center.x() + 3.0, center.y()),
+        )
+        painter.drawLine(
+            QPointF(center.x(), center.y() - 3.0),
+            QPointF(center.x(), center.y() + 3.0),
+        )
+        painter.setPen(QColor("#111111"))
+        painter.drawText(
+            QPointF(center.x() + 8.0, center.y() - 8.0),
+            "S",
+        )
         painter.restore()
 
     def _draw_diamond(

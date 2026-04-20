@@ -292,6 +292,9 @@ class MainWindow(QMainWindow):
         self.controls_panel.seed_markers_visibility_changed.connect(
             self._on_seed_markers_visibility_changed
         )
+        self.controls_panel.stationary_point_visibility_changed.connect(
+            self._on_stationary_point_visibility_changed
+        )
         self.controls_panel.directrix_visibility_changed.connect(
             self._on_directrix_visibility_changed
         )
@@ -447,11 +450,17 @@ class MainWindow(QMainWindow):
             self._selected_trajectory_id,
             self._active_phase_frames,
         )
+        self.phase_panel_wall_1.set_stationary_point(
+            self._stationary_phase_point(1)
+        )
         self.phase_panel_wall_2.set_trajectories(
             self._trajectory_seeds,
             self._trajectory_orbits,
             self._selected_trajectory_id,
             self._active_phase_frames,
+        )
+        self.phase_panel_wall_2.set_stationary_point(
+            self._stationary_phase_point(2)
         )
         self.wedge_panel.set_geometries(
             self._trajectory_seeds,
@@ -621,6 +630,10 @@ class MainWindow(QMainWindow):
 
     def _on_seed_markers_visibility_changed(self, enabled: bool) -> None:
         self._config.view.show_seed_markers = enabled
+        self.update_view()
+
+    def _on_stationary_point_visibility_changed(self, enabled: bool) -> None:
+        self._config.view.show_stationary_point = enabled
         self.update_view()
 
     def _on_directrix_visibility_changed(self, enabled: bool) -> None:
@@ -1021,7 +1034,20 @@ class MainWindow(QMainWindow):
             symmetric_mode=self._symmetric_mode,
             export_mode=self.controls_panel.export_mode(),
             phase_fixed_domain=self.phase_panel_wall_1.is_fixed_domain_mode(),
+            show_phase_grid=self._config.view.show_phase_grid,
+            show_phase_minor_grid=self._config.view.show_phase_minor_grid,
             show_seed_markers=self._config.view.show_seed_markers,
+            show_stationary_point=self._config.view.show_stationary_point,
+            show_directrix=self._config.view.show_directrix,
+            show_regions=self._config.view.show_regions,
+            show_region_labels=self._config.view.show_region_labels,
+            show_region_legend=self._config.view.show_region_legend,
+            show_branch_markers=self._config.view.show_branch_markers,
+            show_heatmap=self._config.view.show_heatmap,
+            heatmap_mode=self._config.view.heatmap_mode,
+            heatmap_resolution=self._config.view.heatmap_resolution,
+            heatmap_normalization=self._config.view.heatmap_normalization,
+            fast_build=self._config.background.fast_build,
             phase_viewport_wall_1=self.phase_panel_wall_1.viewport(),
             phase_viewport_wall_2=self.phase_panel_wall_2.viewport(),
         )
@@ -1044,7 +1070,21 @@ class MainWindow(QMainWindow):
         self._angle_units = session.angle_units
         self._symmetric_mode = session.symmetric_mode
         self._config.export.default_mode = session.export_mode
+        self._config.view.show_phase_grid = session.show_phase_grid
+        self._config.view.show_phase_minor_grid = session.show_phase_minor_grid
+        self._config.view.phase_grid.show_minor = session.show_phase_minor_grid
         self._config.view.show_seed_markers = session.show_seed_markers
+        self._config.view.show_stationary_point = session.show_stationary_point
+        self._config.view.show_directrix = session.show_directrix
+        self._config.view.show_regions = session.show_regions
+        self._config.view.show_region_labels = session.show_region_labels
+        self._config.view.show_region_legend = session.show_region_legend
+        self._config.view.show_branch_markers = session.show_branch_markers
+        self._config.view.show_heatmap = session.show_heatmap
+        self._config.view.heatmap_mode = session.heatmap_mode
+        self._config.view.heatmap_resolution = session.heatmap_resolution
+        self._config.view.heatmap_normalization = session.heatmap_normalization
+        self._config.background.fast_build = session.fast_build
 
         self._trajectory_seeds = {
             seed.id: TrajectorySeed(
@@ -1165,6 +1205,30 @@ class MainWindow(QMainWindow):
             config=self._config.simulation,
             max_reflections=self._config.simulation.n_geom_default,
         )
+
+    def _stationary_phase_point(
+        self,
+        wall: int,
+    ) -> tuple[float, float] | None:
+        alpha = self._config.simulation.alpha
+        beta = self._config.simulation.beta
+        own_angle = alpha if wall == 1 else beta
+        other_angle = beta if wall == 1 else alpha
+        denominator = (
+            math.cos(2.0 * (own_angle - other_angle))
+            - 3.0 * (math.cos(2.0 * own_angle) + math.cos(2.0 * other_angle))
+            + 5.0
+        )
+        if abs(denominator) <= self._config.simulation.eps:
+            return None
+
+        d_value = 8.0 * (math.sin(other_angle) ** 2) / denominator
+        tau_value = 0.0
+        if not math.isfinite(d_value) or d_value <= self._config.simulation.eps:
+            return None
+        if (1.0 - d_value) ** 2 + tau_value**2 >= 1.0:
+            return None
+        return d_value, tau_value
 
     def _normalized_phase_steps(self, n_phase: int, n_geom: int) -> int:
         return max(n_phase, n_geom + 1)

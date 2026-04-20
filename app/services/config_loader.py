@@ -94,6 +94,9 @@ def load_config(path: str | Path) -> Config:
             show_seed_markers=bool(
                 view_data.get("show_seed_markers", True)
             ),
+            show_stationary_point=bool(
+                view_data.get("show_stationary_point", True)
+            ),
             phase_grid=PhaseGridConfig(
                 major_step_d=float(phase_grid_data.get("major_step_d", 0.1)),
                 major_step_tau=float(phase_grid_data.get("major_step_tau", 0.1)),
@@ -150,7 +153,7 @@ def load_config(path: str | Path) -> Config:
             enabled=bool(autosave_data.get("enabled", True)),
             path=str(autosave_data.get("path", "autosave/session.yaml")),
             restore_simulation_parameters=bool(
-                autosave_data.get("restore_simulation_parameters", False)
+                autosave_data.get("restore_simulation_parameters", True)
             ),
         ),
         regions=[
