@@ -50,8 +50,27 @@ class ExportConfig:
 
 
 @dataclass
+class PhaseGridConfig:
+    major_step_d: float = 0.1
+    major_step_tau: float = 0.1
+    minor_step_d: float = 0.05
+    minor_step_tau: float = 0.05
+    show_minor: bool = False
+    major_color: str = "#cccccc"
+    minor_color: str = "#e6e6e6"
+    major_width: float = 1.0
+    minor_width: float = 0.6
+    major_alpha: float = 0.8
+    minor_alpha: float = 0.5
+    major_style: str = "solid"
+    minor_style: str = "dotted"
+
+
+@dataclass
 class ViewConfig:
-    show_grid: bool = True
+    show_phase_grid: bool = True
+    show_phase_minor_grid: bool = False
+    phase_grid: PhaseGridConfig = field(default_factory=PhaseGridConfig)
     show_labels: bool = True
     show_directrix: bool = False
     show_reflection_points: bool = True

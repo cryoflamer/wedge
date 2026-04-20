@@ -29,7 +29,22 @@ export:
   - dotted
   - dashdot
 view:
-  show_grid: true
+  show_phase_grid: true
+  show_phase_minor_grid: false
+  phase_grid:
+    major_step_d: 0.1
+    major_step_tau: 0.1
+    minor_step_d: 0.05
+    minor_step_tau: 0.05
+    show_minor: false
+    major_color: '#cccccc'
+    minor_color: '#e6e6e6'
+    major_width: 1.0
+    minor_width: 0.6
+    major_alpha: 0.8
+    minor_alpha: 0.5
+    major_style: solid
+    minor_style: dotted
   show_labels: true
   show_directrix: false
   show_reflection_points: true

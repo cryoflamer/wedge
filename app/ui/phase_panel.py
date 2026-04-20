@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Iterable
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QPen, QWheelEvent
@@ -359,6 +360,8 @@ class PhasePanel(QWidget):
         painter.save()
         painter.setClipRect(plot)
 
+        self._draw_phase_grid(painter, plot)
+
         painter.setPen(QPen(QColor("#c8c8c8"), 1))
         tau_zero_left = self._to_canvas(0.0, 0.0)
         tau_zero_right = self._to_canvas(2.0, 0.0)
@@ -462,8 +465,173 @@ class PhasePanel(QWidget):
             painter.drawEllipse(active_canvas_point, active_radius, active_radius)
 
         painter.restore()
+        self._draw_axis_labels(painter, plot)
         if hover_label_text is not None:
             self._draw_hover_label(painter, plot, hover_label_text)
+
+    def _draw_phase_grid(self, painter: QPainter, plot: QRectF) -> None:
+        if not self._view_config.show_phase_grid:
+            return
+
+        grid = self._view_config.phase_grid
+        major_d = self._grid_step(grid.major_step_d, self._viewport[1] - self._viewport[0])
+        major_tau = self._grid_step(grid.major_step_tau, self._viewport[3] - self._viewport[2])
+        if self._view_config.show_phase_minor_grid and grid.show_minor:
+            minor_d = self._grid_step(grid.minor_step_d, self._viewport[1] - self._viewport[0])
+            minor_tau = self._grid_step(grid.minor_step_tau, self._viewport[3] - self._viewport[2])
+            self._draw_grid_lines(
+                painter,
+                d_values=self._grid_values(self._viewport[0], self._viewport[1], minor_d),
+                tau_values=self._grid_values(self._viewport[2], self._viewport[3], minor_tau),
+                color=self._with_alpha(grid.minor_color, grid.minor_alpha),
+                width=grid.minor_width,
+                style=grid.minor_style,
+            )
+
+        self._draw_grid_lines(
+            painter,
+            d_values=self._grid_values(self._viewport[0], self._viewport[1], major_d),
+            tau_values=self._grid_values(self._viewport[2], self._viewport[3], major_tau),
+            color=self._with_alpha(grid.major_color, grid.major_alpha),
+            width=grid.major_width,
+            style=grid.major_style,
+        )
+
+    def _draw_grid_lines(
+        self,
+        painter: QPainter,
+        d_values: Iterable[float],
+        tau_values: Iterable[float],
+        color: QColor,
+        width: float,
+        style: str,
+    ) -> None:
+        painter.setPen(QPen(color, width, self._pen_style(style)))
+        tau_min = self._viewport[2]
+        tau_max = self._viewport[3]
+        d_min = self._viewport[0]
+        d_max = self._viewport[1]
+
+        for d_value in d_values:
+            start = self._to_canvas(d_value, tau_min)
+            end = self._to_canvas(d_value, tau_max)
+            painter.drawLine(start, end)
+
+        for tau_value in tau_values:
+            start = self._to_canvas(d_min, tau_value)
+            end = self._to_canvas(d_max, tau_value)
+            painter.drawLine(start, end)
+
+    def _grid_step(self, configured_step: float, span: float) -> float:
+        step = configured_step if configured_step > 1.0e-9 else 0.1
+        if self._fixed_domain:
+            return step
+
+        target_lines = 8.0
+        while span / step > target_lines * 1.5:
+            step *= 2.0
+        while span / step < target_lines / 2.5 and step > 1.0e-9:
+            step /= 2.0
+        return step
+
+    def _grid_values(self, minimum: float, maximum: float, step: float) -> list[float]:
+        if step <= 1.0e-12 or maximum <= minimum:
+            return []
+
+        start = math.ceil((minimum - 1.0e-12) / step) * step
+        values: list[float] = []
+        current = start
+        limit = maximum + 1.0e-12
+        while current <= limit:
+            values.append(current)
+            current += step
+        return values
+
+    def _with_alpha(self, color: str, alpha: float) -> QColor:
+        qcolor = QColor(color)
+        qcolor.setAlphaF(min(max(alpha, 0.0), 1.0))
+        return qcolor
+
+    def _pen_style(self, style: str) -> Qt.PenStyle:
+        normalized = style.strip().lower()
+        if normalized == "dotted":
+            return Qt.DotLine
+        if normalized == "dashed":
+            return Qt.DashLine
+        if normalized == "dashdot":
+            return Qt.DashDotLine
+        return Qt.SolidLine
+
+    def _draw_axis_labels(self, painter: QPainter, plot: QRectF) -> None:
+        if not self._view_config.show_phase_grid:
+            return
+
+        grid = self._view_config.phase_grid
+        major_d = self._grid_step(
+            grid.major_step_d,
+            self._viewport[1] - self._viewport[0],
+        )
+        major_tau = self._grid_step(
+            grid.major_step_tau,
+            self._viewport[3] - self._viewport[2],
+        )
+        d_values = self._sparse_tick_values(
+            self._grid_values(self._viewport[0], self._viewport[1], major_d),
+            max_labels=6,
+        )
+        tau_values = self._sparse_tick_values(
+            self._grid_values(self._viewport[2], self._viewport[3], major_tau),
+            max_labels=5,
+        )
+
+        painter.save()
+        painter.setPen(QColor("#5a5a5a"))
+        metrics = painter.fontMetrics()
+        bottom_y = min(plot.bottom() + metrics.height() + 2.0, self.height() - 2.0)
+        left_x = max(2.0, plot.left() - 8.0)
+
+        for d_value in d_values:
+            point = self._to_canvas(d_value, self._viewport[2])
+            text = self._format_tick_value(d_value)
+            text_width = metrics.horizontalAdvance(text)
+            text_x = min(
+                max(point.x() - text_width / 2.0, 2.0),
+                self.width() - text_width - 2.0,
+            )
+            painter.drawText(QPointF(text_x, bottom_y), text)
+
+        for tau_value in tau_values:
+            point = self._to_canvas(self._viewport[0], tau_value)
+            text = self._format_tick_value(tau_value)
+            text_width = metrics.horizontalAdvance(text)
+            text_y = min(
+                max(point.y() + metrics.ascent() / 2.0, metrics.height()),
+                self.height() - 4.0,
+            )
+            painter.drawText(QPointF(left_x - text_width, text_y), text)
+
+        painter.restore()
+
+    def _sparse_tick_values(
+        self,
+        values: list[float],
+        max_labels: int,
+    ) -> list[float]:
+        if len(values) <= max_labels:
+            return values
+
+        stride = max(math.ceil(len(values) / max_labels), 1)
+        sparse = values[::stride]
+        if values and sparse[-1] != values[-1]:
+            sparse.append(values[-1])
+        return sparse
+
+    def _format_tick_value(self, value: float) -> str:
+        rounded = round(value, 6)
+        if abs(rounded) < 1.0e-9:
+            rounded = 0.0
+        text = f"{rounded:.3f}"
+        return text.rstrip("0").rstrip(".") if "." in text else text
 
     def _draw_point_marker(
         self,
