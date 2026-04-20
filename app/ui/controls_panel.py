@@ -7,6 +7,7 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFrame,
     QFormLayout,
     QGridLayout,
     QGroupBox,
@@ -15,12 +16,53 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from app.models.config import Config
 from app.services.parameter_parser import parse_real_expression
+
+
+class CollapsibleSection(QWidget):
+    def __init__(
+        self,
+        title: str,
+        expanded: bool = False,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._toggle = QToolButton()
+        self._toggle.setText(title)
+        self._toggle.setCheckable(True)
+        self._toggle.setChecked(expanded)
+        self._toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self._toggle.setArrowType(
+            Qt.DownArrow if expanded else Qt.RightArrow
+        )
+
+        self._content = QFrame()
+        self._content.setVisible(expanded)
+        self._content_layout = QVBoxLayout(self._content)
+        self._content_layout.setContentsMargins(8, 4, 0, 0)
+        self._content_layout.setSpacing(6)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        layout.addWidget(self._toggle)
+        layout.addWidget(self._content)
+
+        self._toggle.toggled.connect(self.set_expanded)
+
+    def content_layout(self) -> QVBoxLayout:
+        return self._content_layout
+
+    def set_expanded(self, expanded: bool) -> None:
+        self._toggle.setChecked(expanded)
+        self._toggle.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow)
+        self._content.setVisible(expanded)
 
 
 class ControlsPanel(QWidget):
@@ -86,14 +128,22 @@ class ControlsPanel(QWidget):
         self._cancel_job_button = QPushButton("Cancel job")
         self._resume_job_button = QPushButton("Resume job")
         self._parameter_status = QLabel("")
+        self._trajectory_wall_summary = QLabel("wall: -")
+        self._trajectory_d_summary = QLabel("d0: -")
+        self._trajectory_tau_summary = QLabel("tau0: -")
+        self._trajectory_state_summary = QLabel("status: -")
+        self._trajectory_lyapunov_summary = QLabel("Lyapunov: -")
         self._angle_units = "rad"
+        self._add_section: CollapsibleSection | None = None
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(8)
         main_layout.addWidget(self._build_trajectory_box())
         main_layout.addWidget(self._build_parameters_box())
-        main_layout.addWidget(self._build_controls_box())
+        main_layout.addWidget(self._build_replay_box())
+        for section in self._build_collapsible_sections():
+            main_layout.addWidget(section)
         main_layout.addStretch(1)
 
         self._trajectory_selector.currentIndexChanged.connect(
@@ -161,68 +211,59 @@ class ControlsPanel(QWidget):
         self._resume_job_button.clicked.connect(self.resume_job_requested.emit)
 
     def _build_trajectory_box(self) -> QGroupBox:
-        box = QGroupBox("Trajectories")
+        box = QGroupBox("Trajectory")
         layout = QVBoxLayout(box)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
-        selector_row = QHBoxLayout()
-        selector_row.setContentsMargins(0, 0, 0, 0)
-        selector_row.setSpacing(6)
-        selector_row.addWidget(self._trajectory_selector, 1)
-        layout.addLayout(selector_row)
+        selector_form = QFormLayout()
+        selector_form.setContentsMargins(0, 0, 0, 0)
+        selector_form.setHorizontalSpacing(6)
+        selector_form.setVerticalSpacing(4)
+        selector_form.addRow("Selected", self._trajectory_selector)
+        layout.addLayout(selector_form)
 
         actions_grid = QGridLayout()
         actions_grid.setHorizontalSpacing(6)
         actions_grid.setVerticalSpacing(4)
 
-        toggle_button = QPushButton("Toggle")
+        toggle_button = QPushButton("Hide/Show")
         toggle_button.clicked.connect(self._toggle_current_visibility)
         actions_grid.addWidget(toggle_button, 0, 0)
 
-        clear_selected_button = QPushButton("Clear selected")
+        clear_selected_button = QPushButton("Clear")
         clear_selected_button.clicked.connect(self.clear_selected_requested.emit)
         actions_grid.addWidget(clear_selected_button, 0, 1)
 
-        clear_all_button = QPushButton("Clear all")
-        clear_all_button.clicked.connect(self.clear_all_requested.emit)
-        actions_grid.addWidget(clear_all_button, 1, 0)
+        add_button = QPushButton("Add")
+        add_button.clicked.connect(self._expand_add_section)
+        actions_grid.addWidget(add_button, 0, 2)
 
         lyapunov_button = QPushButton("Lyapunov")
         lyapunov_button.clicked.connect(self.compute_lyapunov_requested.emit)
-        actions_grid.addWidget(lyapunov_button, 1, 1)
-
-        export_data_button = QPushButton("Export data")
-        export_data_button.clicked.connect(self.export_data_requested.emit)
-        actions_grid.addWidget(export_data_button, 2, 0)
-
-        add_trajectory_button = QPushButton("Add")
-        add_trajectory_button.clicked.connect(self._emit_manual_seed)
-        actions_grid.addWidget(add_trajectory_button, 2, 1)
+        actions_grid.addWidget(lyapunov_button, 1, 0)
 
         for button in (
             toggle_button,
             clear_selected_button,
-            clear_all_button,
+            add_button,
             lyapunov_button,
-            export_data_button,
-            add_trajectory_button,
         ):
             button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         layout.addLayout(actions_grid)
-        layout.addWidget(self._lyapunov_status)
-        layout.addWidget(self._lyapunov_steps)
-        layout.addWidget(self._lyapunov_value)
-        layout.addWidget(self._job_status)
 
-        manual_form = QFormLayout()
-        manual_form.setContentsMargins(0, 0, 0, 0)
-        manual_form.setHorizontalSpacing(6)
-        manual_form.setVerticalSpacing(4)
-        manual_form.addRow("d", self._manual_d_edit)
-        manual_form.addRow("tau", self._manual_tau_edit)
-        manual_form.addRow("wall", self._manual_wall_combo)
-        layout.addLayout(manual_form)
+        summary_layout = QVBoxLayout()
+        summary_layout.setContentsMargins(0, 0, 0, 0)
+        summary_layout.setSpacing(2)
+        for label in (
+            self._trajectory_wall_summary,
+            self._trajectory_d_summary,
+            self._trajectory_tau_summary,
+            self._trajectory_state_summary,
+            self._trajectory_lyapunov_summary,
+        ):
+            summary_layout.addWidget(label)
+        layout.addLayout(summary_layout)
         return box
 
     def _build_parameters_box(self) -> QGroupBox:
@@ -241,9 +282,6 @@ class ControlsPanel(QWidget):
         left_layout.addRow("beta", self._beta_edit)
         left_layout.addRow("N_phase", self._n_phase_edit)
         left_layout.addRow("N_geom", self._n_geom_edit)
-        left_layout.addRow("Heatmap mode", self._heatmap_mode_combo)
-        left_layout.addRow("Heatmap bins", self._heatmap_resolution_combo)
-        left_layout.addRow("Heatmap norm", self._heatmap_normalization_combo)
 
         right_layout = QVBoxLayout()
         right_layout.setContentsMargins(0, 0, 0, 0)
@@ -279,51 +317,22 @@ class ControlsPanel(QWidget):
         outer_layout.addLayout(button_row)
         return box
 
-    def _build_controls_box(self) -> QGroupBox:
-        box = QGroupBox("Controls")
+    def _build_replay_box(self) -> QGroupBox:
+        box = QGroupBox("Replay")
         layout = QVBoxLayout(box)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
-        export_form = QFormLayout()
-        export_form.setContentsMargins(0, 0, 0, 0)
-        export_form.setHorizontalSpacing(6)
-        export_form.setVerticalSpacing(4)
-        export_form.addRow("Export mode", self._export_mode_combo)
-        export_form.addRow("Mono preset", self._export_preset_combo)
-        export_form.addRow("Data format", self._data_export_format_combo)
-        export_form.addRow("Scan mode", self._scan_mode_combo)
-        export_form.addRow("Scan wall", self._scan_wall_combo)
-        export_form.addRow("Scan count", self._scan_count_edit)
-        export_form.addRow("Scan d min", self._scan_d_min_edit)
-        export_form.addRow("Scan d max", self._scan_d_max_edit)
-        export_form.addRow("Scan tau min", self._scan_tau_min_edit)
-        export_form.addRow("Scan tau max", self._scan_tau_max_edit)
-        layout.addLayout(export_form)
-
-        scan_button = QPushButton("Scan")
-        scan_button.clicked.connect(self._emit_scan_request)
-        layout.addWidget(scan_button)
-        scan_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        layout.addWidget(self._cancel_job_button)
-        self._cancel_job_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        layout.addWidget(self._resume_job_button)
-        self._resume_job_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-
         actions_grid = QGridLayout()
         actions_grid.setHorizontalSpacing(6)
         actions_grid.setVerticalSpacing(4)
-
         action_labels = (
-            ("replay_selected", "Replay sel"),
-            ("replay_all", "Replay all"),
+            ("replay_selected", "Play sel"),
+            ("replay_all", "Play all"),
             ("pause", "Pause"),
             ("resume", "Resume"),
             ("step", "Step"),
             ("reset_replay", "Reset"),
-            ("export_png", "PNG"),
-            ("save_session", "Save"),
-            ("load_session", "Load"),
         )
         for index, (action_name, label) in enumerate(action_labels):
             button = QPushButton(label)
@@ -331,15 +340,120 @@ class ControlsPanel(QWidget):
                 lambda checked=False, name=action_name: self.replay_action_requested.emit(name)
             )
             button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            actions_grid.addWidget(button, index // 2, index % 2)
-
+            actions_grid.addWidget(button, index // 3, index % 3)
         layout.addLayout(actions_grid)
-
-        footer = QHBoxLayout()
-        footer.addWidget(QLabel("UI skeleton"))
-        footer.addStretch(1)
-        layout.addLayout(footer)
         return box
+
+    def _build_collapsible_sections(self) -> list[QWidget]:
+        sections: list[QWidget] = []
+
+        self._add_section = CollapsibleSection("Add trajectory", expanded=False)
+        add_form = QFormLayout()
+        add_form.setContentsMargins(0, 0, 0, 0)
+        add_form.setHorizontalSpacing(6)
+        add_form.setVerticalSpacing(4)
+        add_form.addRow("d", self._manual_d_edit)
+        add_form.addRow("tau", self._manual_tau_edit)
+        add_form.addRow("wall", self._manual_wall_combo)
+        self._add_section.content_layout().addLayout(add_form)
+        add_trajectory_button = QPushButton("Add trajectory")
+        add_trajectory_button.clicked.connect(self._emit_manual_seed)
+        add_trajectory_button.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
+        self._add_section.content_layout().addWidget(add_trajectory_button)
+        sections.append(self._add_section)
+
+        scan_section = CollapsibleSection("Scan", expanded=False)
+        scan_form = QFormLayout()
+        scan_form.setContentsMargins(0, 0, 0, 0)
+        scan_form.setHorizontalSpacing(6)
+        scan_form.setVerticalSpacing(4)
+        scan_form.addRow("Mode", self._scan_mode_combo)
+        scan_form.addRow("Wall", self._scan_wall_combo)
+        scan_form.addRow("Count", self._scan_count_edit)
+        scan_form.addRow("d min", self._scan_d_min_edit)
+        scan_form.addRow("d max", self._scan_d_max_edit)
+        scan_form.addRow("tau min", self._scan_tau_min_edit)
+        scan_form.addRow("tau max", self._scan_tau_max_edit)
+        scan_section.content_layout().addLayout(scan_form)
+        scan_actions = QGridLayout()
+        scan_actions.setHorizontalSpacing(6)
+        scan_actions.setVerticalSpacing(4)
+        scan_button = QPushButton("Run scan")
+        scan_button.clicked.connect(self._emit_scan_request)
+        scan_actions.addWidget(scan_button, 0, 0)
+        scan_actions.addWidget(self._cancel_job_button, 0, 1)
+        scan_actions.addWidget(self._resume_job_button, 1, 0, 1, 2)
+        scan_section.content_layout().addLayout(scan_actions)
+        sections.append(scan_section)
+
+        view_section = CollapsibleSection("View options", expanded=False)
+        view_layout = view_section.content_layout()
+        for checkbox in (
+            self._show_regions_checkbox,
+            self._show_region_labels_checkbox,
+            self._show_region_legend_checkbox,
+            self._show_branch_markers_checkbox,
+            self._show_heatmap_checkbox,
+        ):
+            view_layout.addWidget(checkbox)
+        heatmap_form = QFormLayout()
+        heatmap_form.setContentsMargins(0, 0, 0, 0)
+        heatmap_form.setHorizontalSpacing(6)
+        heatmap_form.setVerticalSpacing(4)
+        heatmap_form.addRow("Mode", self._heatmap_mode_combo)
+        heatmap_form.addRow("Bins", self._heatmap_resolution_combo)
+        heatmap_form.addRow("Norm", self._heatmap_normalization_combo)
+        view_layout.addLayout(heatmap_form)
+        sections.append(view_section)
+
+        export_section = CollapsibleSection("Export", expanded=False)
+        export_form = QFormLayout()
+        export_form.setContentsMargins(0, 0, 0, 0)
+        export_form.setHorizontalSpacing(6)
+        export_form.setVerticalSpacing(4)
+        export_form.addRow("Mode", self._export_mode_combo)
+        export_form.addRow("Mono", self._export_preset_combo)
+        export_form.addRow("Data", self._data_export_format_combo)
+        export_section.content_layout().addLayout(export_form)
+        export_actions = QGridLayout()
+        export_actions.setHorizontalSpacing(6)
+        export_actions.setVerticalSpacing(4)
+        export_data_button = QPushButton("Export data")
+        export_data_button.clicked.connect(self.export_data_requested.emit)
+        export_actions.addWidget(export_data_button, 0, 0)
+        export_actions.addWidget(QPushButton("PNG"), 0, 1)
+        png_button = export_actions.itemAtPosition(0, 1).widget()
+        if isinstance(png_button, QPushButton):
+            png_button.clicked.connect(
+                lambda checked=False: self.replay_action_requested.emit("export_png")
+            )
+        export_section.content_layout().addLayout(export_actions)
+        sections.append(export_section)
+
+        session_section = CollapsibleSection("Session", expanded=False)
+        session_actions = QGridLayout()
+        session_actions.setHorizontalSpacing(6)
+        session_actions.setVerticalSpacing(4)
+        clear_all_button = QPushButton("Clear all")
+        clear_all_button.clicked.connect(self.clear_all_requested.emit)
+        save_button = QPushButton("Save")
+        save_button.clicked.connect(
+            lambda checked=False: self.replay_action_requested.emit("save_session")
+        )
+        load_button = QPushButton("Load")
+        load_button.clicked.connect(
+            lambda checked=False: self.replay_action_requested.emit("load_session")
+        )
+        session_actions.addWidget(clear_all_button, 0, 0)
+        session_actions.addWidget(save_button, 0, 1)
+        session_actions.addWidget(load_button, 1, 0, 1, 2)
+        session_section.content_layout().addLayout(session_actions)
+        sections.append(session_section)
+
+        return sections
 
     def load_config(self, config: Config) -> None:
         current_preset = self.export_preset()
@@ -555,9 +669,22 @@ class ControlsPanel(QWidget):
         cancellable: bool,
         resumable: bool = False,
     ) -> None:
-        self._job_status.setText(f"Job: {status} | {message}")
         self._cancel_job_button.setEnabled(cancellable)
         self._resume_job_button.setEnabled(resumable)
+
+    def set_selected_trajectory_summary(
+        self,
+        wall: str,
+        d0: str,
+        tau0: str,
+        status: str,
+        lyapunov: str,
+    ) -> None:
+        self._trajectory_wall_summary.setText(f"wall: {wall}")
+        self._trajectory_d_summary.setText(f"d0: {d0}")
+        self._trajectory_tau_summary.setText(f"tau0: {tau0}")
+        self._trajectory_state_summary.setText(f"status: {status}")
+        self._trajectory_lyapunov_summary.setText(f"Lyapunov: {lyapunov}")
 
     def _emit_parameters(self) -> None:
         self._clear_parameter_error()
@@ -724,3 +851,8 @@ class ControlsPanel(QWidget):
             return
 
         self.manual_seed_requested.emit(wall, d_value, tau_value)
+
+    def _expand_add_section(self) -> None:
+        if self._add_section is not None:
+            self._add_section.set_expanded(True)
+        self._manual_d_edit.setFocus()

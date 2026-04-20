@@ -336,6 +336,11 @@ class MainWindow(QMainWindow):
             if self._selected_trajectory_id is not None
             else None
         )
+        selected_seed = (
+            self._trajectory_seeds.get(self._selected_trajectory_id)
+            if self._selected_trajectory_id is not None
+            else None
+        )
         if selected_orbit is None:
             self.controls_panel.set_lyapunov_status("not computed", 0, None)
         else:
@@ -345,6 +350,33 @@ class MainWindow(QMainWindow):
                 estimate=selected_orbit.lyapunov_estimate,
                 reason=selected_orbit.lyapunov_invalid_reason,
                 wall_divergence_count=selected_orbit.lyapunov_wall_divergence_count,
+            )
+        if selected_seed is None:
+            self.controls_panel.set_selected_trajectory_summary(
+                wall="-",
+                d0="-",
+                tau0="-",
+                status="-",
+                lyapunov="-",
+            )
+        else:
+            status_text = "pending"
+            if selected_orbit is not None:
+                status_text = "valid" if selected_orbit.valid else (
+                    selected_orbit.invalid_reason or "invalid"
+                )
+            lyapunov_text = "-"
+            if selected_orbit is not None:
+                if selected_orbit.lyapunov_estimate is not None:
+                    lyapunov_text = f"{selected_orbit.lyapunov_estimate:.6f}"
+                else:
+                    lyapunov_text = selected_orbit.lyapunov_status
+            self.controls_panel.set_selected_trajectory_summary(
+                wall=str(selected_seed.wall_start),
+                d0=f"{selected_seed.d0:.6f}",
+                tau0=f"{selected_seed.tau0:.6f}",
+                status=status_text,
+                lyapunov=lyapunov_text,
             )
 
     def _update_panel_views(self) -> None:
