@@ -86,6 +86,7 @@ class MainWindow(QMainWindow):
         self._active_job_payload: dict[str, object] | None = None
         self._paused_job_payloads: list[dict[str, object]] = []
         self._next_job_payload_id = 1
+        self._status_jobs_menu: QMenu | None = None
         self._autosave_restore_scheduled = False
 
         self.setWindowTitle(config.app.title)
@@ -1471,6 +1472,7 @@ class MainWindow(QMainWindow):
                 action.triggered.connect(
                     lambda checked=False, item=payload: self._resume_job(item)
                 )
+            self._status_jobs_menu = menu
             menu.popup(
                 self._status_job_button.mapToGlobal(
                     self._status_job_button.rect().bottomLeft()
