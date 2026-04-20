@@ -42,6 +42,7 @@ class ControlsPanel(QWidget):
     phase_view_mode_changed = Signal(bool)
     replay_action_requested = Signal(str)
     scan_requested = Signal(str, int, int, float, float, float, float)
+    manual_seed_requested = Signal(int, float, float)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -72,6 +73,9 @@ class ControlsPanel(QWidget):
         self._scan_d_max_edit = QLineEdit("2.0")
         self._scan_tau_min_edit = QLineEdit("-1.0")
         self._scan_tau_max_edit = QLineEdit("1.0")
+        self._manual_d_edit = QLineEdit()
+        self._manual_tau_edit = QLineEdit()
+        self._manual_wall_combo = QComboBox()
         self._trajectory_info = QLabel("selected: -")
         self._lyapunov_status = QLabel("Lyapunov: not computed")
         self._lyapunov_steps = QLabel("Lyapunov steps: -")
@@ -95,6 +99,8 @@ class ControlsPanel(QWidget):
             self._n_geom_edit,
         ):
             line_edit.returnPressed.connect(self._emit_parameters)
+        for line_edit in (self._manual_d_edit, self._manual_tau_edit):
+            line_edit.returnPressed.connect(self._emit_manual_seed)
         self._alpha_edit.textChanged.connect(self._sync_symmetric_beta_preview)
         self._fixed_domain_checkbox.toggled.connect(
             self.phase_view_mode_changed.emit
@@ -135,6 +141,7 @@ class ControlsPanel(QWidget):
         self._data_export_format_combo.addItems(["csv", "json"])
         self._scan_mode_combo.addItems(["grid", "random"])
         self._scan_wall_combo.addItems(["1", "2"])
+        self._manual_wall_combo.addItems(["1", "2"])
         self._sync_export_preset_state()
 
     def _build_trajectory_box(self) -> QGroupBox:
@@ -165,6 +172,16 @@ class ControlsPanel(QWidget):
         export_data_button = QPushButton("Export Data")
         export_data_button.clicked.connect(self.export_data_requested.emit)
         layout.addWidget(export_data_button)
+
+        manual_form = QFormLayout()
+        manual_form.addRow("d", self._manual_d_edit)
+        manual_form.addRow("tau", self._manual_tau_edit)
+        manual_form.addRow("wall", self._manual_wall_combo)
+        layout.addLayout(manual_form)
+
+        add_trajectory_button = QPushButton("Add trajectory")
+        add_trajectory_button.clicked.connect(self._emit_manual_seed)
+        layout.addWidget(add_trajectory_button)
 
         scan_button = QPushButton("Scan")
         scan_button.clicked.connect(self._emit_scan_request)
@@ -618,3 +635,15 @@ class ControlsPanel(QWidget):
             return
 
         self.scan_requested.emit(mode, count, wall, d_min, d_max, tau_min, tau_max)
+
+    def _emit_manual_seed(self) -> None:
+        self._clear_parameter_error()
+        try:
+            wall = int(self._manual_wall_combo.currentText().strip() or "1")
+            d_value = parse_real_expression(self._manual_d_edit.text())
+            tau_value = parse_real_expression(self._manual_tau_edit.text())
+        except (ValueError, SyntaxError, ZeroDivisionError):
+            self._set_parameter_error("Invalid seed value")
+            return
+
+        self.manual_seed_requested.emit(wall, d_value, tau_value)

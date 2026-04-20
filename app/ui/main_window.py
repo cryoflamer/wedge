@@ -94,17 +94,33 @@ class MainWindow(QMainWindow):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        if self._window_position_restored:
-            return
 
-        frame = self.frameGeometry()
         screen = self.screen()
         if screen is None:
             screen = QApplication.primaryScreen()
         if screen is None:
             return
 
-        frame.moveCenter(screen.availableGeometry().center())
+        available = screen.availableGeometry()
+        width = min(self.width(), max(available.width() - 24, 1))
+        height = min(self.height(), max(available.height() - 24, 1))
+        if width != self.width() or height != self.height():
+            self.resize(width, height)
+
+        frame = self.frameGeometry()
+        if self._window_position_restored:
+            clamped_x = min(
+                max(frame.x(), available.left()),
+                max(available.right() - frame.width() + 1, available.left()),
+            )
+            clamped_y = min(
+                max(frame.y(), available.top()),
+                max(available.bottom() - frame.height() + 1, available.top()),
+            )
+            self.move(clamped_x, clamped_y)
+            return
+
+        frame.moveCenter(available.center())
         self.move(frame.topLeft())
         self._window_position_restored = True
 
@@ -178,6 +194,7 @@ class MainWindow(QMainWindow):
         self.controls_panel.clear_all_requested.connect(self._on_clear_all_trajectories)
         self.controls_panel.replay_action_requested.connect(self._on_replay_action)
         self.controls_panel.scan_requested.connect(self._on_scan_requested)
+        self.controls_panel.manual_seed_requested.connect(self._on_manual_seed_requested)
         self.replay_controller.state_changed.connect(self._on_replay_state_changed)
 
     def update_view(self) -> None:
@@ -260,26 +277,34 @@ class MainWindow(QMainWindow):
         )
 
     def _on_phase_click(self, wall: int, d_value: float, tau_value: float) -> None:
-        trajectory_id = self._next_trajectory_id
-        self._next_trajectory_id += 1
-        seed = TrajectorySeed(
-            id=trajectory_id,
-            wall_start=wall,
-            d0=d_value,
-            tau0=tau_value,
-            color=self._palette[(trajectory_id - 1) % len(self._palette)],
-        )
-        self._trajectory_seeds[trajectory_id] = seed
-        self._trajectory_orbits[trajectory_id] = self._build_orbit(seed)
-        self._trajectory_geometries[trajectory_id] = self._build_geometry(
-            self._trajectory_orbits[trajectory_id]
-        )
-        if self._selected_trajectory_id is None:
-            self._selected_trajectory_id = trajectory_id
-        self._reset_replay_views()
+        trajectory_id = self._add_trajectory_seed(wall, d_value, tau_value)
+        if trajectory_id is None:
+            logger.info("Phase panel click ignored: trajectory limit reached")
+            return
 
         logger.info(
             "Phase panel clicked: wall=%s d=%.6f tau=%.6f id=%s",
+            wall,
+            d_value,
+            tau_value,
+            trajectory_id,
+        )
+        self._autosave_session()
+        self.update_view()
+
+    def _on_manual_seed_requested(
+        self,
+        wall: int,
+        d_value: float,
+        tau_value: float,
+    ) -> None:
+        trajectory_id = self._add_trajectory_seed(wall, d_value, tau_value)
+        if trajectory_id is None:
+            logger.info("Manual seed ignored: trajectory limit reached")
+            return
+
+        logger.info(
+            "Manual seed added: wall=%s d=%.6f tau=%.6f id=%s",
             wall,
             d_value,
             tau_value,
@@ -843,6 +868,34 @@ class MainWindow(QMainWindow):
 
     def _normalized_phase_steps(self, n_phase: int, n_geom: int) -> int:
         return max(n_phase, n_geom + 1)
+
+    def _add_trajectory_seed(
+        self,
+        wall: int,
+        d_value: float,
+        tau_value: float,
+    ) -> int | None:
+        if len(self._trajectory_seeds) >= self._max_trajectory_count:
+            return None
+
+        trajectory_id = self._next_trajectory_id
+        self._next_trajectory_id += 1
+        seed = TrajectorySeed(
+            id=trajectory_id,
+            wall_start=wall,
+            d0=d_value,
+            tau0=tau_value,
+            color=self._palette[(trajectory_id - 1) % len(self._palette)],
+        )
+        self._trajectory_seeds[trajectory_id] = seed
+        self._trajectory_orbits[trajectory_id] = self._build_orbit(seed)
+        self._trajectory_geometries[trajectory_id] = self._build_geometry(
+            self._trajectory_orbits[trajectory_id]
+        )
+        if self._selected_trajectory_id is None:
+            self._selected_trajectory_id = trajectory_id
+        self._reset_replay_views()
+        return trajectory_id
 
 
 def run_app(config: Config, config_path: str) -> None:
