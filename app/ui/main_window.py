@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Qt
-from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
+from PySide6.QtGui import QCloseEvent, QKeyEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -103,7 +103,7 @@ class MainWindow(QMainWindow):
         )
         self.controls_scroll.setWidget(self.controls_panel)
         self._cancel_job_shortcut = QShortcut(QKeySequence(Qt.Key_Escape), self)
-        self._cancel_job_shortcut.activated.connect(self._cancel_current_job)
+        self._cancel_job_shortcut.activated.connect(self._on_cancel_shortcut)
         self.replay_controller = ReplayController(
             delay_ms=config.replay.delay_ms,
             parent=self,
@@ -156,6 +156,17 @@ class MainWindow(QMainWindow):
         self._autosave_session()
         save_runtime_config(self._config, self._config_path)
         super().closeEvent(event)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key_Escape:
+            logger.info(
+                "Escape keyPressEvent received: job_active=%s",
+                self._current_job_worker is not None,
+            )
+            self._cancel_current_job()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def _build_layout(self) -> None:
         central = QWidget()
@@ -554,6 +565,11 @@ class MainWindow(QMainWindow):
         }
 
     def _cancel_current_job(self) -> None:
+        logger.info(
+            "Cancel requested: worker_active=%s thread_active=%s",
+            self._current_job_worker is not None,
+            self._current_job_thread is not None,
+        )
         if self._current_job_worker is None:
             return
         self._current_job_worker.cancel()
@@ -567,6 +583,13 @@ class MainWindow(QMainWindow):
                 message="Cancelling current job...",
             )
         )
+
+    def _on_cancel_shortcut(self) -> None:
+        logger.info(
+            "Escape shortcut activated: job_active=%s",
+            self._current_job_worker is not None,
+        )
+        self._cancel_current_job()
 
     def _on_trajectory_visibility_toggled(self, trajectory_id: int) -> None:
         seed = self._trajectory_seeds.get(trajectory_id)
