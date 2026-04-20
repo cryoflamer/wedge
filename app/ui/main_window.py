@@ -5,7 +5,7 @@ import logging
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QThread, Qt
+from PySide6.QtCore import QEvent, QObject, QThread, QTimer, Qt
 from PySide6.QtGui import QCloseEvent, QKeyEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -76,6 +76,7 @@ class MainWindow(QMainWindow):
         self._current_job_worker: OrbitBuildWorker | None = None
         self._job_status_state = "idle"
         self._job_status_message = "Idle"
+        self._pending_partial_results: dict[int, OrbitPartialResult] = {}
 
         self.setWindowTitle(config.app.title)
         self.resize(config.window.width, config.window.height)
@@ -109,6 +110,10 @@ class MainWindow(QMainWindow):
             delay_ms=config.replay.delay_ms,
             parent=self,
         )
+        self._partial_update_timer = QTimer(self)
+        self._partial_update_timer.setSingleShot(True)
+        self._partial_update_timer.setInterval(33)
+        self._partial_update_timer.timeout.connect(self._flush_partial_updates)
 
         self._build_layout()
         self._build_status_bar()
@@ -1132,15 +1137,25 @@ class MainWindow(QMainWindow):
             return
         if payload.generation_id != self._job_generation:
             return
-        self._trajectory_seeds[payload.trajectory_id] = payload.seed
-        self._trajectory_orbits[payload.trajectory_id] = payload.orbit
-        self._trajectory_geometries[payload.trajectory_id] = payload.geometry
-        if self._selected_trajectory_id is None:
-            self._selected_trajectory_id = payload.trajectory_id
-        if payload.replace:
-            self._next_trajectory_id = max(self._next_trajectory_id, payload.trajectory_id + 1)
-        else:
-            self._next_trajectory_id = max(self._next_trajectory_id, payload.trajectory_id + 1)
+        self._pending_partial_results[payload.trajectory_id] = payload
+        if not self._partial_update_timer.isActive():
+            self._partial_update_timer.start()
+
+    def _flush_partial_updates(self) -> None:
+        if not self._pending_partial_results:
+            return
+        payloads = list(self._pending_partial_results.values())
+        self._pending_partial_results.clear()
+        for payload in payloads:
+            self._trajectory_seeds[payload.trajectory_id] = payload.seed
+            self._trajectory_orbits[payload.trajectory_id] = payload.orbit
+            self._trajectory_geometries[payload.trajectory_id] = payload.geometry
+            if self._selected_trajectory_id is None:
+                self._selected_trajectory_id = payload.trajectory_id
+            self._next_trajectory_id = max(
+                self._next_trajectory_id,
+                payload.trajectory_id + 1,
+            )
         self.update_view()
 
     def _on_lyapunov_result(self, payload: object) -> None:
@@ -1165,6 +1180,7 @@ class MainWindow(QMainWindow):
             return
         if payload.generation_id != self._job_generation:
             return
+        self._flush_partial_updates()
         self._job_status_state = payload.status
         self._job_status_message = payload.message
         self._status_label.setText(self._job_status_message)
