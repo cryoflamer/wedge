@@ -82,6 +82,7 @@ class ControlsPanel(QWidget):
     compute_lyapunov_requested = Signal()
     export_data_requested = Signal()
     trajectory_selected = Signal(int)
+    selected_seed_apply_requested = Signal(float, float)
     trajectory_visibility_toggled = Signal(int)
     clear_selected_requested = Signal()
     clear_all_requested = Signal()
@@ -130,6 +131,10 @@ class ControlsPanel(QWidget):
         self._lyapunov_steps = QLabel("Lyapunov steps: -")
         self._lyapunov_value = QLabel("Lyapunov λ: -")
         self._parameter_status = QLabel("")
+        self._selected_seed_d_edit = QLineEdit()
+        self._selected_seed_tau_edit = QLineEdit()
+        self._selected_seed_wall_edit = QLineEdit()
+        self._selected_seed_status = QLabel("")
         self._trajectory_wall_summary = QLabel("wall: -")
         self._trajectory_d_summary = QLabel("d0: -")
         self._trajectory_tau_summary = QLabel("τ0: -")
@@ -160,6 +165,8 @@ class ControlsPanel(QWidget):
             line_edit.returnPressed.connect(self._emit_parameters)
         for line_edit in (self._manual_d_edit, self._manual_tau_edit):
             line_edit.returnPressed.connect(self._emit_manual_seed)
+        for line_edit in (self._selected_seed_d_edit, self._selected_seed_tau_edit):
+            line_edit.returnPressed.connect(self._emit_selected_seed_apply)
         self._alpha_edit.textChanged.connect(self._sync_symmetric_beta_preview)
         self._fixed_domain_checkbox.toggled.connect(
             self.phase_view_mode_changed.emit
@@ -228,6 +235,29 @@ class ControlsPanel(QWidget):
         selector_form.setVerticalSpacing(4)
         selector_form.addRow("Selected", self._trajectory_selector)
         layout.addLayout(selector_form)
+
+        seed_form = QFormLayout()
+        seed_form.setContentsMargins(0, 0, 0, 0)
+        seed_form.setHorizontalSpacing(6)
+        seed_form.setVerticalSpacing(4)
+        self._selected_seed_wall_edit.setReadOnly(True)
+        self._selected_seed_d_edit.setPlaceholderText("-")
+        self._selected_seed_tau_edit.setPlaceholderText("-")
+        self._selected_seed_wall_edit.setPlaceholderText("-")
+        seed_form.addRow("d", self._selected_seed_d_edit)
+        seed_form.addRow("τ", self._selected_seed_tau_edit)
+        seed_form.addRow("wall", self._selected_seed_wall_edit)
+        layout.addLayout(seed_form)
+
+        apply_seed_button = QPushButton("Apply seed")
+        apply_seed_button.clicked.connect(self._emit_selected_seed_apply)
+        apply_tooltip(apply_seed_button, "apply_seed")
+        apply_seed_button.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
+        layout.addWidget(apply_seed_button)
+        layout.addWidget(self._selected_seed_status)
 
         actions_grid = QGridLayout()
         actions_grid.setHorizontalSpacing(6)
@@ -735,6 +765,23 @@ class ControlsPanel(QWidget):
         self._trajectory_state_summary.setText(f"status: {status}")
         self._trajectory_lyapunov_summary.setText(f"Lyapunov: {lyapunov}")
 
+    def set_selected_seed_fields(
+        self,
+        d_value: str,
+        tau_value: str,
+        wall: str,
+    ) -> None:
+        blockers = [
+            QSignalBlocker(self._selected_seed_d_edit),
+            QSignalBlocker(self._selected_seed_tau_edit),
+            QSignalBlocker(self._selected_seed_wall_edit),
+        ]
+        self._selected_seed_d_edit.setText(d_value)
+        self._selected_seed_tau_edit.setText(tau_value)
+        self._selected_seed_wall_edit.setText(wall)
+        del blockers
+        self._clear_selected_seed_error()
+
     def _emit_parameters(self) -> None:
         self._clear_parameter_error()
         try:
@@ -798,6 +845,18 @@ class ControlsPanel(QWidget):
         self._parameter_status.setStyleSheet("")
         self._alpha_edit.setStyleSheet("")
         self._beta_edit.setStyleSheet("")
+
+    def _set_selected_seed_error(self, message: str) -> None:
+        self._selected_seed_status.setText(message)
+        self._selected_seed_status.setStyleSheet("color: #b00020;")
+        self._selected_seed_d_edit.setStyleSheet("border: 1px solid #b00020;")
+        self._selected_seed_tau_edit.setStyleSheet("border: 1px solid #b00020;")
+
+    def _clear_selected_seed_error(self) -> None:
+        self._selected_seed_status.setText("")
+        self._selected_seed_status.setStyleSheet("")
+        self._selected_seed_d_edit.setStyleSheet("")
+        self._selected_seed_tau_edit.setStyleSheet("")
 
     def _display_angles(self, alpha: float, beta: float) -> tuple[float, float]:
         if self._angle_units == "deg":
@@ -913,6 +972,17 @@ class ControlsPanel(QWidget):
 
         self.manual_seed_requested.emit(wall, d_value, tau_value)
 
+    def _emit_selected_seed_apply(self) -> None:
+        self._clear_selected_seed_error()
+        try:
+            d_value = parse_real_expression(self._selected_seed_d_edit.text())
+            tau_value = parse_real_expression(self._selected_seed_tau_edit.text())
+        except (ValueError, SyntaxError, ZeroDivisionError):
+            self._set_selected_seed_error("Invalid seed value")
+            return
+
+        self.selected_seed_apply_requested.emit(d_value, tau_value)
+
     def _expand_add_section(self) -> None:
         if self._add_section is not None:
             self._add_section.set_expanded(True)
@@ -920,6 +990,9 @@ class ControlsPanel(QWidget):
 
     def _apply_tooltips(self) -> None:
         apply_tooltip(self._trajectory_selector, "selected_trajectory")
+        apply_tooltip(self._selected_seed_d_edit, "selected_seed_d")
+        apply_tooltip(self._selected_seed_tau_edit, "selected_seed_tau")
+        apply_tooltip(self._selected_seed_wall_edit, "selected_seed_wall")
         apply_tooltip(self._angle_units_combo, "angle_units")
         apply_tooltip(self._alpha_edit, "alpha_edit")
         apply_tooltip(self._beta_edit, "beta_edit")

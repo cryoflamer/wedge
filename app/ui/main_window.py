@@ -306,6 +306,9 @@ class MainWindow(QMainWindow):
         )
         self.controls_panel.export_data_requested.connect(self._on_export_data)
         self.controls_panel.trajectory_selected.connect(self._on_trajectory_selected)
+        self.controls_panel.selected_seed_apply_requested.connect(
+            self._on_selected_seed_apply
+        )
         self.controls_panel.trajectory_visibility_toggled.connect(
             self._on_trajectory_visibility_toggled
         )
@@ -408,6 +411,7 @@ class MainWindow(QMainWindow):
                 status="-",
                 lyapunov="-",
             )
+            self.controls_panel.set_selected_seed_fields("-", "-", "-")
         else:
             status_text = "pending"
             if selected_orbit is not None:
@@ -426,6 +430,11 @@ class MainWindow(QMainWindow):
                 tau0=f"{selected_seed.tau0:.6f}",
                 status=status_text,
                 lyapunov=lyapunov_text,
+            )
+            self.controls_panel.set_selected_seed_fields(
+                d_value=f"{selected_seed.d0:.6f}",
+                tau_value=f"{selected_seed.tau0:.6f}",
+                wall=str(selected_seed.wall_start),
             )
 
     def _update_panel_views(self) -> None:
@@ -529,6 +538,30 @@ class MainWindow(QMainWindow):
         self._start_single_seed_rebuild(
             seed,
             start_message=f"Rebuilding trajectory #{trajectory_id}...",
+        )
+        self._autosave_session()
+
+    def _on_selected_seed_apply(
+        self,
+        d_value: float,
+        tau_value: float,
+    ) -> None:
+        if self._selected_trajectory_id is None:
+            return
+        seed = self._trajectory_seeds.get(self._selected_trajectory_id)
+        if seed is None:
+            return
+
+        projected_d, projected_tau = self._constrain_seed_to_domain(d_value, tau_value)
+        seed.d0 = projected_d
+        seed.tau0 = projected_tau
+        self._reset_replay_views()
+        self._trajectory_orbits[seed.id] = Orbit(trajectory_id=seed.id)
+        self._trajectory_geometries[seed.id] = WedgeGeometry()
+        self.update_view()
+        self._start_single_seed_rebuild(
+            seed,
+            start_message=f"Rebuilding trajectory #{seed.id}...",
         )
         self._autosave_session()
 
@@ -1128,6 +1161,23 @@ class MainWindow(QMainWindow):
 
     def _normalized_phase_steps(self, n_phase: int, n_geom: int) -> int:
         return max(n_phase, n_geom + 1)
+
+    def _constrain_seed_to_domain(
+        self,
+        d_value: float,
+        tau_value: float,
+    ) -> tuple[float, float]:
+        if (1.0 - d_value) ** 2 + tau_value**2 < 1.0:
+            return d_value, tau_value
+
+        dx = d_value - 1.0
+        norm = math.hypot(dx, tau_value)
+        if norm <= 1.0e-12:
+            return 1.0, 0.0
+
+        radius = 1.0 - 1.0e-6
+        scale = radius / norm
+        return 1.0 + dx * scale, tau_value * scale
 
     def _trajectory_selector_label(
         self,
