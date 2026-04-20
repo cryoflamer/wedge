@@ -595,7 +595,13 @@ class MainWindow(QMainWindow):
         )
         if self._current_job_worker is None:
             return
-        self._current_job_worker.cancel()
+        worker = self._current_job_worker
+        worker.cancel()
+        self._job_generation += 1
+        self._current_job_worker = None
+        self._current_job_thread = None
+        self._pending_partial_results.clear()
+        self._partial_update_timer.stop()
         self._set_job_progress(
             JobProgress(
                 generation_id=self._job_generation,
