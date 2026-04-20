@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from threading import Event
 
 from PySide6.QtCore import QObject, Signal, Slot
 
@@ -102,10 +103,13 @@ class OrbitBuildWorker(QObject):
         self._max_trajectory_count = max_trajectory_count
         self._lyapunov_seed = lyapunov_seed
         self._lyapunov_config = lyapunov_config
-        self._cancel_requested = False
+        self._cancel_event = Event()
 
     def cancel(self) -> None:
-        self._cancel_requested = True
+        self._cancel_event.set()
+
+    def _is_cancel_requested(self) -> bool:
+        return self._cancel_event.is_set()
 
     @Slot()
     def run(self) -> None:
@@ -149,8 +153,20 @@ class OrbitBuildWorker(QObject):
             config=self._simulation_config,
             steps=self._phase_steps,
             chunk_size=self._chunk_size,
+            cancel_check=self._is_cancel_requested,
         ):
-            if self._cancel_requested:
+            if self._is_cancel_requested():
+                self.finished.emit(
+                    JobFinished(
+                        generation_id=self._generation_id,
+                        job_kind=self._job_kind,
+                        status="cancelled",
+                        message="build cancelled",
+                    )
+                )
+                return
+
+            if self._is_cancel_requested():
                 self.finished.emit(
                     JobFinished(
                         generation_id=self._generation_id,
@@ -190,6 +206,17 @@ class OrbitBuildWorker(QObject):
                 )
             )
 
+        if self._is_cancel_requested():
+            self.finished.emit(
+                JobFinished(
+                    generation_id=self._generation_id,
+                    job_kind=self._job_kind,
+                    status="cancelled",
+                    message="build cancelled",
+                )
+            )
+            return
+
         self.finished.emit(
             JobFinished(
                 generation_id=self._generation_id,
@@ -202,7 +229,7 @@ class OrbitBuildWorker(QObject):
     def _run_rebuild(self) -> None:
         total = max(len(self._seeds), 1)
         for seed_index, seed in enumerate(self._seeds, start=1):
-            if self._cancel_requested:
+            if self._is_cancel_requested():
                 self.finished.emit(
                     JobFinished(
                         generation_id=self._generation_id,
@@ -219,8 +246,20 @@ class OrbitBuildWorker(QObject):
                 config=self._simulation_config,
                 steps=self._phase_steps,
                 chunk_size=self._chunk_size,
+                cancel_check=self._is_cancel_requested,
             ):
-                if self._cancel_requested:
+                if self._is_cancel_requested():
+                    self.finished.emit(
+                        JobFinished(
+                            generation_id=self._generation_id,
+                            job_kind=self._job_kind,
+                            status="cancelled",
+                            message="rebuild cancelled",
+                        )
+                    )
+                    return
+
+                if self._is_cancel_requested():
                     self.finished.emit(
                         JobFinished(
                             generation_id=self._generation_id,
@@ -297,7 +336,7 @@ class OrbitBuildWorker(QObject):
         total = max(len(generated_points), 1)
         added = 0
         for point_index, (d_value, tau_value) in enumerate(generated_points, start=1):
-            if self._cancel_requested:
+            if self._is_cancel_requested():
                 self.finished.emit(
                     JobFinished(
                         generation_id=self._generation_id,
@@ -343,8 +382,20 @@ class OrbitBuildWorker(QObject):
                 config=self._simulation_config,
                 steps=self._phase_steps,
                 chunk_size=self._chunk_size,
+                cancel_check=self._is_cancel_requested,
             ):
-                if self._cancel_requested:
+                if self._is_cancel_requested():
+                    self.finished.emit(
+                        JobFinished(
+                            generation_id=self._generation_id,
+                            job_kind=self._job_kind,
+                            status="cancelled",
+                            message="scan cancelled",
+                        )
+                    )
+                    return
+
+                if self._is_cancel_requested():
                     self.finished.emit(
                         JobFinished(
                             generation_id=self._generation_id,
@@ -422,7 +473,7 @@ class OrbitBuildWorker(QObject):
             simulation_config=self._simulation_config,
             lyapunov_config=self._lyapunov_config,
         )
-        if self._cancel_requested:
+        if self._is_cancel_requested():
             self.finished.emit(
                 JobFinished(
                     generation_id=self._generation_id,

@@ -86,6 +86,7 @@ def iter_orbit_chunks(
     config: SimulationConfig,
     steps: int,
     chunk_size: int,
+    cancel_check=None,
 ):
     initial_state = PhaseState(
         d=seed.d0,
@@ -121,8 +122,14 @@ def iter_orbit_chunks(
     step_index = 1
     chunk_limit = max(chunk_size, 1)
     while step_index < steps:
+        if cancel_check is not None and cancel_check():
+            orbit.completed_steps = len(orbit.points)
+            return
         chunk_end = min(step_index + chunk_limit, steps)
         for current_step in range(step_index, chunk_end):
+            if cancel_check is not None and cancel_check():
+                orbit.completed_steps = len(orbit.points)
+                return
             step_result = next_state(current_state, config)
             if step_result.state is None:
                 orbit.valid = False
