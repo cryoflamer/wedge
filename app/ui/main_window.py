@@ -11,11 +11,11 @@ from PySide6.QtGui import QCloseEvent, QKeyEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QGridLayout,
     QLabel,
     QMainWindow,
-    QMenu,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -86,7 +86,6 @@ class MainWindow(QMainWindow):
         self._active_job_payload: dict[str, object] | None = None
         self._paused_job_payloads: list[dict[str, object]] = []
         self._next_job_payload_id = 1
-        self._status_jobs_menu: QMenu | None = None
         self._autosave_restore_scheduled = False
 
         self.setWindowTitle(config.app.title)
@@ -228,6 +227,9 @@ class MainWindow(QMainWindow):
         self._status_job_button = QPushButton("Cancel")
         self._status_job_button.clicked.connect(self._on_status_job_button_clicked)
         self._status_job_button.hide()
+        self._status_jobs_selector = QComboBox()
+        self._status_jobs_selector.setMinimumWidth(180)
+        self._status_jobs_selector.hide()
         self._status_progress = QProgressBar()
         self._status_progress.setRange(0, 100)
         self._status_progress.setValue(0)
@@ -238,6 +240,7 @@ class MainWindow(QMainWindow):
         self._status_fast_build.setChecked(self._config.background.fast_build)
         self._status_fast_build.toggled.connect(self._on_fast_build_changed)
         self.statusBar().addWidget(self._status_label, 1)
+        self.statusBar().addPermanentWidget(self._status_jobs_selector)
         self.statusBar().addPermanentWidget(self._status_job_button)
         self.statusBar().addPermanentWidget(self._status_progress)
         self.statusBar().addPermanentWidget(self._status_fast_build)
@@ -1435,13 +1438,16 @@ class MainWindow(QMainWindow):
         paused_count = len(self._paused_job_payloads)
         visible = running or paused_count > 0
         self._status_job_button.setVisible(visible)
+        self._status_jobs_selector.setVisible(not running and paused_count > 1)
         if running:
             self._status_job_button.setText("Cancel")
             self._status_progress.setVisible(True)
+            self._status_jobs_selector.hide()
             return
         paused_payload = self._latest_paused_job()
         if paused_payload is None:
             self._status_progress.setVisible(False)
+            self._status_jobs_selector.hide()
             return
         percent = int(paused_payload.get("progress_percent", 0))
         self._status_progress.setVisible(True)
@@ -1454,7 +1460,24 @@ class MainWindow(QMainWindow):
             else f"{paused_count} paused jobs"
         )
         self._status_label.setText(self._job_status_message)
-        self._status_job_button.setText("Resume" if paused_count == 1 else "Jobs...")
+        self._status_job_button.setText("Resume")
+        if paused_count > 1:
+            blocker = QSignalBlocker(self._status_jobs_selector)
+            current_job_id = self._status_jobs_selector.currentData()
+            self._status_jobs_selector.clear()
+            selected_index = 0
+            for index, payload in enumerate(self._paused_job_payloads):
+                item_title = str(payload.get("title", "Paused job"))
+                item_percent = int(payload.get("progress_percent", 0))
+                job_id = int(payload.get("job_id", index))
+                self._status_jobs_selector.addItem(
+                    f"{item_title} ({item_percent}%)",
+                    job_id,
+                )
+                if current_job_id == job_id:
+                    selected_index = index
+            self._status_jobs_selector.setCurrentIndex(selected_index)
+            del blocker
 
     def _on_status_job_button_clicked(self) -> None:
         if self._current_job_worker is not None:
@@ -1464,20 +1487,11 @@ class MainWindow(QMainWindow):
             self._resume_job(self._paused_job_payloads[0])
             return
         if len(self._paused_job_payloads) > 1:
-            menu = QMenu(self)
+            selected_job_id = self._status_jobs_selector.currentData()
             for payload in self._paused_job_payloads:
-                title = str(payload.get("title", "Paused job"))
-                percent = int(payload.get("progress_percent", 0))
-                action = menu.addAction(f"{title} ({percent}%)")
-                action.triggered.connect(
-                    lambda checked=False, item=payload: self._resume_job(item)
-                )
-            self._status_jobs_menu = menu
-            menu.exec(
-                self._status_job_button.mapToGlobal(
-                    self._status_job_button.rect().bottomLeft()
-                )
-            )
+                if int(payload.get("job_id", -1)) == int(selected_job_id):
+                    self._resume_job(payload)
+                    return
 
     def _resume_last_job(self) -> None:
         if self._current_job_worker is not None:
