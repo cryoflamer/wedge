@@ -10,11 +10,13 @@ from PySide6.QtCore import QEvent, QObject, QThread, QTimer, Qt
 from PySide6.QtGui import QCloseEvent, QKeyEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QFileDialog,
     QGridLayout,
     QLabel,
     QMainWindow,
     QProgressBar,
+    QPushButton,
     QScrollArea,
     QWidget,
 )
@@ -219,14 +221,22 @@ class MainWindow(QMainWindow):
 
     def _build_status_bar(self) -> None:
         self._status_label = QLabel("Idle")
+        self._status_job_button = QPushButton("Cancel")
+        self._status_job_button.clicked.connect(self._on_status_job_button_clicked)
+        self._status_job_button.hide()
         self._status_progress = QProgressBar()
         self._status_progress.setRange(0, 100)
         self._status_progress.setValue(0)
         self._status_progress.setTextVisible(True)
         self._status_progress.setMaximumWidth(220)
         self._status_progress.hide()
+        self._status_fast_build = QCheckBox("Fast build")
+        self._status_fast_build.setChecked(self._config.background.fast_build)
+        self._status_fast_build.toggled.connect(self._on_fast_build_changed)
         self.statusBar().addWidget(self._status_label, 1)
+        self.statusBar().addPermanentWidget(self._status_job_button)
         self.statusBar().addPermanentWidget(self._status_progress)
+        self.statusBar().addPermanentWidget(self._status_fast_build)
 
     def _connect_signals(self) -> None:
         self.phase_panel_wall_1.clicked.connect(self._on_phase_click)
@@ -270,9 +280,6 @@ class MainWindow(QMainWindow):
         self.controls_panel.replay_action_requested.connect(self._on_replay_action)
         self.controls_panel.scan_requested.connect(self._on_scan_requested)
         self.controls_panel.manual_seed_requested.connect(self._on_manual_seed_requested)
-        self.controls_panel.cancel_job_requested.connect(self._cancel_current_job)
-        self.controls_panel.resume_job_requested.connect(self._resume_last_job)
-        self.controls_panel.fast_build_changed.connect(self._on_fast_build_changed)
         self.replay_controller.state_changed.connect(self._on_replay_state_changed)
 
     def update_view(self) -> None:
@@ -400,6 +407,9 @@ class MainWindow(QMainWindow):
         )
 
     def _update_status_view(self) -> None:
+        blocker = QSignalBlocker(self._status_fast_build)
+        self._status_fast_build.setChecked(self._config.background.fast_build)
+        del blocker
         self.controls_panel.set_job_status(
             status=self._job_status_state,
             message=self._job_status_message,
@@ -504,6 +514,7 @@ class MainWindow(QMainWindow):
 
     def _on_fast_build_changed(self, enabled: bool) -> None:
         self._config.background.fast_build = enabled
+        self._status_fast_build.setChecked(enabled)
         self._autosave_session()
         self.update_view()
 
@@ -668,6 +679,7 @@ class MainWindow(QMainWindow):
         )
         self._status_label.setText(self._job_status_message)
         self._status_progress.setVisible(self._resumable_job_payload is not None)
+        self._update_status_job_controls()
         self.controls_panel.set_job_status(
             status=self._job_status_state,
             message=self._job_status_message,
@@ -1260,6 +1272,7 @@ class MainWindow(QMainWindow):
         self._status_label.setText(self._job_status_message)
         self._status_progress.setValue(percent)
         self._status_progress.setVisible(progress.status in ("running", "partial"))
+        self._update_status_job_controls()
         self.controls_panel.set_job_status(
             status=self._job_status_state,
             message=self._job_status_message,
@@ -1371,6 +1384,7 @@ class MainWindow(QMainWindow):
         self._status_label.setText(self._job_status_message)
         self._status_progress.setVisible(False)
         self._status_progress.setValue(100 if payload.status == "done" else 0)
+        self._update_status_job_controls()
         self.controls_panel.set_job_status(
             status=self._job_status_state,
             message=self._job_status_message,
@@ -1383,6 +1397,21 @@ class MainWindow(QMainWindow):
         self._update_trajectory_views()
         self._update_panel_views()
         self._update_status_view()
+
+    def _update_status_job_controls(self) -> None:
+        resumable = self._resumable_job_payload is not None and self._current_job_worker is None
+        running = self._current_job_worker is not None
+        visible = running or resumable
+        self._status_job_button.setVisible(visible)
+        self._status_progress.setVisible(visible and self._status_progress.isVisible())
+        self._status_job_button.setText("Cancel" if running else "Resume")
+
+    def _on_status_job_button_clicked(self) -> None:
+        if self._current_job_worker is not None:
+            self._cancel_current_job()
+            return
+        if self._resumable_job_payload is not None:
+            self._resume_last_job()
 
     def _resume_last_job(self) -> None:
         if self._current_job_worker is not None:

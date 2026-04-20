@@ -84,9 +84,6 @@ class ControlsPanel(QWidget):
     replay_action_requested = Signal(str)
     scan_requested = Signal(str, int, int, float, float, float, float)
     manual_seed_requested = Signal(int, float, float)
-    cancel_job_requested = Signal()
-    resume_job_requested = Signal()
-    fast_build_changed = Signal(bool)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -97,7 +94,6 @@ class ControlsPanel(QWidget):
         self._n_phase_edit = QLineEdit()
         self._n_geom_edit = QLineEdit()
         self._fixed_domain_checkbox = QCheckBox("Fixed domain (disable for zoom/pan)")
-        self._fast_build_checkbox = QCheckBox("Fast build")
         self._symmetric_mode_checkbox = QCheckBox("Symmetric wedge mode")
         self._show_regions_checkbox = QCheckBox("Show regions")
         self._show_region_labels_checkbox = QCheckBox("Show region labels")
@@ -124,9 +120,6 @@ class ControlsPanel(QWidget):
         self._lyapunov_status = QLabel("Lyapunov: not computed")
         self._lyapunov_steps = QLabel("Lyapunov steps: -")
         self._lyapunov_value = QLabel("Lyapunov λ: -")
-        self._job_status = QLabel("Job: idle")
-        self._cancel_job_button = QPushButton("Cancel job")
-        self._resume_job_button = QPushButton("Resume job")
         self._parameter_status = QLabel("")
         self._trajectory_wall_summary = QLabel("wall: -")
         self._trajectory_d_summary = QLabel("d0: -")
@@ -162,7 +155,6 @@ class ControlsPanel(QWidget):
         self._fixed_domain_checkbox.toggled.connect(
             self.phase_view_mode_changed.emit
         )
-        self._fast_build_checkbox.toggled.connect(self.fast_build_changed.emit)
         self._symmetric_mode_checkbox.toggled.connect(
             self._on_symmetric_mode_toggled
         )
@@ -205,11 +197,6 @@ class ControlsPanel(QWidget):
             QComboBox.SizeAdjustPolicy.AdjustToContents
         )
         self._trajectory_selector.setIconSize(QSize(12, 12))
-        self._cancel_job_button.setEnabled(False)
-        self._cancel_job_button.clicked.connect(self.cancel_job_requested.emit)
-        self._resume_job_button.setEnabled(False)
-        self._resume_job_button.clicked.connect(self.resume_job_requested.emit)
-
     def _build_trajectory_box(self) -> QGroupBox:
         box = QGroupBox("Trajectory")
         layout = QVBoxLayout(box)
@@ -288,7 +275,6 @@ class ControlsPanel(QWidget):
         right_layout.setSpacing(4)
         right_layout.addWidget(self._symmetric_mode_checkbox)
         right_layout.addWidget(self._fixed_domain_checkbox)
-        right_layout.addWidget(self._fast_build_checkbox)
         right_layout.addWidget(self._show_regions_checkbox)
         right_layout.addWidget(self._show_region_labels_checkbox)
         right_layout.addWidget(self._show_region_legend_checkbox)
@@ -343,12 +329,6 @@ class ControlsPanel(QWidget):
             actions_grid.addWidget(button, index // 3, index % 3)
         layout.addLayout(actions_grid)
 
-        job_actions = QGridLayout()
-        job_actions.setHorizontalSpacing(6)
-        job_actions.setVerticalSpacing(4)
-        job_actions.addWidget(self._cancel_job_button, 0, 0)
-        job_actions.addWidget(self._resume_job_button, 0, 1)
-        layout.addLayout(job_actions)
         return box
 
     def _build_collapsible_sections(self) -> list[QWidget]:
@@ -487,10 +467,6 @@ class ControlsPanel(QWidget):
             resolution=config.view.heatmap_resolution,
             normalization=config.view.heatmap_normalization,
         )
-        blocker = QSignalBlocker(self._fast_build_checkbox)
-        self._fast_build_checkbox.setChecked(config.background.fast_build)
-        del blocker
-
     def set_angle_units(self, units: str) -> None:
         normalized_units = units.strip().lower() if units.strip() else "rad"
         blocker = QSignalBlocker(self._angle_units_combo)
@@ -674,8 +650,7 @@ class ControlsPanel(QWidget):
         cancellable: bool,
         resumable: bool = False,
     ) -> None:
-        self._cancel_job_button.setEnabled(cancellable)
-        self._resume_job_button.setEnabled(resumable)
+        del status, message, cancellable, resumable
 
     def set_selected_trajectory_summary(
         self,
