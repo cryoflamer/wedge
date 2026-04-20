@@ -292,6 +292,9 @@ class MainWindow(QMainWindow):
         self.controls_panel.seed_markers_visibility_changed.connect(
             self._on_seed_markers_visibility_changed
         )
+        self.controls_panel.directrix_visibility_changed.connect(
+            self._on_directrix_visibility_changed
+        )
         self.controls_panel.region_visibility_changed.connect(
             self._on_region_visibility_changed
         )
@@ -618,6 +621,10 @@ class MainWindow(QMainWindow):
 
     def _on_seed_markers_visibility_changed(self, enabled: bool) -> None:
         self._config.view.show_seed_markers = enabled
+        self.update_view()
+
+    def _on_directrix_visibility_changed(self, enabled: bool) -> None:
+        self._config.view.show_directrix = enabled
         self.update_view()
 
     def _on_branch_markers_changed(self, enabled: bool) -> None:

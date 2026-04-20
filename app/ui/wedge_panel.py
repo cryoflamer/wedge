@@ -80,6 +80,8 @@ class WedgePanel(QWidget):
 
     def _all_points(self) -> list[tuple[float, float]]:
         points: list[tuple[float, float]] = [(0.0, 0.0)]
+        if self._view_config.show_directrix:
+            points.append((0.0, 1.0))
         for geometry in self._geometries.values():
             for wall in geometry.walls:
                 points.append((wall.start.x, wall.start.y))
@@ -137,9 +139,23 @@ class WedgePanel(QWidget):
         painter.drawRect(self.rect().adjusted(0, 0, -1, -1))
         painter.drawRect(self._plot_rect())
 
+        self._draw_directrix(painter)
         self._draw_walls(painter)
         self._draw_segments(painter)
         self._draw_reflections(painter)
+
+    def _draw_directrix(self, painter: QPainter) -> None:
+        if not self._view_config.show_directrix:
+            return
+
+        min_x, max_x, _, _ = self._geometry_bounds()
+        if abs(max_x - min_x) <= 1.0e-9:
+            max_x = min_x + 1.0
+
+        painter.setPen(QPen(QColor(136, 136, 136, 180), 1, Qt.DashLine))
+        start = self._to_canvas(min_x, 1.0)
+        end = self._to_canvas(max_x, 1.0)
+        painter.drawLine(start, end)
 
     def _draw_walls(self, painter: QPainter) -> None:
         if not self._geometries:

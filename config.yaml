@@ -47,7 +47,7 @@ view:
     major_style: solid
     minor_style: dotted
   show_labels: true
-  show_directrix: false
+  show_directrix: true
   show_reflection_points: true
   show_regions: true
   show_region_labels: true
