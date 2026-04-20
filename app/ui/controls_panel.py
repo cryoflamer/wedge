@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import QSignalBlocker, Qt, Signal
+from PySide6.QtCore import QSignalBlocker, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -142,6 +143,10 @@ class ControlsPanel(QWidget):
         self._scan_wall_combo.addItems(["1", "2"])
         self._manual_wall_combo.addItems(["1", "2"])
         self._sync_export_preset_state()
+        self._trajectory_selector.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToContents
+        )
+        self._trajectory_selector.setIconSize(QSize(12, 12))
 
     def _build_trajectory_box(self) -> QGroupBox:
         box = QGroupBox("Trajectories")
@@ -159,29 +164,39 @@ class ControlsPanel(QWidget):
         actions_grid.setHorizontalSpacing(6)
         actions_grid.setVerticalSpacing(4)
 
-        toggle_button = QPushButton("Toggle visibility")
+        toggle_button = QPushButton("Toggle")
         toggle_button.clicked.connect(self._toggle_current_visibility)
         actions_grid.addWidget(toggle_button, 0, 0)
 
-        clear_selected_button = QPushButton("Clear selected trajectory")
+        clear_selected_button = QPushButton("Clear selected")
         clear_selected_button.clicked.connect(self.clear_selected_requested.emit)
         actions_grid.addWidget(clear_selected_button, 0, 1)
 
-        clear_all_button = QPushButton("Clear all trajectories")
+        clear_all_button = QPushButton("Clear all")
         clear_all_button.clicked.connect(self.clear_all_requested.emit)
         actions_grid.addWidget(clear_all_button, 1, 0)
 
-        lyapunov_button = QPushButton("Compute Lyapunov")
+        lyapunov_button = QPushButton("Lyapunov")
         lyapunov_button.clicked.connect(self.compute_lyapunov_requested.emit)
         actions_grid.addWidget(lyapunov_button, 1, 1)
 
-        export_data_button = QPushButton("Export Data")
+        export_data_button = QPushButton("Export data")
         export_data_button.clicked.connect(self.export_data_requested.emit)
         actions_grid.addWidget(export_data_button, 2, 0)
 
-        add_trajectory_button = QPushButton("Add trajectory")
+        add_trajectory_button = QPushButton("Add")
         add_trajectory_button.clicked.connect(self._emit_manual_seed)
         actions_grid.addWidget(add_trajectory_button, 2, 1)
+
+        for button in (
+            toggle_button,
+            clear_selected_button,
+            clear_all_button,
+            lyapunov_button,
+            export_data_button,
+            add_trajectory_button,
+        ):
+            button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         layout.addLayout(actions_grid)
         layout.addWidget(self._lyapunov_status)
@@ -276,26 +291,29 @@ class ControlsPanel(QWidget):
         scan_button = QPushButton("Scan")
         scan_button.clicked.connect(self._emit_scan_request)
         layout.addWidget(scan_button)
+        scan_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         actions_grid = QGridLayout()
         actions_grid.setHorizontalSpacing(6)
         actions_grid.setVerticalSpacing(4)
 
-        for index, action_name in enumerate((
-            "replay_selected",
-            "replay_all",
-            "pause",
-            "resume",
-            "step",
-            "reset_replay",
-            "export_png",
-            "save_session",
-            "load_session",
-        )):
-            button = QPushButton(action_name.replace("_", " ").title())
+        action_labels = (
+            ("replay_selected", "Replay sel"),
+            ("replay_all", "Replay all"),
+            ("pause", "Pause"),
+            ("resume", "Resume"),
+            ("step", "Step"),
+            ("reset_replay", "Reset"),
+            ("export_png", "PNG"),
+            ("save_session", "Save"),
+            ("load_session", "Load"),
+        )
+        for index, (action_name, label) in enumerate(action_labels):
+            button = QPushButton(label)
             button.clicked.connect(
                 lambda checked=False, name=action_name: self.replay_action_requested.emit(name)
             )
+            button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             actions_grid.addWidget(button, index // 2, index % 2)
 
         layout.addLayout(actions_grid)

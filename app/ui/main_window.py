@@ -885,11 +885,8 @@ class MainWindow(QMainWindow):
         seed: TrajectorySeed,
         orbit: Orbit | None,
     ) -> str:
-        invalid_suffix = " [invalid]" if orbit is not None and not orbit.valid else ""
-        return (
-            f"#{seed.id} | wall={seed.wall_start} | "
-            f"d={seed.d0:.3f} | tau={seed.tau0:.3f}{invalid_suffix}"
-        )
+        del seed, orbit
+        return ""
 
     def _trajectory_tooltip_label(
         self,
