@@ -528,7 +528,7 @@ class MainWindow(QMainWindow):
         self.update_view()
         self._start_single_seed_rebuild(
             seed,
-            start_message=f"Rebuilding trajectory #{trajectory_id}",
+            start_message=f"Rebuilding trajectory #{trajectory_id}...",
         )
         self._autosave_session()
 

@@ -6,7 +6,7 @@ from collections.abc import Iterable
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QPen, QWheelEvent
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QToolTip, QVBoxLayout, QWidget
 
 from app.models.config import ViewConfig
 from app.models.orbit import Orbit, OrbitPoint
@@ -152,8 +152,30 @@ class PhasePanel(QWidget):
                 f"d={self._drag_seed_preview[0]:.3f}, "
                 f"tau={self._drag_seed_preview[1]:.3f}"
             )
+            seed = self._seeds.get(self._drag_seed_id)
+            if seed is not None and self._drag_seed_preview is not None:
+                QToolTip.showText(
+                    event.globalPosition().toPoint(),
+                    self._seed_tooltip_text(
+                        seed,
+                        self._drag_seed_preview[0],
+                        self._drag_seed_preview[1],
+                    ),
+                    self,
+                )
             self.update()
             return
+        hovered_seed_id = self._seed_at_position(event.position())
+        if hovered_seed_id is not None:
+            seed = self._seeds.get(hovered_seed_id)
+            if seed is not None:
+                QToolTip.showText(
+                    event.globalPosition().toPoint(),
+                    self._seed_tooltip_text(seed, seed.d0, seed.tau0),
+                    self,
+                )
+        else:
+            QToolTip.hideText()
         if (
             self._pan_anchor_canvas is None
             or self._pan_anchor_viewport is None
@@ -246,6 +268,7 @@ class PhasePanel(QWidget):
 
     def leaveEvent(self, event) -> None:
         self._hover_point = None
+        QToolTip.hideText()
         self.update()
         super().leaveEvent(event)
 
@@ -382,6 +405,19 @@ class PhasePanel(QWidget):
             if math.hypot(center.x() - point.x(), center.y() - point.y()) <= hit_radius:
                 return trajectory_id
         return None
+
+    def _seed_tooltip_text(
+        self,
+        seed: TrajectorySeed,
+        d_value: float,
+        tau_value: float,
+    ) -> str:
+        return (
+            f"trajectory id: {seed.id}\n"
+            f"wall: {seed.wall_start}\n"
+            f"d0: {d_value:.6f}\n"
+            f"tau0: {tau_value:.6f}"
+        )
 
     def _plot_rect(self) -> QRectF:
         available_width = max(self.width() - 2 * self._padding, 1)
