@@ -106,6 +106,7 @@ class ControlsPanel(QWidget):
         self._n_geom_edit = QLineEdit()
         self._fixed_domain_checkbox = QCheckBox("Fixed domain (disable for zoom/pan)")
         self._constraint_mode_combo = QComboBox()
+        self._constraint_label = QLabel("Constraint")
         self._constraint_combo = QComboBox()
         self._symmetry_constraint_checkbox = QCheckBox("Symmetry constraint")
         self._show_phase_grid_checkbox = QCheckBox("Show grid")
@@ -348,7 +349,7 @@ class ControlsPanel(QWidget):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.addRow("Units", self._angle_units_combo)
         left_layout.addRow("Mode", self._constraint_mode_combo)
-        left_layout.addRow("Constraint", self._constraint_combo)
+        left_layout.addRow(self._constraint_label, self._constraint_combo)
         left_layout.addRow("", self._symmetry_constraint_checkbox)
         left_layout.addRow("α", self._alpha_edit)
         left_layout.addRow("β", self._beta_edit)
@@ -655,6 +656,8 @@ class ControlsPanel(QWidget):
 
     def _sync_constraint_controls(self) -> None:
         is_constraint_mode = self.constraint_mode() == "constraint"
+        self._constraint_label.setVisible(is_constraint_mode)
+        self._constraint_combo.setVisible(is_constraint_mode)
         self._constraint_combo.setEnabled(
             is_constraint_mode and self._constraint_combo.count() > 0
         )
