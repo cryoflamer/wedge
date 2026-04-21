@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+
+.idea/
+.codex
+
+autosave/
+tools/
+
+wedge_session*.yaml
+wedge_export_*.png
