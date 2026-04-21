@@ -71,7 +71,7 @@ regions:
 - name: n3_boundary
   type: boundary
   display_text: B
-  legend_text: 3*sin(alpha-2*beta) - sin(3*alpha-2*beta) = 0
+  legend_text: 3*sin(α-2*β) - sin(3*α-2*β) = 0
   expression: 3*sin(α-2*β) - sin(3*α-2*β)
   priority: 30
   visible: true

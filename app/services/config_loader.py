@@ -252,6 +252,11 @@ def save_runtime_config(config: Config, path: str | Path) -> Path:
     payload["background"] = background_payload
 
     with config_path.open("w", encoding="utf-8") as file:
-        yaml.safe_dump(payload, file, sort_keys=False)
+        yaml.safe_dump(
+            payload,
+            file,
+            sort_keys=False,
+            allow_unicode=True,
+        )
 
     return config_path
