@@ -6,7 +6,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QMouseEvent, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QLabel, QToolTip, QVBoxLayout, QWidget
 
-from app.core.region_eval import evaluate_region, evaluate_region_boundary
+from app.core.region_eval import evaluate_boundary_value, evaluate_region
 from app.models.config import ViewConfig
 from app.models.region import RegionDescription
 
@@ -202,6 +202,122 @@ class AnglePanel(QWidget):
         path.closeSubpath()
         return path
 
+    def _build_boundary_segments(
+        self,
+        region: RegionDescription,
+        alpha_steps: int = 160,
+        beta_steps: int = 320,
+    ) -> list[tuple[QPointF, QPointF]]:
+        alpha_values = [
+            (math.pi / 2.0) * index / alpha_steps
+            for index in range(alpha_steps + 1)
+        ]
+        beta_values = [
+            math.pi * index / beta_steps
+            for index in range(beta_steps + 1)
+        ]
+
+        value_grid: list[list[float | None]] = []
+        for alpha in alpha_values:
+            row: list[float | None] = []
+            for beta in beta_values:
+                if not self._is_inside_domain(alpha, beta):
+                    row.append(None)
+                    continue
+                row.append(evaluate_boundary_value(region, alpha, beta))
+            value_grid.append(row)
+
+        segments: list[tuple[QPointF, QPointF]] = []
+        for alpha_index in range(alpha_steps):
+            alpha0 = alpha_values[alpha_index]
+            alpha1 = alpha_values[alpha_index + 1]
+            for beta_index in range(beta_steps):
+                beta0 = beta_values[beta_index]
+                beta1 = beta_values[beta_index + 1]
+
+                corners = [
+                    (alpha0, beta0, value_grid[alpha_index][beta_index]),
+                    (alpha1, beta0, value_grid[alpha_index + 1][beta_index]),
+                    (alpha1, beta1, value_grid[alpha_index + 1][beta_index + 1]),
+                    (alpha0, beta1, value_grid[alpha_index][beta_index + 1]),
+                ]
+                if any(value is None for _, _, value in corners):
+                    continue
+
+                crossings: list[tuple[float, float]] = []
+                edge_pairs = ((0, 1), (1, 2), (2, 3), (3, 0))
+                for start_index, end_index in edge_pairs:
+                    crossing = self._edge_crossing(
+                        corners[start_index],
+                        corners[end_index],
+                    )
+                    if crossing is not None:
+                        crossings.append(crossing)
+
+                if len(crossings) == 2:
+                    segments.append(
+                        (
+                            self._to_canvas(crossings[0][0], crossings[0][1]),
+                            self._to_canvas(crossings[1][0], crossings[1][1]),
+                        )
+                    )
+                elif len(crossings) == 4:
+                    center_alpha = 0.5 * (alpha0 + alpha1)
+                    center_beta = 0.5 * (beta0 + beta1)
+                    center_value = evaluate_boundary_value(
+                        region,
+                        center_alpha,
+                        center_beta,
+                    )
+                    if center_value is None:
+                        continue
+                    if center_value >= 0.0:
+                        pairings = ((0, 1), (2, 3))
+                    else:
+                        pairings = ((0, 3), (1, 2))
+                    for start_index, end_index in pairings:
+                        segments.append(
+                            (
+                                self._to_canvas(
+                                    crossings[start_index][0],
+                                    crossings[start_index][1],
+                                ),
+                                self._to_canvas(
+                                    crossings[end_index][0],
+                                    crossings[end_index][1],
+                                ),
+                            )
+                        )
+
+        return segments
+
+    def _edge_crossing(
+        self,
+        start: tuple[float, float, float | None],
+        end: tuple[float, float, float | None],
+        epsilon: float = 1.0e-12,
+    ) -> tuple[float, float] | None:
+        alpha0, beta0, value0 = start
+        alpha1, beta1, value1 = end
+        if value0 is None or value1 is None:
+            return None
+
+        if abs(value0) <= epsilon and abs(value1) <= epsilon:
+            return None
+        if abs(value0) <= epsilon:
+            return alpha0, beta0
+        if abs(value1) <= epsilon:
+            return alpha1, beta1
+        if value0 * value1 > 0.0:
+            return None
+
+        ratio = value0 / (value0 - value1)
+        alpha = alpha0 + ratio * (alpha1 - alpha0)
+        beta = beta0 + ratio * (beta1 - beta0)
+        if not self._is_inside_domain(alpha, beta):
+            return None
+        return alpha, beta
+
     def _draw_regions(self, painter: QPainter) -> None:
         if not self._regions or not self._view_config.show_regions:
             return
@@ -212,23 +328,25 @@ class AnglePanel(QWidget):
                 continue
 
             sample_points: list[QPointF] = []
-            for alpha_step in range(0, 41):
-                alpha = (math.pi / 2.0) * alpha_step / 40.0
-                for beta_step in range(0, 81):
-                    beta = math.pi * beta_step / 80.0
-                    if not self._is_inside_domain(alpha, beta):
-                        continue
-                    if (
-                        region.region_type == "boundary"
-                        and evaluate_region_boundary(region, alpha, beta)
-                    ) or (
-                        region.region_type != "boundary"
-                        and evaluate_region(region, alpha, beta)
-                    ):
-                        sample_points.append(self._to_canvas(alpha, beta))
+            boundary_segments: list[tuple[QPointF, QPointF]] = []
+            if region.region_type == "boundary":
+                boundary_segments = self._build_boundary_segments(region)
+                if not boundary_segments:
+                    continue
+                for start, end in boundary_segments:
+                    sample_points.extend((start, end))
+            else:
+                for alpha_step in range(0, 41):
+                    alpha = (math.pi / 2.0) * alpha_step / 40.0
+                    for beta_step in range(0, 81):
+                        beta = math.pi * beta_step / 80.0
+                        if not self._is_inside_domain(alpha, beta):
+                            continue
+                        if evaluate_region(region, alpha, beta):
+                            sample_points.append(self._to_canvas(alpha, beta))
 
-            if not sample_points:
-                continue
+                if not sample_points:
+                    continue
 
             color = QColor(region.style.fill)
             color.setAlphaF(max(0.0, min(region.style.alpha, 1.0)))
@@ -237,9 +355,12 @@ class AnglePanel(QWidget):
             painter.setPen(border_pen)
             painter.setBrush(self._region_brush(color, region.style.hatch))
 
-            point_radius = 1 if region.region_type == "boundary" else 2
-            for point in sample_points:
-                painter.drawEllipse(point, point_radius, point_radius)
+            if region.region_type == "boundary":
+                for start, end in boundary_segments:
+                    painter.drawLine(start, end)
+            else:
+                for point in sample_points:
+                    painter.drawEllipse(point, 2, 2)
 
             if self._view_config.show_region_labels:
                 center_x = sum(point.x() for point in sample_points) / len(sample_points)
@@ -250,7 +371,13 @@ class AnglePanel(QWidget):
                     region.display_text,
                 )
 
-            legend_items.append((QColor(region.style.border), region.display_text, region.legend_text))
+            legend_items.append(
+                (
+                    QColor(region.style.border),
+                    region.display_text,
+                    region.legend_text,
+                )
+            )
 
         if self._view_config.show_region_legend and legend_items:
             self._draw_legend(painter, legend_items)
@@ -364,8 +491,14 @@ class AnglePanel(QWidget):
             return
 
         painter.setPen(QPen(QColor(60, 60, 60, 120), 1, Qt.DashLine))
-        painter.drawLine(QPointF(plot.left(), point.y()), QPointF(plot.right(), point.y()))
-        painter.drawLine(QPointF(point.x(), plot.top()), QPointF(point.x(), plot.bottom()))
+        painter.drawLine(
+            QPointF(plot.left(), point.y()),
+            QPointF(plot.right(), point.y()),
+        )
+        painter.drawLine(
+            QPointF(point.x(), plot.top()),
+            QPointF(point.x(), plot.bottom()),
+        )
 
         label_rect = QRectF(plot.left() + 8.0, plot.bottom() - 28.0, 210.0, 20.0)
         painter.setPen(QPen(QColor("#666666"), 1))
