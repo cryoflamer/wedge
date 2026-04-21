@@ -12,6 +12,7 @@ from app.core.point_constraints import (
     build_boundary_segments,
     project_point_to_constraint,
 )
+from app.models.constraint import ConstraintDescription
 from app.core.region_eval import evaluate_region
 from app.models.config import ViewConfig
 from app.models.region import RegionDescription
@@ -35,8 +36,10 @@ class AnglePanel(QWidget):
         self._angle_units = "rad"
         self._active_constraint: ActivePointConstraint | None = None
         self._regions: list[RegionDescription] = []
+        self._constraints: list[ConstraintDescription] = []
         self._boundary_segments_cache: dict[str, tuple[BoundarySegment, ...]] = {}
         self._hover_point: QPointF | None = None
+        self._dragging = False
         self._padding = 24
         self._top_margin = 16
         self._bottom_margin = 16
@@ -81,6 +84,10 @@ class AnglePanel(QWidget):
         }
         self.update()
 
+    def set_constraints(self, constraints: list[ConstraintDescription]) -> None:
+        self._constraints = sorted(constraints, key=lambda item: item.priority)
+        self.update()
+
     def set_angle_units(self, units: str) -> None:
         self._angle_units = units.strip().lower() if units.strip() else "rad"
         self._hint.setText(f"parameter space ({self._angle_units})")
@@ -89,54 +96,25 @@ class AnglePanel(QWidget):
         )
         self.update()
 
-    def set_symmetric_mode(self, enabled: bool) -> None:
-        self._active_constraint = (
-            ActivePointConstraint(kind="symmetry")
-            if enabled
-            else None
-        )
-        self.update()
-
     def set_active_constraint(
         self,
         constraint: ActivePointConstraint | None,
     ) -> None:
-        if constraint is None:
-            self._active_constraint = None
-            self.update()
-            return
-
-        if (
-            constraint.kind == "boundary"
-            and not constraint.boundary_segments
-            and constraint.region_name is not None
-        ):
-            self._active_constraint = ActivePointConstraint(
-                kind="boundary",
-                region_name=constraint.region_name,
-                boundary_segments=self._boundary_segments_cache.get(
-                    constraint.region_name,
-                    (),
-                ),
-            )
-            self.update()
-            return
-
-        self._active_constraint = constraint
+        self._active_constraint = self._hydrate_constraint(constraint)
         self.update()
 
+    def hydrated_constraint(
+        self,
+        constraint: ActivePointConstraint | None,
+    ) -> ActivePointConstraint | None:
+        return self._hydrate_constraint(constraint)
+
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        if event.button() != Qt.LeftButton:
+        if event.button() != Qt.LeftButton or not self._plot_rect().contains(event.position()):
             return
 
-        alpha, beta = self._selection_from_position(event.position())
-        if not self._is_inside_domain(alpha, beta):
-            return
-
-        self._point_label.setText(
-            f"point: α={self._format_angle(alpha)}, β={self._format_angle(beta)}"
-        )
-        self.point_selected.emit(alpha, beta)
+        self._dragging = True
+        self._apply_interaction_point(event.position(), commit=False)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         plot = self._plot_rect()
@@ -148,6 +126,8 @@ class AnglePanel(QWidget):
             if plot.contains(event.position())
             else None
         )
+        if self._dragging:
+            self._apply_interaction_point(event.position(), commit=False)
         if not self._view_config.angle_hover_tooltip:
             self.update()
             return
@@ -162,6 +142,15 @@ class AnglePanel(QWidget):
         else:
             QToolTip.hideText()
         self.update()
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if event.button() != Qt.LeftButton:
+            super().mouseReleaseEvent(event)
+            return
+        if self._dragging:
+            self._dragging = False
+            self._apply_interaction_point(event.position(), commit=True)
+        super().mouseReleaseEvent(event)
 
     def leaveEvent(self, event) -> None:
         self._hover_point = None
@@ -211,6 +200,39 @@ class AnglePanel(QWidget):
         alpha, beta = self._map_click(point)
         return project_point_to_constraint(alpha, beta, self._active_constraint)
 
+    def _hydrate_constraint(
+        self,
+        constraint: ActivePointConstraint | None,
+    ) -> ActivePointConstraint | None:
+        if constraint is None:
+            return None
+        if (
+            constraint.kind == "boundary"
+            and not constraint.boundary_segments
+            and constraint.region_name is not None
+        ):
+            return ActivePointConstraint(
+                kind="boundary",
+                region_name=constraint.region_name,
+                boundary_segments=self._boundary_segments_cache.get(
+                    constraint.region_name,
+                    (),
+                ),
+            )
+        return constraint
+
+    def _apply_interaction_point(
+        self,
+        point: QPointF,
+        commit: bool,
+    ) -> None:
+        alpha, beta = self._selection_from_position(point)
+        if not self._is_inside_domain(alpha, beta):
+            return
+        self.set_angles(alpha, beta)
+        if commit:
+            self.point_selected.emit(alpha, beta)
+
     def _format_angle(self, value: float) -> str:
         if self._angle_units == "deg":
             return f"{math.degrees(value):.3f} deg"
@@ -250,6 +272,11 @@ class AnglePanel(QWidget):
             sample_points: list[QPointF] = []
             boundary_segments: list[tuple[QPointF, QPointF]] = []
             if region.region_type == "boundary":
+                is_active_boundary = (
+                    self._active_constraint is not None
+                    and self._active_constraint.kind == "boundary"
+                    and self._active_constraint.region_name == region.name
+                )
                 boundary_segments = [
                     (
                         self._to_canvas(segment.start_alpha, segment.start_beta),
@@ -276,7 +303,13 @@ class AnglePanel(QWidget):
 
             color = QColor(region.style.fill)
             color.setAlphaF(max(0.0, min(region.style.alpha, 1.0)))
-            border_pen = QPen(QColor(region.style.border), 1)
+            border_color = QColor("#d62728") if (
+                region.region_type == "boundary"
+                and self._active_constraint is not None
+                and self._active_constraint.kind == "boundary"
+                and self._active_constraint.region_name == region.name
+            ) else QColor(region.style.border)
+            border_pen = QPen(border_color, 2 if region.region_type == "boundary" and self._active_constraint is not None and self._active_constraint.kind == "boundary" and self._active_constraint.region_name == region.name else 1)
             border_pen.setStyle(self._pen_style(region.style.line_style))
             painter.setPen(border_pen)
             painter.setBrush(self._region_brush(color, region.style.hatch))
@@ -389,13 +422,7 @@ class AnglePanel(QWidget):
         painter.setBrush(QColor(214, 231, 248, 80))
         painter.drawPath(self._build_domain_path())
         self._draw_regions(painter)
-
-        if self._active_constraint is not None and self._active_constraint.kind == "symmetry":
-            painter.setPen(QPen(QColor("#d62728"), 2, Qt.DashLine))
-            painter.drawLine(
-                self._to_canvas(0.0, math.pi),
-                self._to_canvas(math.pi / 2.0, math.pi / 2.0),
-            )
+        self._draw_constraints(painter)
 
         if self._hover_point is not None:
             self._draw_crosshair_overlay(painter, plot, self._hover_point)
@@ -405,6 +432,33 @@ class AnglePanel(QWidget):
             painter.setBrush(QColor("#111111"))
             point = self._to_canvas(self._alpha, self._beta)
             painter.drawEllipse(point, 5, 5)
+
+    def _draw_constraints(self, painter: QPainter) -> None:
+        if not self._constraints:
+            return
+
+        for constraint in self._constraints:
+            if not constraint.visible:
+                continue
+            kind = constraint.constraint_type.strip().lower()
+            if kind != "symmetry":
+                continue
+            is_active = (
+                self._active_constraint is not None
+                and self._active_constraint.kind == "symmetry"
+                and self._active_constraint.region_name == constraint.name
+            )
+            painter.setPen(
+                QPen(
+                    QColor("#d62728" if is_active else "#cc8899"),
+                    3 if is_active else 1.5,
+                    Qt.DashLine,
+                )
+            )
+            painter.drawLine(
+                self._to_canvas(0.0, math.pi),
+                self._to_canvas(math.pi / 2.0, math.pi / 2.0),
+            )
 
     def _draw_crosshair_overlay(
         self,
