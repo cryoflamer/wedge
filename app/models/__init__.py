@@ -1,4 +1,5 @@
 from app.models.config import AppConfig, Config, ExportConfig, ReplayConfig, SimulationConfig, ViewConfig
+from app.models.constraint import ConstraintDescription
 from app.models.geometry import (
     GeometryPoint,
     ParabolicSegment,
@@ -14,6 +15,7 @@ from app.models.trajectory import TrajectorySeed
 __all__ = [
     "AppConfig",
     "Config",
+    "ConstraintDescription",
     "ExportConfig",
     "GeometryPoint",
     "Orbit",
