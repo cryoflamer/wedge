@@ -36,6 +36,7 @@ def save_session(session: Session, output_path: str | Path) -> Path:
         "heatmap_mode": session.heatmap_mode,
         "heatmap_resolution": session.heatmap_resolution,
         "heatmap_normalization": session.heatmap_normalization,
+        "active_angle_constraint": session.active_angle_constraint,
         "fast_build": session.fast_build,
         "trajectories": [
             {
@@ -104,6 +105,11 @@ def load_session(input_path: str | Path) -> Session:
         heatmap_mode=str(data.get("heatmap_mode", "all")),
         heatmap_resolution=int(data.get("heatmap_resolution", 32)),
         heatmap_normalization=str(data.get("heatmap_normalization", "linear")),
+        active_angle_constraint=(
+            str(data["active_angle_constraint"])
+            if data.get("active_angle_constraint") is not None
+            else None
+        ),
         fast_build=bool(data.get("fast_build", False)),
         trajectories=trajectories,
         phase_viewport_wall_1=_as_viewport(data.get("phase_viewport_wall_1")),

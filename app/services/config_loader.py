@@ -17,6 +17,7 @@ from app.models.config import (
     ViewConfig,
     WindowConfig,
 )
+from app.models.constraint import ConstraintDescription
 from app.models.region import RegionDescription, RegionStyle
 
 
@@ -36,7 +37,70 @@ def load_config(path: str | Path) -> Config:
     phase_grid_data = view_data.get("phase_grid", {})
     window_data = data.get("window", {})
     autosave_data = data.get("autosave", {})
-    regions_data = data.get("regions", [])
+    scene_items = data.get("regions", [])
+    constraints: list[ConstraintDescription] = []
+    regions: list[RegionDescription] = []
+
+    for item in scene_items:
+        item_type = str(item.get("type", "predicate"))
+        if item_type == "constraint":
+            constraints.append(
+                ConstraintDescription(
+                    name=str(item["name"]),
+                    constraint_type=str(item.get("constraint_type", "symmetry")),
+                    display_text=str(
+                        item.get("display_text", item.get("label", item["name"]))
+                    ),
+                    legend_text=str(
+                        item.get("legend_text", item.get("display_text", item["name"]))
+                    ),
+                    expression=(
+                        str(item["expression"])
+                        if item.get("expression") is not None
+                        else None
+                    ),
+                    target=(
+                        str(item["target"])
+                        if item.get("target") is not None
+                        else None
+                    ),
+                    priority=int(item.get("priority", 0)),
+                    visible=bool(item.get("visible", True)),
+                )
+            )
+            continue
+
+        regions.append(
+            RegionDescription(
+                name=str(item["name"]),
+                display_text=str(
+                    item.get("display_text", item.get("label", item["name"]))
+                ),
+                legend_text=str(
+                    item.get("legend_text", item.get("display_text", item["name"]))
+                ),
+                region_type=item_type,
+                expression=str(
+                    item.get("expression", item.get("predicate", "False"))
+                ),
+                relation=(
+                    str(item["relation"])
+                    if item.get("relation") is not None
+                    else None
+                ),
+                style=RegionStyle(
+                    fill=str(item.get("style", {}).get("fill", "#cccccc")),
+                    alpha=float(item.get("style", {}).get("alpha", 0.3)),
+                    hatch=str(item.get("style", {}).get("hatch", "/")),
+                    border=str(item.get("style", {}).get("border", "#333333")),
+                    line_style=str(
+                        item.get("style", {}).get("line_style", "solid")
+                    ),
+                ),
+                priority=int(item.get("priority", 0)),
+                visible=bool(item.get("visible", True)),
+            )
+        )
 
     return Config(
         app=AppConfig(
@@ -129,6 +193,11 @@ def load_config(path: str | Path) -> Config:
             heatmap_normalization=str(
                 view_data.get("heatmap_normalization", "linear")
             ),
+            active_angle_constraint=(
+                str(view_data["active_angle_constraint"])
+                if view_data.get("active_angle_constraint") is not None
+                else None
+            ),
             phase_point_radius=int(view_data.get("phase_point_radius", 2)),
             geometry_point_radius=int(view_data.get("geometry_point_radius", 2)),
             angle_hover_tooltip=bool(
@@ -156,38 +225,8 @@ def load_config(path: str | Path) -> Config:
                 autosave_data.get("restore_simulation_parameters", True)
             ),
         ),
-        regions=[
-            RegionDescription(
-                name=str(region["name"]),
-                display_text=str(
-                    region.get("display_text", region.get("label", region["name"]))
-                ),
-                legend_text=str(
-                    region.get("legend_text", region.get("display_text", region["name"]))
-                ),
-                region_type=str(region.get("type", "predicate")),
-                expression=str(
-                    region.get("expression", region.get("predicate", "False"))
-                ),
-                relation=(
-                    str(region["relation"])
-                    if region.get("relation") is not None
-                    else None
-                ),
-                style=RegionStyle(
-                    fill=str(region.get("style", {}).get("fill", "#cccccc")),
-                    alpha=float(region.get("style", {}).get("alpha", 0.3)),
-                    hatch=str(region.get("style", {}).get("hatch", "/")),
-                    border=str(region.get("style", {}).get("border", "#333333")),
-                    line_style=str(
-                        region.get("style", {}).get("line_style", "solid")
-                    ),
-                ),
-                priority=int(region.get("priority", 0)),
-                visible=bool(region.get("visible", True)),
-            )
-            for region in regions_data
-        ],
+        regions=regions,
+        constraints=constraints,
     )
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from app.models.constraint import ConstraintDescription
 from app.models.region import RegionDescription
 
 
@@ -84,6 +85,7 @@ class ViewConfig:
     heatmap_mode: str = "all"
     heatmap_resolution: int = 32
     heatmap_normalization: str = "linear"
+    active_angle_constraint: str | None = None
     phase_point_radius: int = 2
     geometry_point_radius: int = 2
     angle_hover_tooltip: bool = True
@@ -116,3 +118,4 @@ class Config:
     window: WindowConfig = field(default_factory=WindowConfig)
     autosave: AutosaveConfig = field(default_factory=AutosaveConfig)
     regions: list[RegionDescription] = field(default_factory=list)
+    constraints: list[ConstraintDescription] = field(default_factory=list)
