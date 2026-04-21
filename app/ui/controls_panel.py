@@ -73,6 +73,8 @@ class ControlsPanel(QWidget):
     parameters_changed = Signal(float, float, int, int)
     angle_units_changed = Signal(str)
     symmetric_mode_changed = Signal(bool)
+    angle_constraint_mode_changed = Signal(str)
+    angle_constraint_changed = Signal(str)
     export_mode_changed = Signal(str)
     phase_grid_visibility_changed = Signal(bool, bool)
     seed_markers_visibility_changed = Signal(bool)
@@ -103,7 +105,9 @@ class ControlsPanel(QWidget):
         self._n_phase_edit = QLineEdit()
         self._n_geom_edit = QLineEdit()
         self._fixed_domain_checkbox = QCheckBox("Fixed domain (disable for zoom/pan)")
-        self._symmetric_mode_checkbox = QCheckBox("Symmetric wedge mode")
+        self._constraint_mode_combo = QComboBox()
+        self._constraint_combo = QComboBox()
+        self._symmetry_constraint_checkbox = QCheckBox("Symmetry constraint")
         self._show_phase_grid_checkbox = QCheckBox("Show grid")
         self._show_phase_minor_grid_checkbox = QCheckBox("Show minor grid")
         self._show_seed_markers_checkbox = QCheckBox("Show seed markers")
@@ -175,7 +179,14 @@ class ControlsPanel(QWidget):
         self._fixed_domain_checkbox.toggled.connect(
             self.phase_view_mode_changed.emit
         )
-        self._symmetric_mode_checkbox.toggled.connect(
+        self._constraint_mode_combo.addItems(["Free", "Constraint"])
+        self._constraint_mode_combo.currentTextChanged.connect(
+            self._on_constraint_mode_changed
+        )
+        self._constraint_combo.currentIndexChanged.connect(
+            self._on_constraint_changed
+        )
+        self._symmetry_constraint_checkbox.toggled.connect(
             self._on_symmetric_mode_toggled
         )
         self._show_regions_checkbox.toggled.connect(self._emit_region_visibility)
@@ -336,6 +347,9 @@ class ControlsPanel(QWidget):
         left_layout = QFormLayout()
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.addRow("Units", self._angle_units_combo)
+        left_layout.addRow("Mode", self._constraint_mode_combo)
+        left_layout.addRow("Constraint", self._constraint_combo)
+        left_layout.addRow("", self._symmetry_constraint_checkbox)
         left_layout.addRow("α", self._alpha_edit)
         left_layout.addRow("β", self._beta_edit)
         left_layout.addRow("N_phase", self._n_phase_edit)
@@ -344,7 +358,6 @@ class ControlsPanel(QWidget):
         right_layout = QVBoxLayout()
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(4)
-        right_layout.addWidget(self._symmetric_mode_checkbox)
         right_layout.addWidget(self._fixed_domain_checkbox)
         right_layout.addWidget(self._show_seed_markers_checkbox)
         right_layout.addWidget(self._show_stationary_point_checkbox)
@@ -562,6 +575,7 @@ class ControlsPanel(QWidget):
             resolution=config.view.heatmap_resolution,
             normalization=config.view.heatmap_normalization,
         )
+
     def set_angle_units(self, units: str) -> None:
         normalized_units = units.strip().lower() if units.strip() else "rad"
         blocker = QSignalBlocker(self._angle_units_combo)
@@ -574,16 +588,80 @@ class ControlsPanel(QWidget):
     def angle_units(self) -> str:
         return self._angle_units
 
-    def set_symmetric_mode(self, enabled: bool) -> None:
-        blocker = QSignalBlocker(self._symmetric_mode_checkbox)
-        self._symmetric_mode_checkbox.setChecked(enabled)
+    def set_constraint_mode(self, mode: str) -> None:
+        normalized_mode = "constraint" if mode.strip().lower() == "constraint" else "free"
+        blocker = QSignalBlocker(self._constraint_mode_combo)
+        index = self._constraint_mode_combo.findText(
+            normalized_mode.title()
+        )
+        self._constraint_mode_combo.setCurrentIndex(index if index >= 0 else 0)
         del blocker
-        self._beta_edit.setReadOnly(enabled)
-        self._beta_edit.setEnabled(not enabled)
-        self._sync_symmetric_beta_preview()
+        self._sync_constraint_controls()
+
+    def constraint_mode(self) -> str:
+        return self._constraint_mode_combo.currentText().strip().lower() or "free"
+
+    def set_constraint_options(
+        self,
+        items: list[tuple[str, str, str]],
+        selected_name: str | None,
+    ) -> None:
+        blocker = QSignalBlocker(self._constraint_combo)
+        self._constraint_combo.clear()
+        selected_index = -1
+        for index, (name, label, constraint_type) in enumerate(items):
+            self._constraint_combo.addItem(label, name)
+            self._constraint_combo.setItemData(
+                index,
+                constraint_type.strip().lower(),
+                Qt.UserRole + 1,
+            )
+            if name == selected_name:
+                selected_index = index
+
+        if selected_index >= 0:
+            self._constraint_combo.setCurrentIndex(selected_index)
+        elif self._constraint_combo.count() > 0:
+            self._constraint_combo.setCurrentIndex(0)
+        del blocker
+        self._symmetry_constraint_checkbox.setVisible(
+            any(
+                constraint_type.strip().lower() == "symmetry"
+                for _, _, constraint_type in items
+            )
+        )
+        self._sync_constraint_controls()
+
+    def active_constraint_name(self) -> str | None:
+        if self._constraint_combo.count() <= 0:
+            return None
+        value = self._constraint_combo.currentData()
+        return str(value) if value is not None else None
+
+    def set_symmetric_mode(self, enabled: bool) -> None:
+        blocker = QSignalBlocker(self._symmetry_constraint_checkbox)
+        self._symmetry_constraint_checkbox.setChecked(enabled)
+        del blocker
+        self._sync_constraint_controls()
 
     def symmetric_mode(self) -> bool:
-        return self._symmetric_mode_checkbox.isChecked()
+        return self.constraint_mode() == "constraint" and self._selected_constraint_type() == "symmetry"
+
+    def _selected_constraint_type(self) -> str:
+        if self._constraint_combo.count() <= 0:
+            return ""
+        value = self._constraint_combo.currentData(Qt.UserRole + 1)
+        return str(value).strip().lower() if value is not None else ""
+
+    def _sync_constraint_controls(self) -> None:
+        is_constraint_mode = self.constraint_mode() == "constraint"
+        self._constraint_combo.setEnabled(
+            is_constraint_mode and self._constraint_combo.count() > 0
+        )
+        is_symmetry = is_constraint_mode and self._selected_constraint_type() == "symmetry"
+        self._beta_edit.setReadOnly(is_symmetry)
+        self._beta_edit.setEnabled(not is_symmetry)
+        self._sync_symmetric_beta_preview()
 
     def set_phase_view_mode(self, fixed_domain: bool) -> None:
         blocker = QSignalBlocker(self._fixed_domain_checkbox)
@@ -902,10 +980,54 @@ class ControlsPanel(QWidget):
         self.angle_units_changed.emit(self._angle_units)
 
     def _on_symmetric_mode_toggled(self, enabled: bool) -> None:
-        self._beta_edit.setReadOnly(enabled)
-        self._beta_edit.setEnabled(not enabled)
-        self._sync_symmetric_beta_preview()
+        if enabled:
+            symmetry_index = next(
+                (
+                    index
+                    for index in range(self._constraint_combo.count())
+                    if self._selected_constraint_type_at(index) == "symmetry"
+                ),
+                -1,
+            )
+            if symmetry_index >= 0:
+                blocker = QSignalBlocker(self._constraint_combo)
+                self._constraint_combo.setCurrentIndex(symmetry_index)
+                del blocker
+            self.set_constraint_mode("constraint")
+        elif self.symmetric_mode():
+            self.set_constraint_mode("free")
+        self._sync_constraint_controls()
+        self.angle_constraint_mode_changed.emit(self.constraint_mode())
+        active_name = self.active_constraint_name()
+        if self.constraint_mode() == "constraint" and active_name is not None:
+            self.angle_constraint_changed.emit(active_name)
         self.symmetric_mode_changed.emit(enabled)
+
+    def _on_constraint_mode_changed(self, mode: str) -> None:
+        self._sync_constraint_controls()
+        normalized_mode = mode.strip().lower() or "free"
+        self.angle_constraint_mode_changed.emit(normalized_mode)
+        self.symmetric_mode_changed.emit(
+            normalized_mode == "constraint"
+            and self._selected_constraint_type() == "symmetry"
+        )
+
+    def _on_constraint_changed(self, index: int) -> None:
+        del index
+        self._sync_constraint_controls()
+        blocker = QSignalBlocker(self._symmetry_constraint_checkbox)
+        self._symmetry_constraint_checkbox.setChecked(self.symmetric_mode())
+        del blocker
+        active_name = self.active_constraint_name()
+        if active_name is not None:
+            self.angle_constraint_changed.emit(active_name)
+        self.symmetric_mode_changed.emit(self.symmetric_mode())
+
+    def _selected_constraint_type_at(self, index: int) -> str:
+        if index < 0:
+            return ""
+        value = self._constraint_combo.itemData(index, Qt.UserRole + 1)
+        return str(value).strip().lower() if value is not None else ""
 
     def _sync_symmetric_beta_preview(self) -> None:
         if not self.symmetric_mode():
@@ -1023,7 +1145,15 @@ class ControlsPanel(QWidget):
         apply_tooltip(self._beta_edit, "beta_edit")
         apply_tooltip(self._n_phase_edit, "n_phase_edit")
         apply_tooltip(self._n_geom_edit, "n_geom_edit")
-        apply_tooltip(self._symmetric_mode_checkbox, "symmetric_mode")
+        self._constraint_mode_combo.setToolTip(
+            "Choose free movement or movement constrained to one curve."
+        )
+        self._constraint_combo.setToolTip(
+            "Select the active point constraint for the α/β panel."
+        )
+        self._symmetry_constraint_checkbox.setToolTip(
+            "Quick switch to the symmetry constraint."
+        )
         apply_tooltip(self._fixed_domain_checkbox, "fixed_domain")
         apply_tooltip(self._show_phase_grid_checkbox, "show_phase_grid")
         apply_tooltip(

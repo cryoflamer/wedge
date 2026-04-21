@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 
 from app.core.geometry_builder import build_wedge_geometry
 from app.core.orbit_builder import build_orbit
-from app.core.point_constraints import ActivePointConstraint
+from app.core.point_constraints import ActivePointConstraint, project_point_to_constraint
 from app.models.config import Config
 from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
@@ -287,8 +287,11 @@ class MainWindow(QMainWindow):
         self.angle_panel.point_selected.connect(self._on_angle_click)
         self.controls_panel.parameters_changed.connect(self._on_parameters_changed)
         self.controls_panel.angle_units_changed.connect(self._on_angle_units_changed)
-        self.controls_panel.symmetric_mode_changed.connect(
-            self._on_symmetric_mode_changed
+        self.controls_panel.angle_constraint_mode_changed.connect(
+            self._on_angle_constraint_mode_changed
+        )
+        self.controls_panel.angle_constraint_changed.connect(
+            self._on_angle_constraint_changed
         )
         self.controls_panel.export_mode_changed.connect(self._on_export_mode_changed)
         self.controls_panel.phase_grid_visibility_changed.connect(
@@ -347,6 +350,21 @@ class MainWindow(QMainWindow):
     def _update_controls_config_view(self) -> None:
         self.controls_panel.load_config(self._config)
         self.controls_panel.set_angle_units(self._angle_units)
+        self.controls_panel.set_constraint_options(
+            [
+                (
+                    item.name,
+                    item.display_text,
+                    item.constraint_type,
+                )
+                for item in sorted(self._config.constraints, key=lambda entry: entry.priority)
+                if item.visible
+            ],
+            self._base_angle_constraint_name,
+        )
+        self.controls_panel.set_constraint_mode(
+            "constraint" if self._active_angle_constraint_name is not None else "free"
+        )
         self.controls_panel.set_symmetric_mode(self._symmetric_mode)
         self.controls_panel.set_phase_view_mode(
             self.phase_panel_wall_1.is_fixed_domain_mode()
@@ -367,6 +385,7 @@ class MainWindow(QMainWindow):
         )
         self.angle_panel.set_angle_units(self._angle_units)
         self.angle_panel.set_regions(self._config.regions)
+        self.angle_panel.set_constraints(self._config.constraints)
         self.angle_panel.set_active_constraint(self._resolved_angle_constraint())
         self.angle_panel.set_angles(
             self._config.simulation.alpha,
@@ -596,26 +615,66 @@ class MainWindow(QMainWindow):
         self.update_view()
         logger.info("Angle units changed: %s", units)
 
-    def _on_symmetric_mode_changed(self, enabled: bool) -> None:
-        self._symmetric_mode = enabled
-        if enabled:
-            self._active_angle_constraint_name = self._default_symmetry_constraint_name()
-        else:
-            self._active_angle_constraint_name = (
-                None
-                if self._constraint_name_is_symmetry(self._base_angle_constraint_name)
-                else self._base_angle_constraint_name
-            )
-        if enabled and self._active_angle_constraint_name is not None:
-            self._config.simulation.beta = math.nextafter(
-                math.pi - self._config.simulation.alpha,
-                self._config.simulation.alpha,
-            )
-            self._start_rebuild_job()
-            self._reset_replay_views()
-            self._autosave_session()
+    def _on_angle_constraint_mode_changed(self, mode: str) -> None:
+        self._set_angle_constraint_mode(mode)
+
+    def _on_angle_constraint_changed(self, name: str) -> None:
+        self._base_angle_constraint_name = name
+        if self._active_angle_constraint_name is None:
+            self._config.view.active_angle_constraint = None
+            self.update_view()
+            return
+        if (
+            self._active_angle_constraint_name == name
+            and self._config.view.active_angle_constraint == name
+            and self._symmetric_mode == self._constraint_name_is_symmetry(name)
+        ):
+            self.update_view()
+            return
+        self._active_angle_constraint_name = name
+        self._config.view.active_angle_constraint = name
+        self._symmetric_mode = self._constraint_name_is_symmetry(name)
+        self._project_angles_to_active_constraint()
+        self._start_rebuild_job()
+        self._reset_replay_views()
+        self._autosave_session()
         self.update_view()
-        logger.info("Symmetric mode changed: %s", enabled)
+        logger.info("Angle constraint changed: %s", name)
+
+    def _set_angle_constraint_mode(self, mode: str) -> None:
+        normalized_mode = mode.strip().lower() if mode.strip() else "free"
+        previous_active = self._active_angle_constraint_name
+        previous_symmetric = self._symmetric_mode
+        if normalized_mode == "constraint":
+            selected_name = (
+                self.controls_panel.active_constraint_name()
+                or self._base_angle_constraint_name
+                or self._default_symmetry_constraint_name()
+            )
+            self._base_angle_constraint_name = selected_name
+            self._active_angle_constraint_name = selected_name
+        else:
+            self._active_angle_constraint_name = None
+        self._config.view.active_angle_constraint = self._active_angle_constraint_name
+        self._symmetric_mode = self._constraint_name_is_symmetry(
+            self._active_angle_constraint_name
+        )
+        if (
+            previous_active == self._active_angle_constraint_name
+            and previous_symmetric == self._symmetric_mode
+        ):
+            self.update_view()
+            return
+        self._project_angles_to_active_constraint()
+        self._start_rebuild_job()
+        self._reset_replay_views()
+        self._autosave_session()
+        self.update_view()
+        logger.info(
+            "Angle constraint mode changed: mode=%s active=%s",
+            normalized_mode,
+            self._active_angle_constraint_name,
+        )
 
     def _on_export_mode_changed(self, mode: str) -> None:
         self._config.export.default_mode = mode
@@ -1060,7 +1119,7 @@ class MainWindow(QMainWindow):
             heatmap_mode=self._config.view.heatmap_mode,
             heatmap_resolution=self._config.view.heatmap_resolution,
             heatmap_normalization=self._config.view.heatmap_normalization,
-            active_angle_constraint=self._base_angle_constraint_name,
+            active_angle_constraint=self._active_angle_constraint_name,
             fast_build=self._config.background.fast_build,
             phase_viewport_wall_1=self.phase_panel_wall_1.viewport(),
             phase_viewport_wall_2=self.phase_panel_wall_2.viewport(),
@@ -1082,7 +1141,6 @@ class MainWindow(QMainWindow):
         self._config.replay.delay_ms = session.replay_delay_ms
         self._config.replay.selected_only_by_default = session.replay_selected_only
         self._angle_units = session.angle_units
-        self._symmetric_mode = session.symmetric_mode
         self._config.export.default_mode = session.export_mode
         self._config.view.show_phase_grid = session.show_phase_grid
         self._config.view.show_phase_minor_grid = session.show_phase_minor_grid
@@ -1098,8 +1156,12 @@ class MainWindow(QMainWindow):
         self._config.view.heatmap_mode = session.heatmap_mode
         self._config.view.heatmap_resolution = session.heatmap_resolution
         self._config.view.heatmap_normalization = session.heatmap_normalization
-        self._base_angle_constraint_name = session.active_angle_constraint
-        self._active_angle_constraint_name = session.active_angle_constraint
+        restored_constraint = session.active_angle_constraint
+        if restored_constraint is None and session.symmetric_mode:
+            restored_constraint = self._default_symmetry_constraint_name()
+        self._base_angle_constraint_name = restored_constraint
+        self._active_angle_constraint_name = restored_constraint
+        self._config.view.active_angle_constraint = restored_constraint
         self._symmetric_mode = self._constraint_name_is_symmetry(
             self._active_angle_constraint_name
         )
@@ -1182,6 +1244,18 @@ class MainWindow(QMainWindow):
                 region_name=constraint.target,
             )
         return None
+
+    def _project_angles_to_active_constraint(self) -> None:
+        constraint = self.angle_panel.hydrated_constraint(
+            self._resolved_angle_constraint()
+        )
+        alpha, beta = project_point_to_constraint(
+            self._config.simulation.alpha,
+            self._config.simulation.beta,
+            constraint,
+        )
+        self._config.simulation.alpha = alpha
+        self._config.simulation.beta = beta
 
     def _apply_session(
         self,
