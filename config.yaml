@@ -67,38 +67,11 @@ autosave:
   path: autosave/session.yaml
   restore_simulation_parameters: true
 regions:
-- name: upper_sector
-  type: predicate
-  display_text: P
-  legend_text: beta > 2*alpha
-  expression: beta > 2*alpha
-  priority: 10
-  visible: true
-  style:
-    fill: '#ffd166'
-    alpha: 0.25
-    hatch: /
-    border: '#c17c00'
-    line_style: solid
-- name: trig_band
-  type: implicit
-  display_text: I
-  legend_text: sin(beta) - cos(alpha) >= 0
-  expression: sin(beta) - cos(alpha)
-  relation: '>='
-  priority: 20
-  visible: true
-  style:
-    fill: '#80ed99'
-    alpha: 0.2
-    hatch: .
-    border: '#2d6a4f'
-    line_style: dashed
 - name: n3_boundary
   type: boundary
   display_text: B
-  legend_text: beta - 3*alpha = 0
-  expression: beta - 3*alpha
+  legend_text: 3*sin(alpha-2*beta) - sin(3*alpha-2*beta) = 0
+  expression: 3*sin(alpha-2*beta) - sin(3*alpha-2*beta)
   priority: 30
   visible: true
   style:
