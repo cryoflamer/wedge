@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from app.core.geometry_builder import build_wedge_geometry
 from app.core.orbit_builder import build_orbit
+from app.core.point_constraints import ActivePointConstraint
 from app.models.config import Config
 from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
@@ -59,7 +60,11 @@ class MainWindow(QMainWindow):
         self._next_trajectory_id = 1
         self._selected_trajectory_id: int | None = None
         self._angle_units = "rad"
-        self._symmetric_mode = False
+        self._base_angle_constraint_name = config.view.active_angle_constraint
+        self._active_angle_constraint_name = config.view.active_angle_constraint
+        self._symmetric_mode = self._constraint_name_is_symmetry(
+            self._active_angle_constraint_name
+        )
         self._trajectory_seeds: dict[int, TrajectorySeed] = {}
         self._trajectory_orbits: dict[int, Orbit] = {}
         self._trajectory_geometries: dict[int, WedgeGeometry] = {}
@@ -361,12 +366,12 @@ class MainWindow(QMainWindow):
             normalization=self._config.view.heatmap_normalization,
         )
         self.angle_panel.set_angle_units(self._angle_units)
-        self.angle_panel.set_symmetric_mode(self._symmetric_mode)
+        self.angle_panel.set_regions(self._config.regions)
+        self.angle_panel.set_active_constraint(self._resolved_angle_constraint())
         self.angle_panel.set_angles(
             self._config.simulation.alpha,
             self._config.simulation.beta,
         )
-        self.angle_panel.set_regions(self._config.regions)
 
     def _update_trajectory_views(self) -> None:
         trajectory_items = [
@@ -594,6 +599,14 @@ class MainWindow(QMainWindow):
     def _on_symmetric_mode_changed(self, enabled: bool) -> None:
         self._symmetric_mode = enabled
         if enabled:
+            self._active_angle_constraint_name = self._default_symmetry_constraint_name()
+        else:
+            self._active_angle_constraint_name = (
+                None
+                if self._constraint_name_is_symmetry(self._base_angle_constraint_name)
+                else self._base_angle_constraint_name
+            )
+        if enabled and self._active_angle_constraint_name is not None:
             self._config.simulation.beta = math.nextafter(
                 math.pi - self._config.simulation.alpha,
                 self._config.simulation.alpha,
@@ -1047,6 +1060,7 @@ class MainWindow(QMainWindow):
             heatmap_mode=self._config.view.heatmap_mode,
             heatmap_resolution=self._config.view.heatmap_resolution,
             heatmap_normalization=self._config.view.heatmap_normalization,
+            active_angle_constraint=self._base_angle_constraint_name,
             fast_build=self._config.background.fast_build,
             phase_viewport_wall_1=self.phase_panel_wall_1.viewport(),
             phase_viewport_wall_2=self.phase_panel_wall_2.viewport(),
@@ -1084,6 +1098,11 @@ class MainWindow(QMainWindow):
         self._config.view.heatmap_mode = session.heatmap_mode
         self._config.view.heatmap_resolution = session.heatmap_resolution
         self._config.view.heatmap_normalization = session.heatmap_normalization
+        self._base_angle_constraint_name = session.active_angle_constraint
+        self._active_angle_constraint_name = session.active_angle_constraint
+        self._symmetric_mode = self._constraint_name_is_symmetry(
+            self._active_angle_constraint_name
+        )
         self._config.background.fast_build = session.fast_build
 
         self._trajectory_seeds = {
@@ -1111,6 +1130,58 @@ class MainWindow(QMainWindow):
         self._next_trajectory_id = (
             max(self._trajectory_seeds.keys(), default=0) + 1
         )
+
+    def _default_symmetry_constraint_name(self) -> str | None:
+        for constraint in sorted(
+            self._config.constraints,
+            key=lambda item: item.priority,
+        ):
+            if (
+                constraint.visible
+                and constraint.constraint_type.strip().lower() == "symmetry"
+            ):
+                return constraint.name
+        return None
+
+    def _constraint_name_is_symmetry(self, name: str | None) -> bool:
+        if name is None:
+            return False
+        constraint = next(
+            (item for item in self._config.constraints if item.name == name),
+            None,
+        )
+        if constraint is None:
+            return False
+        return constraint.constraint_type.strip().lower() == "symmetry"
+
+    def _resolved_angle_constraint(self) -> ActivePointConstraint | None:
+        if self._active_angle_constraint_name is None:
+            return None
+
+        constraint = next(
+            (
+                item
+                for item in self._config.constraints
+                if item.name == self._active_angle_constraint_name
+                and item.visible
+            ),
+            None,
+        )
+        if constraint is None:
+            return None
+
+        kind = constraint.constraint_type.strip().lower()
+        if kind == "symmetry":
+            return ActivePointConstraint(
+                kind="symmetry",
+                region_name=constraint.name,
+            )
+        if kind == "boundary" and constraint.target:
+            return ActivePointConstraint(
+                kind="boundary",
+                region_name=constraint.target,
+            )
+        return None
 
     def _apply_session(
         self,

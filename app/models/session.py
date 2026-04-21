@@ -32,6 +32,7 @@ class Session:
     heatmap_mode: str = "all"
     heatmap_resolution: int = 32
     heatmap_normalization: str = "linear"
+    active_angle_constraint: str | None = None
     fast_build: bool = False
     phase_viewport_wall_1: tuple[float, float, float, float] | None = None
     phase_viewport_wall_2: tuple[float, float, float, float] | None = None

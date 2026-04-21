@@ -54,6 +54,7 @@ view:
   show_region_labels: true
   show_region_legend: true
   show_branch_markers: true
+  active_angle_constraint: null
   phase_point_radius: 2
   geometry_point_radius: 2
   angle_hover_tooltip: true
@@ -80,3 +81,19 @@ regions:
     hatch: ''
     border: '#d62828'
     line_style: dashdot
+- name: symmetric_angle
+  type: constraint
+  constraint_type: symmetry
+  display_text: S
+  legend_text: beta = pi - alpha
+  expression: beta - (pi - alpha)
+  priority: 10
+  visible: true
+- name: n3_boundary_constraint
+  type: constraint
+  constraint_type: boundary
+  target: n3_boundary
+  display_text: B3
+  legend_text: Move along n3 boundary
+  priority: 40
+  visible: true
