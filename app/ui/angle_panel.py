@@ -6,7 +6,13 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QMouseEvent, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QLabel, QToolTip, QVBoxLayout, QWidget
 
-from app.core.region_eval import evaluate_boundary_value, evaluate_region
+from app.core.point_constraints import (
+    ActivePointConstraint,
+    BoundarySegment,
+    build_boundary_segments,
+    project_point_to_constraint,
+)
+from app.core.region_eval import evaluate_region
 from app.models.config import ViewConfig
 from app.models.region import RegionDescription
 
@@ -27,8 +33,9 @@ class AnglePanel(QWidget):
         self._alpha = 0.0
         self._beta = 0.0
         self._angle_units = "rad"
-        self._symmetric_mode = False
+        self._active_constraint: ActivePointConstraint | None = None
         self._regions: list[RegionDescription] = []
+        self._boundary_segments_cache: dict[str, tuple[BoundarySegment, ...]] = {}
         self._hover_point: QPointF | None = None
         self._padding = 24
         self._top_margin = 16
@@ -67,6 +74,11 @@ class AnglePanel(QWidget):
 
     def set_regions(self, regions: list[RegionDescription]) -> None:
         self._regions = sorted(regions, key=lambda item: item.priority)
+        self._boundary_segments_cache = {
+            region.name: tuple(build_boundary_segments(region, self._is_inside_domain))
+            for region in self._regions
+            if region.region_type == "boundary"
+        }
         self.update()
 
     def set_angle_units(self, units: str) -> None:
@@ -78,7 +90,39 @@ class AnglePanel(QWidget):
         self.update()
 
     def set_symmetric_mode(self, enabled: bool) -> None:
-        self._symmetric_mode = enabled
+        self._active_constraint = (
+            ActivePointConstraint(kind="symmetry")
+            if enabled
+            else None
+        )
+        self.update()
+
+    def set_active_constraint(
+        self,
+        constraint: ActivePointConstraint | None,
+    ) -> None:
+        if constraint is None:
+            self._active_constraint = None
+            self.update()
+            return
+
+        if (
+            constraint.kind == "boundary"
+            and not constraint.boundary_segments
+            and constraint.region_name is not None
+        ):
+            self._active_constraint = ActivePointConstraint(
+                kind="boundary",
+                region_name=constraint.region_name,
+                boundary_segments=self._boundary_segments_cache.get(
+                    constraint.region_name,
+                    (),
+                ),
+            )
+            self.update()
+            return
+
+        self._active_constraint = constraint
         self.update()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
@@ -165,15 +209,7 @@ class AnglePanel(QWidget):
 
     def _selection_from_position(self, point: QPointF) -> tuple[float, float]:
         alpha, beta = self._map_click(point)
-        if not self._symmetric_mode:
-            return alpha, beta
-
-        projected_alpha = min(
-            max(alpha, math.nextafter(0.0, 1.0)),
-            math.nextafter(math.pi / 2.0, 0.0),
-        )
-        projected_beta = math.nextafter(math.pi - projected_alpha, projected_alpha)
-        return projected_alpha, projected_beta
+        return project_point_to_constraint(alpha, beta, self._active_constraint)
 
     def _format_angle(self, value: float) -> str:
         if self._angle_units == "deg":
@@ -202,122 +238,6 @@ class AnglePanel(QWidget):
         path.closeSubpath()
         return path
 
-    def _build_boundary_segments(
-        self,
-        region: RegionDescription,
-        alpha_steps: int = 160,
-        beta_steps: int = 320,
-    ) -> list[tuple[QPointF, QPointF]]:
-        alpha_values = [
-            (math.pi / 2.0) * index / alpha_steps
-            for index in range(alpha_steps + 1)
-        ]
-        beta_values = [
-            math.pi * index / beta_steps
-            for index in range(beta_steps + 1)
-        ]
-
-        value_grid: list[list[float | None]] = []
-        for alpha in alpha_values:
-            row: list[float | None] = []
-            for beta in beta_values:
-                if not self._is_inside_domain(alpha, beta):
-                    row.append(None)
-                    continue
-                row.append(evaluate_boundary_value(region, alpha, beta))
-            value_grid.append(row)
-
-        segments: list[tuple[QPointF, QPointF]] = []
-        for alpha_index in range(alpha_steps):
-            alpha0 = alpha_values[alpha_index]
-            alpha1 = alpha_values[alpha_index + 1]
-            for beta_index in range(beta_steps):
-                beta0 = beta_values[beta_index]
-                beta1 = beta_values[beta_index + 1]
-
-                corners = [
-                    (alpha0, beta0, value_grid[alpha_index][beta_index]),
-                    (alpha1, beta0, value_grid[alpha_index + 1][beta_index]),
-                    (alpha1, beta1, value_grid[alpha_index + 1][beta_index + 1]),
-                    (alpha0, beta1, value_grid[alpha_index][beta_index + 1]),
-                ]
-                if any(value is None for _, _, value in corners):
-                    continue
-
-                crossings: list[tuple[float, float]] = []
-                edge_pairs = ((0, 1), (1, 2), (2, 3), (3, 0))
-                for start_index, end_index in edge_pairs:
-                    crossing = self._edge_crossing(
-                        corners[start_index],
-                        corners[end_index],
-                    )
-                    if crossing is not None:
-                        crossings.append(crossing)
-
-                if len(crossings) == 2:
-                    segments.append(
-                        (
-                            self._to_canvas(crossings[0][0], crossings[0][1]),
-                            self._to_canvas(crossings[1][0], crossings[1][1]),
-                        )
-                    )
-                elif len(crossings) == 4:
-                    center_alpha = 0.5 * (alpha0 + alpha1)
-                    center_beta = 0.5 * (beta0 + beta1)
-                    center_value = evaluate_boundary_value(
-                        region,
-                        center_alpha,
-                        center_beta,
-                    )
-                    if center_value is None:
-                        continue
-                    if center_value >= 0.0:
-                        pairings = ((0, 1), (2, 3))
-                    else:
-                        pairings = ((0, 3), (1, 2))
-                    for start_index, end_index in pairings:
-                        segments.append(
-                            (
-                                self._to_canvas(
-                                    crossings[start_index][0],
-                                    crossings[start_index][1],
-                                ),
-                                self._to_canvas(
-                                    crossings[end_index][0],
-                                    crossings[end_index][1],
-                                ),
-                            )
-                        )
-
-        return segments
-
-    def _edge_crossing(
-        self,
-        start: tuple[float, float, float | None],
-        end: tuple[float, float, float | None],
-        epsilon: float = 1.0e-12,
-    ) -> tuple[float, float] | None:
-        alpha0, beta0, value0 = start
-        alpha1, beta1, value1 = end
-        if value0 is None or value1 is None:
-            return None
-
-        if abs(value0) <= epsilon and abs(value1) <= epsilon:
-            return None
-        if abs(value0) <= epsilon:
-            return alpha0, beta0
-        if abs(value1) <= epsilon:
-            return alpha1, beta1
-        if value0 * value1 > 0.0:
-            return None
-
-        ratio = value0 / (value0 - value1)
-        alpha = alpha0 + ratio * (alpha1 - alpha0)
-        beta = beta0 + ratio * (beta1 - beta0)
-        if not self._is_inside_domain(alpha, beta):
-            return None
-        return alpha, beta
-
     def _draw_regions(self, painter: QPainter) -> None:
         if not self._regions or not self._view_config.show_regions:
             return
@@ -330,7 +250,13 @@ class AnglePanel(QWidget):
             sample_points: list[QPointF] = []
             boundary_segments: list[tuple[QPointF, QPointF]] = []
             if region.region_type == "boundary":
-                boundary_segments = self._build_boundary_segments(region)
+                boundary_segments = [
+                    (
+                        self._to_canvas(segment.start_alpha, segment.start_beta),
+                        self._to_canvas(segment.end_alpha, segment.end_beta),
+                    )
+                    for segment in self._boundary_segments_cache.get(region.name, ())
+                ]
                 if not boundary_segments:
                     continue
                 for start, end in boundary_segments:
@@ -464,7 +390,7 @@ class AnglePanel(QWidget):
         painter.drawPath(self._build_domain_path())
         self._draw_regions(painter)
 
-        if self._symmetric_mode:
+        if self._active_constraint is not None and self._active_constraint.kind == "symmetry":
             painter.setPen(QPen(QColor("#d62728"), 2, Qt.DashLine))
             painter.drawLine(
                 self._to_canvas(0.0, math.pi),
