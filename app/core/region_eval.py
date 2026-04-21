@@ -56,8 +56,11 @@ def _evaluate_expression(
     safe_globals = {"__builtins__": {}}
     safe_locals = {
         "alpha": alpha,
+        "α": alpha,
         "beta": beta,
+        "β": beta,
         "pi": math.pi,
+        "π": math.pi,
         "sin": math.sin,
         "cos": math.cos,
         "tan": math.tan,

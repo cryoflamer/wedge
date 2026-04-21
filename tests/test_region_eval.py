@@ -7,34 +7,33 @@ from app.core.region_eval import evaluate_boundary_value
 from app.models.region import RegionDescription, RegionStyle
 
 
-class RegionEvalTests(unittest.TestCase):
-    def test_returns_numeric_boundary_value_for_boundary_curve(self) -> None:
+class RegionEvalAliasesTest(unittest.TestCase):
+    def test_greek_letter_aliases_in_expression(self) -> None:
         region = RegionDescription(
-            name="n3_boundary",
+            name="boundary",
             display_text="B",
-            legend_text="3*sin(alpha-2*beta) - sin(3*alpha-2*beta) = 0",
+            legend_text="test",
             region_type="boundary",
-            expression="3*sin(alpha-2*beta) - sin(3*alpha-2*beta)",
+            expression="3*sin(α-2*β) - sin(3*α-2*β) + 0*π",
             relation=None,
             style=RegionStyle(
                 fill="#ffffff",
                 alpha=0.0,
                 hatch="",
-                border="#d62828",
-                line_style="dashdot",
+                border="#000000",
             ),
-            priority=30,
+            priority=0,
             visible=True,
         )
 
-        value = evaluate_boundary_value(
-            region,
-            alpha=math.pi / 6.0,
-            beta=math.pi / 3.0,
-        )
+        alpha = 0.4
+        beta = 0.9
+        expected = 3 * math.sin(alpha - 2 * beta) - math.sin(3 * alpha - 2 * beta)
+        actual = evaluate_boundary_value(region, alpha, beta)
 
-        self.assertIsNotNone(value)
-        self.assertAlmostEqual(value or 0.0, -2.5, places=9)
+        self.assertIsNotNone(actual)
+        assert actual is not None
+        self.assertAlmostEqual(actual, expected, places=12)
 
 
 if __name__ == "__main__":
