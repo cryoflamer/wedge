@@ -243,6 +243,7 @@ def save_runtime_config(
     path: str | Path,
     *,
     persist_boundary_styles: bool = False,
+    persist_scene_items: bool = False,
 ) -> Path:
     config_path = Path(path)
     if config_path.exists():
@@ -264,7 +265,31 @@ def save_runtime_config(
     background_payload["fast_build"] = config.background.fast_build
     payload["background"] = background_payload
 
-    if persist_boundary_styles:
+    if persist_scene_items:
+        regions_payload: list[dict] = []
+        for region in config.regions:
+            item: dict[str, object] = {
+                "name": region.name,
+                "type": region.region_type,
+                "display_text": region.display_text,
+                "legend_text": region.legend_text,
+                "expression": region.expression,
+                "priority": region.priority,
+                "visible": region.visible,
+                "style": {
+                    "fill": region.style.fill,
+                    "alpha": region.style.alpha,
+                    "hatch": region.style.hatch,
+                    "border": region.style.border,
+                    "line_style": region.style.line_style,
+                    "line_width": region.style.line_width,
+                },
+            }
+            if region.relation is not None:
+                item["relation"] = region.relation
+            regions_payload.append(item)
+        payload["regions"] = regions_payload
+    elif persist_boundary_styles:
         regions_payload = payload.get("regions", [])
         if not isinstance(regions_payload, list):
             regions_payload = []
