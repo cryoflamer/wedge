@@ -160,8 +160,8 @@ class ControlsPanel(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(8)
         main_layout.addWidget(self._build_trajectory_box())
-        main_layout.addWidget(self._build_parameters_box())
-        main_layout.addWidget(self._build_replay_box())
+        main_layout.addWidget(self._build_parameters_section())
+        main_layout.addWidget(self._build_replay_section())
         for section in self._build_collapsible_sections():
             main_layout.addWidget(section)
         main_layout.addStretch(1)
@@ -275,13 +275,15 @@ class ControlsPanel(QWidget):
         seed_form.addRow("τ", self._selected_seed_tau_edit)
         seed_form.addRow("wall", self._selected_seed_wall_edit)
         layout.addLayout(seed_form)
+        layout.addWidget(self._selected_seed_status)
 
+        actions_section = CollapsibleSection("Trajectory actions", expanded=False)
+        actions_section.set_tooltip("apply_seed")
         apply_seed_button = QPushButton("Apply seed")
         apply_seed_button.clicked.connect(self._emit_selected_seed_apply)
         apply_tooltip(apply_seed_button, "apply_seed")
         self._set_compact_button_policy(apply_seed_button)
-        layout.addWidget(apply_seed_button)
-        layout.addWidget(self._selected_seed_status)
+        actions_section.content_layout().addWidget(apply_seed_button)
 
         actions_grid = QGridLayout()
         actions_grid.setHorizontalSpacing(6)
@@ -323,7 +325,8 @@ class ControlsPanel(QWidget):
         actions_grid.setColumnStretch(0, 1)
         actions_grid.setColumnStretch(1, 1)
 
-        layout.addLayout(actions_grid)
+        actions_section.content_layout().addLayout(actions_grid)
+        layout.addWidget(actions_section)
 
         summary_layout = QVBoxLayout()
         summary_layout.setContentsMargins(0, 0, 0, 0)
@@ -340,51 +343,35 @@ class ControlsPanel(QWidget):
         layout.addLayout(summary_layout)
         return box
 
-    def _build_parameters_box(self) -> QGroupBox:
-        box = QGroupBox("Parameters")
-        outer_layout = QVBoxLayout(box)
-        outer_layout.setContentsMargins(8, 8, 8, 8)
-        outer_layout.setSpacing(6)
+    def _build_parameters_section(self) -> CollapsibleSection:
+        section = CollapsibleSection("Parameters", expanded=False)
+        outer_layout = section.content_layout()
         left_layout = QFormLayout()
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
-        left_layout.addRow("Units", self._angle_units_combo)
-        left_layout.addRow("Mode", self._constraint_mode_combo)
-        left_layout.addRow(self._constraint_label, self._constraint_combo)
-        left_layout.addRow("", self._symmetry_constraint_checkbox)
         left_layout.addRow("α", self._alpha_edit)
         left_layout.addRow("β", self._beta_edit)
         left_layout.addRow("N_phase", self._n_phase_edit)
         left_layout.addRow("N_geom", self._n_geom_edit)
 
         outer_layout.addLayout(left_layout)
-        outer_layout.addWidget(self._fixed_domain_checkbox)
         outer_layout.addWidget(self._parameter_status)
 
         apply_button = QPushButton("Apply")
         apply_button.clicked.connect(self._emit_parameters)
         apply_tooltip(apply_button, "apply")
-        reset_phase_view_button = QPushButton("Reset view")
-        reset_phase_view_button.clicked.connect(
-            self.reset_phase_view_requested.emit
-        )
-        apply_tooltip(reset_phase_view_button, "reset_phase_view")
         self._set_compact_button_policy(apply_button)
-        self._set_compact_button_policy(reset_phase_view_button)
 
         button_row = QVBoxLayout()
         button_row.setContentsMargins(0, 0, 0, 0)
         button_row.setSpacing(4)
         button_row.addWidget(apply_button)
-        button_row.addWidget(reset_phase_view_button)
         outer_layout.addLayout(button_row)
-        return box
+        return section
 
-    def _build_replay_box(self) -> QGroupBox:
-        box = QGroupBox("Replay")
-        layout = QVBoxLayout(box)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
+    def _build_replay_section(self) -> CollapsibleSection:
+        section = CollapsibleSection("Replay", expanded=True)
+        layout = section.content_layout()
 
         actions_grid = QGridLayout()
         actions_grid.setHorizontalSpacing(6)
@@ -409,7 +396,7 @@ class ControlsPanel(QWidget):
         actions_grid.setColumnStretch(1, 1)
         layout.addLayout(actions_grid)
 
-        return box
+        return section
 
     def _build_collapsible_sections(self) -> list[QWidget]:
         sections: list[QWidget] = []
@@ -469,18 +456,30 @@ class ControlsPanel(QWidget):
             self._show_seed_markers_checkbox,
             self._show_stationary_point_checkbox,
             self._show_branch_markers_checkbox,
-            self._show_heatmap_checkbox,
         ):
             phase_view_layout.addWidget(checkbox)
+        heatmap_section = CollapsibleSection("Heatmap", expanded=False)
+        heatmap_section.set_tooltip("show_heatmap")
+        heatmap_layout = heatmap_section.content_layout()
+        heatmap_layout.addWidget(self._show_heatmap_checkbox)
         heatmap_form = QFormLayout()
         heatmap_form.setContentsMargins(0, 0, 0, 0)
         heatmap_form.setHorizontalSpacing(6)
         heatmap_form.setVerticalSpacing(4)
         heatmap_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
-        heatmap_form.addRow("Mode", self._heatmap_mode_combo)
+        heatmap_form.addRow("Heatmap mode", self._heatmap_mode_combo)
         heatmap_form.addRow("Bins", self._heatmap_resolution_combo)
         heatmap_form.addRow("Norm", self._heatmap_normalization_combo)
-        phase_view_layout.addLayout(heatmap_form)
+        heatmap_layout.addLayout(heatmap_form)
+        phase_view_layout.addWidget(heatmap_section)
+        reset_phase_view_button = QPushButton("Reset view")
+        reset_phase_view_button.clicked.connect(
+            self.reset_phase_view_requested.emit
+        )
+        apply_tooltip(reset_phase_view_button, "reset_phase_view")
+        self._set_compact_button_policy(reset_phase_view_button)
+        phase_view_layout.addSpacing(4)
+        phase_view_layout.addWidget(reset_phase_view_button)
         sections.append(phase_view_section)
 
         geometry_view_section = CollapsibleSection("Geometry view options", expanded=False)
@@ -491,6 +490,16 @@ class ControlsPanel(QWidget):
         parameter_view_section = CollapsibleSection("Parameter space options", expanded=False)
         parameter_view_section.set_tooltip("show_regions")
         parameter_view_layout = parameter_view_section.content_layout()
+        parameter_view_form = QFormLayout()
+        parameter_view_form.setContentsMargins(0, 0, 0, 0)
+        parameter_view_form.setHorizontalSpacing(6)
+        parameter_view_form.setVerticalSpacing(4)
+        parameter_view_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        parameter_view_form.addRow("Interaction mode", self._constraint_mode_combo)
+        parameter_view_form.addRow(self._constraint_label, self._constraint_combo)
+        parameter_view_form.addRow("", self._symmetry_constraint_checkbox)
+        parameter_view_form.addRow("Units", self._angle_units_combo)
+        parameter_view_layout.addLayout(parameter_view_form)
         for checkbox in (
             self._show_regions_checkbox,
             self._show_region_labels_checkbox,
