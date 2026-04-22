@@ -98,13 +98,17 @@ class ControlsPanel(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.MinimumExpanding,
+        )
 
         self._trajectory_selector = QComboBox()
         self._alpha_edit = QLineEdit()
         self._beta_edit = QLineEdit()
         self._n_phase_edit = QLineEdit()
         self._n_geom_edit = QLineEdit()
-        self._fixed_domain_checkbox = QCheckBox("Fixed domain (disable for zoom/pan)")
+        self._fixed_domain_checkbox = QCheckBox("Fixed domain")
         self._constraint_mode_combo = QComboBox()
         self._constraint_label = QLabel("Constraint")
         self._constraint_combo = QComboBox()
@@ -241,8 +245,9 @@ class ControlsPanel(QWidget):
         self._manual_wall_combo.addItems(["1", "2"])
         self._sync_export_preset_state()
         self._trajectory_selector.setSizeAdjustPolicy(
-            QComboBox.SizeAdjustPolicy.AdjustToContents
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
+        self._trajectory_selector.setMinimumContentsLength(12)
         self._trajectory_selector.setIconSize(QSize(12, 12))
         self._apply_tooltips()
 
@@ -274,10 +279,7 @@ class ControlsPanel(QWidget):
         apply_seed_button = QPushButton("Apply seed")
         apply_seed_button.clicked.connect(self._emit_selected_seed_apply)
         apply_tooltip(apply_seed_button, "apply_seed")
-        apply_seed_button.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Fixed,
-        )
+        self._set_compact_button_policy(apply_seed_button)
         layout.addWidget(apply_seed_button)
         layout.addWidget(self._selected_seed_status)
 
@@ -285,7 +287,7 @@ class ControlsPanel(QWidget):
         actions_grid.setHorizontalSpacing(6)
         actions_grid.setVerticalSpacing(4)
 
-        toggle_button = QPushButton("Hide/Show")
+        toggle_button = QPushButton("Toggle")
         toggle_button.clicked.connect(self._toggle_current_visibility)
         apply_tooltip(toggle_button, "toggle_visibility")
         actions_grid.addWidget(toggle_button, 0, 0)
@@ -298,17 +300,17 @@ class ControlsPanel(QWidget):
         add_button = QPushButton("Add")
         add_button.clicked.connect(self._expand_add_section)
         apply_tooltip(add_button, "add_seed_shortcut")
-        actions_grid.addWidget(add_button, 0, 2)
+        actions_grid.addWidget(add_button, 1, 0)
 
         lyapunov_button = QPushButton("Lyapunov")
         lyapunov_button.clicked.connect(self.compute_lyapunov_requested.emit)
         apply_tooltip(lyapunov_button, "compute_lyapunov")
-        actions_grid.addWidget(lyapunov_button, 1, 0)
+        actions_grid.addWidget(lyapunov_button, 1, 1)
 
         clear_all_button = QPushButton("Clear all")
         clear_all_button.clicked.connect(self.clear_all_requested.emit)
         apply_tooltip(clear_all_button, "clear_all")
-        actions_grid.addWidget(clear_all_button, 1, 1)
+        actions_grid.addWidget(clear_all_button, 2, 0, 1, 2)
 
         for button in (
             toggle_button,
@@ -317,7 +319,9 @@ class ControlsPanel(QWidget):
             lyapunov_button,
             clear_all_button,
         ):
-            button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            self._set_compact_button_policy(button)
+        actions_grid.setColumnStretch(0, 1)
+        actions_grid.setColumnStretch(1, 1)
 
         layout.addLayout(actions_grid)
 
@@ -341,12 +345,9 @@ class ControlsPanel(QWidget):
         outer_layout = QVBoxLayout(box)
         outer_layout.setContentsMargins(8, 8, 8, 8)
         outer_layout.setSpacing(6)
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(4)
-
         left_layout = QFormLayout()
         left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         left_layout.addRow("Units", self._angle_units_combo)
         left_layout.addRow("Mode", self._constraint_mode_combo)
         left_layout.addRow(self._constraint_label, self._constraint_combo)
@@ -356,39 +357,26 @@ class ControlsPanel(QWidget):
         left_layout.addRow("N_phase", self._n_phase_edit)
         left_layout.addRow("N_geom", self._n_geom_edit)
 
-        right_layout = QVBoxLayout()
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(4)
-        right_layout.addWidget(self._fixed_domain_checkbox)
-        right_layout.addWidget(self._show_seed_markers_checkbox)
-        right_layout.addWidget(self._show_stationary_point_checkbox)
-        right_layout.addWidget(self._show_regions_checkbox)
-        right_layout.addWidget(self._show_region_labels_checkbox)
-        right_layout.addWidget(self._show_region_legend_checkbox)
-        right_layout.addWidget(self._show_branch_markers_checkbox)
-        right_layout.addWidget(self._show_heatmap_checkbox)
-        right_layout.addStretch(1)
-
-        grid.addLayout(left_layout, 0, 0)
-        grid.addLayout(right_layout, 0, 1)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
-        outer_layout.addLayout(grid)
+        outer_layout.addLayout(left_layout)
+        outer_layout.addWidget(self._fixed_domain_checkbox)
         outer_layout.addWidget(self._parameter_status)
 
         apply_button = QPushButton("Apply")
         apply_button.clicked.connect(self._emit_parameters)
         apply_tooltip(apply_button, "apply")
-        reset_phase_view_button = QPushButton("Reset phase view")
+        reset_phase_view_button = QPushButton("Reset view")
         reset_phase_view_button.clicked.connect(
             self.reset_phase_view_requested.emit
         )
         apply_tooltip(reset_phase_view_button, "reset_phase_view")
+        self._set_compact_button_policy(apply_button)
+        self._set_compact_button_policy(reset_phase_view_button)
 
-        button_row = QGridLayout()
-        button_row.setHorizontalSpacing(6)
-        button_row.addWidget(apply_button, 0, 0)
-        button_row.addWidget(reset_phase_view_button, 0, 1)
+        button_row = QVBoxLayout()
+        button_row.setContentsMargins(0, 0, 0, 0)
+        button_row.setSpacing(4)
+        button_row.addWidget(apply_button)
+        button_row.addWidget(reset_phase_view_button)
         outer_layout.addLayout(button_row)
         return box
 
@@ -414,9 +402,11 @@ class ControlsPanel(QWidget):
             button.clicked.connect(
                 lambda checked=False, name=action_name: self.replay_action_requested.emit(name)
             )
-            button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            self._set_compact_button_policy(button)
             apply_tooltip(button, action_name)
-            actions_grid.addWidget(button, index // 3, index % 3)
+            actions_grid.addWidget(button, index // 2, index % 2)
+        actions_grid.setColumnStretch(0, 1)
+        actions_grid.setColumnStretch(1, 1)
         layout.addLayout(actions_grid)
 
         return box
@@ -430,6 +420,7 @@ class ControlsPanel(QWidget):
         add_form.setContentsMargins(0, 0, 0, 0)
         add_form.setHorizontalSpacing(6)
         add_form.setVerticalSpacing(4)
+        add_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         add_form.addRow("d", self._manual_d_edit)
         add_form.addRow("τ", self._manual_tau_edit)
         add_form.addRow("wall", self._manual_wall_combo)
@@ -437,10 +428,7 @@ class ControlsPanel(QWidget):
         add_trajectory_button = QPushButton("Add trajectory")
         add_trajectory_button.clicked.connect(self._emit_manual_seed)
         apply_tooltip(add_trajectory_button, "add_trajectory")
-        add_trajectory_button.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Fixed,
-        )
+        self._set_compact_button_policy(add_trajectory_button)
         self._add_section.content_layout().addWidget(add_trajectory_button)
         sections.append(self._add_section)
 
@@ -450,6 +438,7 @@ class ControlsPanel(QWidget):
         scan_form.setContentsMargins(0, 0, 0, 0)
         scan_form.setHorizontalSpacing(6)
         scan_form.setVerticalSpacing(4)
+        scan_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         scan_form.addRow("Mode", self._scan_mode_combo)
         scan_form.addRow("Wall", self._scan_wall_combo)
         scan_form.addRow("Count", self._scan_count_edit)
@@ -464,7 +453,9 @@ class ControlsPanel(QWidget):
         scan_button = QPushButton("Run scan")
         scan_button.clicked.connect(self._emit_scan_request)
         apply_tooltip(scan_button, "run_scan")
+        self._set_compact_button_policy(scan_button)
         scan_actions.addWidget(scan_button, 0, 0)
+        scan_actions.setColumnStretch(0, 1)
         scan_section.content_layout().addLayout(scan_actions)
         sections.append(scan_section)
 
@@ -487,6 +478,7 @@ class ControlsPanel(QWidget):
         heatmap_form.setContentsMargins(0, 0, 0, 0)
         heatmap_form.setHorizontalSpacing(6)
         heatmap_form.setVerticalSpacing(4)
+        heatmap_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         heatmap_form.addRow("Mode", self._heatmap_mode_combo)
         heatmap_form.addRow("Bins", self._heatmap_resolution_combo)
         heatmap_form.addRow("Norm", self._heatmap_normalization_combo)
@@ -499,6 +491,7 @@ class ControlsPanel(QWidget):
         export_form.setContentsMargins(0, 0, 0, 0)
         export_form.setHorizontalSpacing(6)
         export_form.setVerticalSpacing(4)
+        export_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         export_form.addRow("Mode", self._export_mode_combo)
         export_form.addRow("Mono", self._export_preset_combo)
         export_form.addRow("Data", self._data_export_format_combo)
@@ -509,14 +502,18 @@ class ControlsPanel(QWidget):
         export_data_button = QPushButton("Export data")
         export_data_button.clicked.connect(self.export_data_requested.emit)
         apply_tooltip(export_data_button, "export_data")
+        self._set_compact_button_policy(export_data_button)
         export_actions.addWidget(export_data_button, 0, 0)
         export_actions.addWidget(QPushButton("PNG"), 0, 1)
         png_button = export_actions.itemAtPosition(0, 1).widget()
         if isinstance(png_button, QPushButton):
+            self._set_compact_button_policy(png_button)
             png_button.clicked.connect(
                 lambda checked=False: self.replay_action_requested.emit("export_png")
             )
             apply_tooltip(png_button, "export_png")
+        export_actions.setColumnStretch(0, 1)
+        export_actions.setColumnStretch(1, 1)
         export_section.content_layout().addLayout(export_actions)
         sections.append(export_section)
 
@@ -535,8 +532,12 @@ class ControlsPanel(QWidget):
             lambda checked=False: self.replay_action_requested.emit("load_session")
         )
         apply_tooltip(load_button, "load_session")
+        self._set_compact_button_policy(save_button)
+        self._set_compact_button_policy(load_button)
         session_actions.addWidget(save_button, 0, 0)
         session_actions.addWidget(load_button, 0, 1)
+        session_actions.setColumnStretch(0, 1)
+        session_actions.setColumnStretch(1, 1)
         session_section.content_layout().addLayout(session_actions)
         sections.append(session_section)
 
@@ -968,6 +969,9 @@ class ControlsPanel(QWidget):
         if self._angle_units == "deg":
             return math.degrees(alpha), math.degrees(beta)
         return alpha, beta
+
+    def _set_compact_button_policy(self, button: QPushButton) -> None:
+        button.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
     def _parse_angle(self, text: str) -> float:
         value = parse_real_expression(text)
