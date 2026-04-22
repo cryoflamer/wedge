@@ -183,6 +183,13 @@ def load_config(path: str | Path) -> Config:
             ),
             show_regions=bool(view_data.get("show_regions", True)),
             show_region_labels=bool(view_data.get("show_region_labels", True)),
+            show_labels_on_plot=bool(
+                view_data.get("show_labels_on_plot", False)
+            ),
+            plot_label_mode=str(view_data.get("plot_label_mode", "legend")),
+            tooltip_label_mode=str(
+                view_data.get("tooltip_label_mode", "legend")
+            ),
             show_region_legend=bool(view_data.get("show_region_legend", True)),
             show_branch_markers=bool(
                 view_data.get("show_branch_markers", False)

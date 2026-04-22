@@ -79,6 +79,9 @@ class ViewConfig:
     show_reflection_points: bool = True
     show_regions: bool = True
     show_region_labels: bool = True
+    show_labels_on_plot: bool = False
+    plot_label_mode: str = "legend"
+    tooltip_label_mode: str = "legend"
     show_region_legend: bool = True
     show_branch_markers: bool = False
     show_heatmap: bool = False

@@ -139,11 +139,11 @@ class AnglePanel(QWidget):
             self.update()
             return
 
-        alpha, beta = self._selection_from_position(event.position())
-        if self._is_inside_domain(alpha, beta):
+        hover_text = self._hover_overlay_text(self._hover_point)
+        if hover_text:
             QToolTip.showText(
                 event.globalPosition().toPoint(),
-                f"α={self._format_angle(alpha)}\nβ={self._format_angle(beta)}",
+                hover_text,
                 self,
             )
         else:
@@ -328,14 +328,18 @@ class AnglePanel(QWidget):
                 for point in sample_points:
                     painter.drawEllipse(point, 2, 2)
 
-            if self._view_config.show_region_labels:
+            if (
+                self._view_config.show_region_labels
+                and self._view_config.show_labels_on_plot
+            ):
                 center_x = sum(point.x() for point in sample_points) / len(sample_points)
                 center_y = sum(point.y() for point in sample_points) / len(sample_points)
+                plot_label = self._plot_label_text(region)
                 self._draw_text_overlay(
                     painter,
                     self._plot_rect(),
                     QPointF(center_x + 4.0, center_y - 4.0),
-                    region.display_text,
+                    plot_label,
                     border_color=QColor(region.style.border),
                     anchor="top_left",
                 )
@@ -505,13 +509,86 @@ class AnglePanel(QWidget):
             QPointF(point.x(), plot.bottom()),
         )
 
-        self._draw_text_overlay(
-            painter,
-            plot,
-            QPointF(plot.left() + 8.0, plot.bottom() - 8.0),
-            f"alpha={self._format_angle(alpha)}, beta={self._format_angle(beta)}",
-            anchor="bottom_left",
+    def _hover_overlay_text(self, point: QPointF | None) -> str:
+        if point is None:
+            return ""
+        alpha, beta = self._selection_from_position(point)
+        if not self._is_inside_domain(alpha, beta):
+            return ""
+
+        active_text = self._active_point_hover_text(point)
+        if active_text:
+            return active_text
+
+        boundary_text = self._boundary_hover_text(point)
+        if boundary_text:
+            return (
+                f"Boundary: {boundary_text}\n"
+                f"α={self._format_angle(alpha)}\n"
+                f"β={self._format_angle(beta)}"
+            )
+
+        region_text = self._region_hover_text(alpha, beta)
+        if region_text:
+            return (
+                f"Region: {region_text}\n"
+                f"α={self._format_angle(alpha)}\n"
+                f"β={self._format_angle(beta)}"
+            )
+
+        return (
+            f"α={self._format_angle(alpha)}\n"
+            f"β={self._format_angle(beta)}"
         )
+
+    def _active_point_hover_text(self, point: QPointF) -> str | None:
+        if not self._is_inside_domain(self._alpha, self._beta):
+            return None
+        active_point = self._to_canvas(self._alpha, self._beta)
+        if self._canvas_distance(active_point, point) > 10.0:
+            return None
+        return (
+            "Active point\n"
+            f"α={self._format_angle(self._alpha)}\n"
+            f"β={self._format_angle(self._beta)}"
+        )
+
+    def _boundary_hover_text(self, point: QPointF) -> str | None:
+        best_region: RegionDescription | None = None
+        best_distance = math.inf
+        for region in self._regions:
+            if not region.visible or region.region_type != "boundary":
+                continue
+            for segment in self._boundary_segments_cache.get(region.name, ()):
+                start = self._to_canvas(segment.start_alpha, segment.start_beta)
+                end = self._to_canvas(segment.end_alpha, segment.end_beta)
+                distance = self._distance_to_segment(point, start, end)
+                if distance < best_distance:
+                    best_distance = distance
+                    best_region = region
+        if best_region is None or best_distance > 8.0:
+            return None
+        return self._tooltip_label_text(best_region)
+
+    def _region_hover_text(self, alpha: float, beta: float) -> str | None:
+        for region in reversed(self._regions):
+            if not region.visible or region.region_type == "boundary":
+                continue
+            if evaluate_region(region, alpha, beta):
+                return self._tooltip_label_text(region)
+        return None
+
+    def _plot_label_text(self, region: RegionDescription) -> str:
+        mode = self._view_config.plot_label_mode.strip().lower()
+        if mode == "alias":
+            return region.display_text
+        return region.legend_text
+
+    def _tooltip_label_text(self, region: RegionDescription) -> str:
+        mode = self._view_config.tooltip_label_mode.strip().lower()
+        if mode == "alias":
+            return region.display_text
+        return region.legend_text
 
     def _draw_text_overlay(
         self,
@@ -575,3 +652,24 @@ class AnglePanel(QWidget):
         if clamped.bottom() > plot.bottom():
             clamped.moveBottom(plot.bottom())
         return clamped
+
+    def _canvas_distance(self, first: QPointF, second: QPointF) -> float:
+        return math.hypot(first.x() - second.x(), first.y() - second.y())
+
+    def _distance_to_segment(
+        self,
+        point: QPointF,
+        start: QPointF,
+        end: QPointF,
+    ) -> float:
+        dx = end.x() - start.x()
+        dy = end.y() - start.y()
+        length_sq = dx * dx + dy * dy
+        if length_sq <= 1.0e-18:
+            return self._canvas_distance(point, start)
+        ratio = (
+            ((point.x() - start.x()) * dx) + ((point.y() - start.y()) * dy)
+        ) / length_sq
+        ratio = min(max(ratio, 0.0), 1.0)
+        projected = QPointF(start.x() + ratio * dx, start.y() + ratio * dy)
+        return self._canvas_distance(point, projected)

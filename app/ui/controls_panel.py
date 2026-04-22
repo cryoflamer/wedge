@@ -81,6 +81,7 @@ class ControlsPanel(QWidget):
     stationary_point_visibility_changed = Signal(bool)
     directrix_visibility_changed = Signal(bool)
     region_visibility_changed = Signal(bool, bool, bool)
+    plot_labels_changed = Signal(bool, str, str)
     branch_markers_changed = Signal(bool)
     heatmap_settings_changed = Signal(bool, str, int, str)
     compute_lyapunov_requested = Signal()
@@ -121,6 +122,9 @@ class ControlsPanel(QWidget):
         self._show_regions_checkbox = QCheckBox("Show regions")
         self._show_region_labels_checkbox = QCheckBox("Show region labels")
         self._show_region_legend_checkbox = QCheckBox("Show legend")
+        self._show_labels_on_plot_checkbox = QCheckBox("Show labels on plot")
+        self._plot_label_mode_combo = QComboBox()
+        self._tooltip_label_mode_combo = QComboBox()
         self._show_branch_markers_checkbox = QCheckBox("Show branch markers")
         self._show_heatmap_checkbox = QCheckBox("Show heatmap")
         self._heatmap_mode_combo = QComboBox()
@@ -212,6 +216,17 @@ class ControlsPanel(QWidget):
         )
         self._show_region_labels_checkbox.toggled.connect(self._emit_region_visibility)
         self._show_region_legend_checkbox.toggled.connect(self._emit_region_visibility)
+        self._show_labels_on_plot_checkbox.toggled.connect(
+            self._emit_plot_labels_changed
+        )
+        self._plot_label_mode_combo.addItems(["alias", "legend"])
+        self._plot_label_mode_combo.currentTextChanged.connect(
+            self._emit_plot_labels_changed
+        )
+        self._tooltip_label_mode_combo.addItems(["alias", "legend"])
+        self._tooltip_label_mode_combo.currentTextChanged.connect(
+            self._emit_plot_labels_changed
+        )
         self._show_branch_markers_checkbox.toggled.connect(
             self.branch_markers_changed.emit
         )
@@ -499,6 +514,9 @@ class ControlsPanel(QWidget):
         parameter_view_form.addRow(self._constraint_label, self._constraint_combo)
         parameter_view_form.addRow("", self._symmetry_constraint_checkbox)
         parameter_view_form.addRow("Units", self._angle_units_combo)
+        parameter_view_form.addRow("", self._show_labels_on_plot_checkbox)
+        parameter_view_form.addRow("Plot label mode", self._plot_label_mode_combo)
+        parameter_view_form.addRow("Tooltip label mode", self._tooltip_label_mode_combo)
         parameter_view_layout.addLayout(parameter_view_form)
         for checkbox in (
             self._show_regions_checkbox,
@@ -585,6 +603,11 @@ class ControlsPanel(QWidget):
             show_regions=config.view.show_regions,
             show_labels=config.view.show_region_labels,
             show_legend=config.view.show_region_legend,
+        )
+        self.set_plot_label_options(
+            show_labels_on_plot=config.view.show_labels_on_plot,
+            mode=config.view.plot_label_mode,
+            tooltip_mode=config.view.tooltip_label_mode,
         )
         self.set_branch_markers_enabled(config.view.show_branch_markers)
         self.set_phase_grid_options(
@@ -715,6 +738,25 @@ class ControlsPanel(QWidget):
         blocker = QSignalBlocker(self._show_branch_markers_checkbox)
         self._show_branch_markers_checkbox.setChecked(enabled)
         del blocker
+
+    def set_plot_label_options(
+        self,
+        show_labels_on_plot: bool,
+        mode: str,
+        tooltip_mode: str,
+    ) -> None:
+        blockers = [
+            QSignalBlocker(self._show_labels_on_plot_checkbox),
+            QSignalBlocker(self._plot_label_mode_combo),
+            QSignalBlocker(self._tooltip_label_mode_combo),
+        ]
+        self._show_labels_on_plot_checkbox.setChecked(show_labels_on_plot)
+        self._set_combo_value(self._plot_label_mode_combo, mode, "legend")
+        self._set_combo_value(self._tooltip_label_mode_combo, tooltip_mode, "legend")
+        del blockers
+        self._plot_label_mode_combo.setEnabled(
+            self._show_labels_on_plot_checkbox.isChecked()
+        )
 
     def set_phase_grid_options(
         self,
@@ -1104,6 +1146,15 @@ class ControlsPanel(QWidget):
             self._show_region_legend_checkbox.isChecked(),
         )
 
+    def _emit_plot_labels_changed(self) -> None:
+        enabled = self._show_labels_on_plot_checkbox.isChecked()
+        self._plot_label_mode_combo.setEnabled(enabled)
+        self.plot_labels_changed.emit(
+            enabled,
+            self._plot_label_mode_combo.currentText().strip().lower() or "legend",
+            self._tooltip_label_mode_combo.currentText().strip().lower() or "legend",
+        )
+
     def _emit_phase_grid_visibility(self) -> None:
         show_grid = self._show_phase_grid_checkbox.isChecked()
         self._show_phase_minor_grid_checkbox.setEnabled(show_grid)
@@ -1199,6 +1250,15 @@ class ControlsPanel(QWidget):
         apply_tooltip(self._show_regions_checkbox, "show_regions")
         apply_tooltip(self._show_region_labels_checkbox, "show_region_labels")
         apply_tooltip(self._show_region_legend_checkbox, "show_region_legend")
+        self._show_labels_on_plot_checkbox.setToolTip(
+            "Show parameter-space labels directly on the plot."
+        )
+        self._plot_label_mode_combo.setToolTip(
+            "Choose whether plot labels use region alias or legend text."
+        )
+        self._tooltip_label_mode_combo.setToolTip(
+            "Choose whether hover tooltip uses region alias or legend text."
+        )
         apply_tooltip(self._show_branch_markers_checkbox, "show_branch_markers")
         apply_tooltip(self._show_heatmap_checkbox, "show_heatmap")
         apply_tooltip(self._heatmap_mode_combo, "heatmap_mode")
