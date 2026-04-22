@@ -459,21 +459,19 @@ class ControlsPanel(QWidget):
         scan_section.content_layout().addLayout(scan_actions)
         sections.append(scan_section)
 
-        view_section = CollapsibleSection("View options", expanded=False)
-        view_section.set_tooltip("show_regions")
-        view_layout = view_section.content_layout()
-        view_layout.addWidget(self._show_phase_grid_checkbox)
-        view_layout.addWidget(self._show_phase_minor_grid_checkbox)
+        phase_view_section = CollapsibleSection("Phase space options", expanded=False)
+        phase_view_section.set_tooltip("show_phase_grid")
+        phase_view_layout = phase_view_section.content_layout()
         for checkbox in (
+            self._fixed_domain_checkbox,
+            self._show_phase_grid_checkbox,
+            self._show_phase_minor_grid_checkbox,
+            self._show_seed_markers_checkbox,
             self._show_stationary_point_checkbox,
-            self._show_directrix_checkbox,
-            self._show_regions_checkbox,
-            self._show_region_labels_checkbox,
-            self._show_region_legend_checkbox,
             self._show_branch_markers_checkbox,
             self._show_heatmap_checkbox,
         ):
-            view_layout.addWidget(checkbox)
+            phase_view_layout.addWidget(checkbox)
         heatmap_form = QFormLayout()
         heatmap_form.setContentsMargins(0, 0, 0, 0)
         heatmap_form.setHorizontalSpacing(6)
@@ -482,8 +480,24 @@ class ControlsPanel(QWidget):
         heatmap_form.addRow("Mode", self._heatmap_mode_combo)
         heatmap_form.addRow("Bins", self._heatmap_resolution_combo)
         heatmap_form.addRow("Norm", self._heatmap_normalization_combo)
-        view_layout.addLayout(heatmap_form)
-        sections.append(view_section)
+        phase_view_layout.addLayout(heatmap_form)
+        sections.append(phase_view_section)
+
+        geometry_view_section = CollapsibleSection("Geometry view options", expanded=False)
+        geometry_view_section.set_tooltip("show_directrix")
+        geometry_view_section.content_layout().addWidget(self._show_directrix_checkbox)
+        sections.append(geometry_view_section)
+
+        parameter_view_section = CollapsibleSection("Parameter space options", expanded=False)
+        parameter_view_section.set_tooltip("show_regions")
+        parameter_view_layout = parameter_view_section.content_layout()
+        for checkbox in (
+            self._show_regions_checkbox,
+            self._show_region_labels_checkbox,
+            self._show_region_legend_checkbox,
+        ):
+            parameter_view_layout.addWidget(checkbox)
+        sections.append(parameter_view_section)
 
         export_section = CollapsibleSection("Export", expanded=False)
         export_section.set_tooltip("export_png")
