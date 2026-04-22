@@ -327,6 +327,10 @@ class MainWindow(QMainWindow):
         self.controls_panel.selected_trajectory_color_changed.connect(
             self._on_selected_trajectory_color_changed
         )
+        self.controls_panel.boundary_selected.connect(self._on_boundary_selected)
+        self.controls_panel.selected_boundary_color_changed.connect(
+            self._on_selected_boundary_color_changed
+        )
         self.controls_panel.selected_seed_apply_requested.connect(
             self._on_selected_seed_apply
         )
@@ -389,6 +393,23 @@ class MainWindow(QMainWindow):
             mode=self._config.view.heatmap_mode,
             resolution=self._config.view.heatmap_resolution,
             normalization=self._config.view.heatmap_normalization,
+        )
+        boundary_items = [
+            (
+                item.name,
+                item.display_text,
+                item.style.border,
+            )
+            for item in sorted(self._config.regions, key=lambda entry: entry.priority)
+            if item.visible and item.region_type == "boundary"
+        ]
+        if not hasattr(self, "_selected_boundary_name"):
+            self._selected_boundary_name = boundary_items[0][0] if boundary_items else None
+        elif self._selected_boundary_name not in {name for name, _, _ in boundary_items}:
+            self._selected_boundary_name = boundary_items[0][0] if boundary_items else None
+        self.controls_panel.set_boundary_items(
+            boundary_items,
+            self._selected_boundary_name,
         )
         self.angle_panel.set_angle_units(self._angle_units)
         self.angle_panel.set_regions(self._config.regions)
@@ -962,6 +983,27 @@ class MainWindow(QMainWindow):
             self._selected_trajectory_id,
             color,
         )
+
+    def _on_boundary_selected(self, boundary_name: str) -> None:
+        self._selected_boundary_name = boundary_name
+
+    def _on_selected_boundary_color_changed(self, color: str) -> None:
+        selected_name = getattr(self, "_selected_boundary_name", None)
+        if selected_name is None:
+            return
+        boundary = next(
+            (
+                item
+                for item in self._config.regions
+                if item.name == selected_name and item.region_type == "boundary"
+            ),
+            None,
+        )
+        if boundary is None or boundary.style.border == color:
+            return
+        boundary.style.border = color
+        self.update_view()
+        logger.info("Boundary color changed: name=%s color=%s", selected_name, color)
 
     def _on_clear_selected_trajectory(self) -> None:
         if self._selected_trajectory_id is None:

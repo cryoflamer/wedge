@@ -89,6 +89,8 @@ class ControlsPanel(QWidget):
     export_data_requested = Signal()
     trajectory_selected = Signal(int)
     selected_trajectory_color_changed = Signal(str)
+    boundary_selected = Signal(str)
+    selected_boundary_color_changed = Signal(str)
     selected_seed_apply_requested = Signal(float, float)
     trajectory_visibility_toggled = Signal(int)
     clear_selected_requested = Signal()
@@ -115,6 +117,7 @@ class ControlsPanel(QWidget):
         self._constraint_mode_combo = QComboBox()
         self._constraint_label = QLabel("Constraint")
         self._constraint_combo = QComboBox()
+        self._boundary_selector = QComboBox()
         self._symmetry_constraint_checkbox = QCheckBox("Symmetry constraint")
         self._show_phase_grid_checkbox = QCheckBox("Show grid")
         self._show_phase_minor_grid_checkbox = QCheckBox("Show minor grid")
@@ -156,6 +159,7 @@ class ControlsPanel(QWidget):
         self._selected_seed_wall_edit = QLineEdit()
         self._selected_seed_status = QLabel("")
         self._trajectory_color_selector = ColorSelector()
+        self._boundary_color_selector = ColorSelector()
         self._trajectory_wall_summary = QLabel("wall: -")
         self._trajectory_d_summary = QLabel("d0: -")
         self._trajectory_tau_summary = QLabel("τ0: -")
@@ -198,6 +202,9 @@ class ControlsPanel(QWidget):
         )
         self._constraint_combo.currentIndexChanged.connect(
             self._on_constraint_changed
+        )
+        self._boundary_selector.currentIndexChanged.connect(
+            self._on_boundary_selector_changed
         )
         self._symmetry_constraint_checkbox.toggled.connect(
             self._on_symmetric_mode_toggled
@@ -269,6 +276,10 @@ class ControlsPanel(QWidget):
             self.selected_trajectory_color_changed.emit
         )
         self._trajectory_color_selector.setEnabled(False)
+        self._boundary_color_selector.color_changed.connect(
+            self.selected_boundary_color_changed.emit
+        )
+        self._boundary_color_selector.setEnabled(False)
         self._sync_export_preset_state()
         self._trajectory_selector.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
@@ -532,6 +543,16 @@ class ControlsPanel(QWidget):
             self._show_region_legend_checkbox,
         ):
             parameter_view_layout.addWidget(checkbox)
+        boundary_styling_section = CollapsibleSection("Boundary styling", expanded=False)
+        boundary_styling_form = QFormLayout()
+        boundary_styling_form.setContentsMargins(0, 0, 0, 0)
+        boundary_styling_form.setHorizontalSpacing(6)
+        boundary_styling_form.setVerticalSpacing(4)
+        boundary_styling_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        boundary_styling_form.addRow("Boundary", self._boundary_selector)
+        boundary_styling_form.addRow("Color", self._boundary_color_selector)
+        boundary_styling_section.content_layout().addLayout(boundary_styling_form)
+        parameter_view_layout.addWidget(boundary_styling_section)
         sections.append(parameter_view_section)
 
         lyapunov_section = CollapsibleSection("Lyapunov", expanded=False)
@@ -920,6 +941,43 @@ class ControlsPanel(QWidget):
         self._trajectory_color_selector.set_color(color)
         del blocker
 
+    def set_boundary_items(
+        self,
+        items: list[tuple[str, str, str]],
+        selected_boundary_name: str | None,
+    ) -> None:
+        blocker = QSignalBlocker(self._boundary_selector)
+        self._boundary_selector.clear()
+        selected_index = -1
+        for index, (name, label, color) in enumerate(items):
+            self._boundary_selector.addItem(label, (name, color))
+            if name == selected_boundary_name:
+                selected_index = index
+        if selected_index >= 0:
+            self._boundary_selector.setCurrentIndex(selected_index)
+        elif self._boundary_selector.count() > 0:
+            self._boundary_selector.setCurrentIndex(0)
+        del blocker
+
+        boundary_color = None
+        boundary_name = None
+        current_data = self._boundary_selector.currentData()
+        if isinstance(current_data, tuple) and len(current_data) == 2:
+            boundary_name = str(current_data[0])
+            boundary_color = str(current_data[1])
+        self.set_selected_boundary_color(boundary_color)
+        self._boundary_selector.setEnabled(self._boundary_selector.count() > 0)
+        if boundary_name is not None and boundary_name != selected_boundary_name:
+            self.boundary_selected.emit(boundary_name)
+
+    def set_selected_boundary_color(self, color: str | None) -> None:
+        self._boundary_color_selector.setEnabled(color is not None)
+        if color is None:
+            return
+        blocker = QSignalBlocker(self._boundary_color_selector)
+        self._boundary_color_selector.set_color(color)
+        del blocker
+
     def _color_icon(self, color: str, visible: bool) -> QIcon:
         pixmap = QPixmap(12, 12)
         pixmap.fill(Qt.transparent)
@@ -1018,6 +1076,16 @@ class ControlsPanel(QWidget):
             return
         self._sync_selector_tooltip()
         self.trajectory_selected.emit(int(trajectory_id))
+
+    def _on_boundary_selector_changed(self, index: int) -> None:
+        if index < 0:
+            return
+        boundary_data = self._boundary_selector.itemData(index)
+        if not isinstance(boundary_data, tuple) or len(boundary_data) != 2:
+            return
+        boundary_name, boundary_color = boundary_data
+        self.set_selected_boundary_color(str(boundary_color))
+        self.boundary_selected.emit(str(boundary_name))
 
     def _toggle_current_visibility(self) -> None:
         trajectory_id = self._current_trajectory_id()
