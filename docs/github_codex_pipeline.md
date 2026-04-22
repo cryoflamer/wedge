@@ -54,6 +54,15 @@ Constraints:
 Acceptance:
 - ...
 
+## Issue link (обов’язково)
+
+Для існуючих задач кожен agent_prompt має починатися з:
+
+Issue: https://github.com/<owner>/<repo>/issues/<id>
+
+Це має бути перший рядок prompt’а.
+
+Не додавати для нових задач.
 ---
 
 ## Codex mode
