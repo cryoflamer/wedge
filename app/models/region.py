@@ -10,6 +10,7 @@ class RegionStyle:
     hatch: str
     border: str
     line_style: str = "solid"
+    line_width: float = 1.0
 
 
 @dataclass

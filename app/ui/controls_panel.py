@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 
 from PySide6.QtCore import QSignalBlocker, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
@@ -91,6 +92,9 @@ class ControlsPanel(QWidget):
     selected_trajectory_color_changed = Signal(str)
     boundary_selected = Signal(str)
     selected_boundary_color_changed = Signal(str)
+    selected_boundary_line_width_changed = Signal(float)
+    selected_boundary_line_style_changed = Signal(str)
+    save_boundary_styling_requested = Signal()
     selected_seed_apply_requested = Signal(float, float)
     trajectory_visibility_toggled = Signal(int)
     clear_selected_requested = Signal()
@@ -118,6 +122,9 @@ class ControlsPanel(QWidget):
         self._constraint_label = QLabel("Constraint")
         self._constraint_combo = QComboBox()
         self._boundary_selector = QComboBox()
+        self._boundary_line_width_combo = QComboBox()
+        self._boundary_line_style_combo = QComboBox()
+        self._save_boundary_styling_button = QPushButton("Save styling")
         self._symmetry_constraint_checkbox = QCheckBox("Symmetry constraint")
         self._show_phase_grid_checkbox = QCheckBox("Show grid")
         self._show_phase_minor_grid_checkbox = QCheckBox("Show minor grid")
@@ -206,6 +213,14 @@ class ControlsPanel(QWidget):
         self._boundary_selector.currentIndexChanged.connect(
             self._on_boundary_selector_changed
         )
+        self._boundary_line_width_combo.addItems(["1.0", "1.5", "2.0", "2.5", "3.0"])
+        self._boundary_line_width_combo.currentTextChanged.connect(
+            self._on_boundary_line_width_changed
+        )
+        self._boundary_line_style_combo.addItems(["solid", "dashed"])
+        self._boundary_line_style_combo.currentTextChanged.connect(
+            self.selected_boundary_line_style_changed.emit
+        )
         self._symmetry_constraint_checkbox.toggled.connect(
             self._on_symmetric_mode_toggled
         )
@@ -280,6 +295,12 @@ class ControlsPanel(QWidget):
             self.selected_boundary_color_changed.emit
         )
         self._boundary_color_selector.setEnabled(False)
+        self._boundary_line_width_combo.setEnabled(False)
+        self._boundary_line_style_combo.setEnabled(False)
+        self._save_boundary_styling_button.clicked.connect(
+            self.save_boundary_styling_requested.emit
+        )
+        self._set_compact_button_policy(self._save_boundary_styling_button)
         self._sync_export_preset_state()
         self._trajectory_selector.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
@@ -551,7 +572,12 @@ class ControlsPanel(QWidget):
         boundary_styling_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         boundary_styling_form.addRow("Boundary", self._boundary_selector)
         boundary_styling_form.addRow("Color", self._boundary_color_selector)
+        boundary_styling_form.addRow("Line width", self._boundary_line_width_combo)
+        boundary_styling_form.addRow("Line style", self._boundary_line_style_combo)
         boundary_styling_section.content_layout().addLayout(boundary_styling_form)
+        boundary_styling_section.content_layout().addWidget(
+            self._save_boundary_styling_button
+        )
         parameter_view_layout.addWidget(boundary_styling_section)
         sections.append(parameter_view_section)
 
@@ -943,14 +969,14 @@ class ControlsPanel(QWidget):
 
     def set_boundary_items(
         self,
-        items: list[tuple[str, str, str]],
+        items: list[tuple[str, str, str, float, str]],
         selected_boundary_name: str | None,
     ) -> None:
         blocker = QSignalBlocker(self._boundary_selector)
         self._boundary_selector.clear()
         selected_index = -1
-        for index, (name, label, color) in enumerate(items):
-            self._boundary_selector.addItem(label, (name, color))
+        for index, (name, label, color, line_width, line_style) in enumerate(items):
+            self._boundary_selector.addItem(label, (name, color, line_width, line_style))
             if name == selected_boundary_name:
                 selected_index = index
         if selected_index >= 0:
@@ -960,12 +986,14 @@ class ControlsPanel(QWidget):
         del blocker
 
         boundary_color = None
+        boundary_line_width = None
+        boundary_line_style = None
         boundary_name = None
-        current_data = self._boundary_selector.currentData()
-        if isinstance(current_data, tuple) and len(current_data) == 2:
-            boundary_name = str(current_data[0])
-            boundary_color = str(current_data[1])
+        parsed_data = self._boundary_item_data(self._boundary_selector.currentData())
+        if parsed_data is not None:
+            boundary_name, boundary_color, boundary_line_width, boundary_line_style = parsed_data
         self.set_selected_boundary_color(boundary_color)
+        self.set_selected_boundary_style(boundary_line_width, boundary_line_style)
         self._boundary_selector.setEnabled(self._boundary_selector.count() > 0)
         if boundary_name is not None and boundary_name != selected_boundary_name:
             self.boundary_selected.emit(boundary_name)
@@ -977,6 +1005,36 @@ class ControlsPanel(QWidget):
         blocker = QSignalBlocker(self._boundary_color_selector)
         self._boundary_color_selector.set_color(color)
         del blocker
+
+    def set_selected_boundary_style(
+        self,
+        line_width: float | None,
+        line_style: str | None,
+    ) -> None:
+        enabled = line_width is not None and line_style is not None
+        self._boundary_line_width_combo.setEnabled(enabled)
+        self._boundary_line_style_combo.setEnabled(enabled)
+        self._save_boundary_styling_button.setEnabled(enabled)
+        if not enabled:
+            self._boundary_line_width_combo.setCurrentIndex(-1)
+            self._boundary_line_style_combo.setCurrentIndex(-1)
+            return
+        blockers = [
+            QSignalBlocker(self._boundary_line_width_combo),
+            QSignalBlocker(self._boundary_line_style_combo),
+        ]
+        self._set_combo_value(
+            self._boundary_line_width_combo,
+            f"{line_width:.1f}",
+            "1.0",
+        )
+        normalized_style = "dashed" if str(line_style).strip().lower() == "dashed" else "solid"
+        self._set_combo_value(
+            self._boundary_line_style_combo,
+            normalized_style,
+            "solid",
+        )
+        del blockers
 
     def _color_icon(self, color: str, visible: bool) -> QIcon:
         pixmap = QPixmap(12, 12)
@@ -1080,12 +1138,40 @@ class ControlsPanel(QWidget):
     def _on_boundary_selector_changed(self, index: int) -> None:
         if index < 0:
             return
-        boundary_data = self._boundary_selector.itemData(index)
-        if not isinstance(boundary_data, tuple) or len(boundary_data) != 2:
+        parsed_data = self._boundary_item_data(self._boundary_selector.itemData(index))
+        if parsed_data is None:
             return
-        boundary_name, boundary_color = boundary_data
-        self.set_selected_boundary_color(str(boundary_color))
-        self.boundary_selected.emit(str(boundary_name))
+        boundary_name, boundary_color, line_width, line_style = parsed_data
+        self.set_selected_boundary_color(boundary_color)
+        self.set_selected_boundary_style(line_width, line_style)
+        self.boundary_selected.emit(boundary_name)
+
+    def _on_boundary_line_width_changed(self, value: str) -> None:
+        try:
+            line_width = float(value)
+        except ValueError:
+            return
+        self.selected_boundary_line_width_changed.emit(line_width)
+
+    def _boundary_item_data(
+        self,
+        value: object,
+    ) -> tuple[str, str, float, str] | None:
+        if (
+            not isinstance(value, Sequence)
+            or isinstance(value, (str, bytes))
+            or len(value) != 4
+        ):
+            return None
+        try:
+            return (
+                str(value[0]),
+                str(value[1]),
+                float(value[2]),
+                str(value[3]),
+            )
+        except (TypeError, ValueError):
+            return None
 
     def _toggle_current_visibility(self) -> None:
         trajectory_id = self._current_trajectory_id()

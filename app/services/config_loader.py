@@ -96,6 +96,7 @@ def load_config(path: str | Path) -> Config:
                     line_style=str(
                         item.get("style", {}).get("line_style", "solid")
                     ),
+                    line_width=float(item.get("style", {}).get("line_width", 1.0)),
                 ),
                 priority=int(item.get("priority", 0)),
                 visible=bool(item.get("visible", True)),
@@ -237,7 +238,12 @@ def load_config(path: str | Path) -> Config:
     )
 
 
-def save_runtime_config(config: Config, path: str | Path) -> Path:
+def save_runtime_config(
+    config: Config,
+    path: str | Path,
+    *,
+    persist_boundary_styles: bool = False,
+) -> Path:
     config_path = Path(path)
     if config_path.exists():
         with config_path.open("r", encoding="utf-8") as file:
@@ -257,6 +263,28 @@ def save_runtime_config(config: Config, path: str | Path) -> Path:
     background_payload["build_chunk_size"] = config.background.build_chunk_size
     background_payload["fast_build"] = config.background.fast_build
     payload["background"] = background_payload
+
+    if persist_boundary_styles:
+        regions_payload = payload.get("regions", [])
+        if not isinstance(regions_payload, list):
+            regions_payload = []
+        region_items_by_name = {
+            str(item.get("name")): item
+            for item in regions_payload
+            if isinstance(item, dict) and item.get("name") is not None
+        }
+        for region in config.regions:
+            item = region_items_by_name.get(region.name)
+            if item is None:
+                continue
+            style_payload = item.get("style", {})
+            if not isinstance(style_payload, dict):
+                style_payload = {}
+            style_payload["border"] = region.style.border
+            style_payload["line_style"] = region.style.line_style
+            style_payload["line_width"] = region.style.line_width
+            item["style"] = style_payload
+        payload["regions"] = regions_payload
 
     with config_path.open("w", encoding="utf-8") as file:
         yaml.safe_dump(
