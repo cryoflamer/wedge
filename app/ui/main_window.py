@@ -346,6 +346,12 @@ class MainWindow(QMainWindow):
         self.controls_panel.save_boundary_styling_requested.connect(
             self._on_save_boundary_styling
         )
+        self.controls_panel.region_boundary_item_selected.connect(
+            self._on_region_boundary_item_selected
+        )
+        self.controls_panel.apply_boundary_editor_requested.connect(
+            self._on_apply_boundary_editor
+        )
         self.controls_panel.selected_seed_apply_requested.connect(
             self._on_selected_seed_apply
         )
@@ -453,7 +459,11 @@ class MainWindow(QMainWindow):
                 )
                 for item in sorted(self._config.regions, key=lambda entry: entry.priority)
                 if item.visible
-            ]
+            ],
+            getattr(self, "_selected_boundary_name", None),
+        )
+        self.controls_panel.set_boundary_editor_values(
+            self._selected_boundary_editor_values()
         )
         self.angle_panel.set_angle_units(self._angle_units)
         self.angle_panel.set_regions(self._config.regions)
@@ -1031,6 +1041,18 @@ class MainWindow(QMainWindow):
 
     def _on_boundary_selected(self, boundary_name: str) -> None:
         self._selected_boundary_name = boundary_name
+        self.controls_panel.set_boundary_editor_values(
+            self._selected_boundary_editor_values()
+        )
+
+    def _on_region_boundary_item_selected(self, item_name: str, item_type: str) -> None:
+        if item_type != "boundary":
+            self.controls_panel.set_boundary_editor_values(None)
+            return
+        self._selected_boundary_name = item_name
+        self.controls_panel.set_boundary_editor_values(
+            self._selected_boundary_editor_values()
+        )
 
     def _on_selected_boundary_color_changed(self, color: str) -> None:
         boundary = self._selected_boundary_region()
@@ -1084,6 +1106,97 @@ class MainWindow(QMainWindow):
                 if item.name == selected_name and item.region_type == "boundary"
             ),
             None,
+        )
+
+    def _selected_boundary_editor_values(
+        self,
+    ) -> tuple[str, str, str, str, bool, int, str, float, str] | None:
+        boundary = self._selected_boundary_region()
+        if boundary is None:
+            return None
+        return (
+            boundary.name,
+            boundary.display_text,
+            boundary.legend_text,
+            boundary.expression,
+            boundary.visible,
+            boundary.priority,
+            boundary.style.border,
+            boundary.style.line_width,
+            boundary.style.line_style,
+        )
+
+    def _on_apply_boundary_editor(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            return
+        boundary = self._selected_boundary_region()
+        if boundary is None:
+            return
+        previous_name = boundary.name
+        boundary.name = str(payload.get("name", boundary.name)).strip() or boundary.name
+        boundary.display_text = (
+            str(payload.get("display_text", boundary.display_text)).strip()
+            or boundary.display_text
+        )
+        boundary.legend_text = (
+            str(payload.get("legend_text", boundary.legend_text)).strip()
+            or boundary.legend_text
+        )
+        boundary.expression = str(payload.get("expression", boundary.expression)).strip()
+        boundary.visible = bool(payload.get("visible", boundary.visible))
+        try:
+            boundary.priority = int(payload.get("priority", boundary.priority))
+        except (TypeError, ValueError):
+            pass
+        boundary.style.border = (
+            str(payload.get("color", boundary.style.border)).strip()
+            or boundary.style.border
+        )
+        try:
+            boundary.style.line_width = float(
+                payload.get("line_width", boundary.style.line_width)
+            )
+        except (TypeError, ValueError):
+            pass
+        boundary.style.line_style = "dashed" if (
+            str(payload.get("line_style", boundary.style.line_style)).strip().lower()
+            == "dashed"
+        ) else "solid"
+        self._selected_boundary_name = boundary.name
+        self.controls_panel.set_boundary_items(
+            [
+                (
+                    item.name,
+                    item.display_text,
+                    item.style.border,
+                    item.style.line_width,
+                    item.style.line_style,
+                )
+                for item in sorted(self._config.regions, key=lambda entry: entry.priority)
+                if item.visible and item.region_type == "boundary"
+            ],
+            self._selected_boundary_name,
+        )
+        self.controls_panel.set_region_boundary_items(
+            [
+                (
+                    item.name,
+                    item.display_text,
+                    "boundary" if item.region_type == "boundary" else "region",
+                )
+                for item in sorted(self._config.regions, key=lambda entry: entry.priority)
+                if item.visible
+            ],
+            self._selected_boundary_name,
+        )
+        self.controls_panel.set_boundary_editor_values(
+            self._selected_boundary_editor_values()
+        )
+        self.angle_panel.set_regions(self._config.regions)
+        logger.info(
+            "Boundary editor applied: previous_name=%s name=%s",
+            previous_name,
+            boundary.name,
         )
 
     def _refresh_boundary_style_preview(self) -> None:

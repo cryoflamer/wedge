@@ -98,6 +98,7 @@ class ControlsPanel(QWidget):
     selected_boundary_line_style_changed = Signal(str)
     save_boundary_styling_requested = Signal()
     region_boundary_item_selected = Signal(str, str)
+    apply_boundary_editor_requested = Signal(object)
     add_boundary_requested = Signal()
     add_region_requested = Signal()
     selected_seed_apply_requested = Signal(float, float)
@@ -151,6 +152,18 @@ class ControlsPanel(QWidget):
         self._region_boundary_list = QListWidget()
         self._region_boundary_placeholder = QLabel("Nothing selected")
         self._region_boundary_selection_label = QLabel("")
+        self._boundary_editor_placeholder = QLabel("Select a boundary to edit.")
+        self._boundary_editor_status = QLabel("")
+        self._boundary_alias_edit = QLineEdit()
+        self._boundary_display_text_edit = QLineEdit()
+        self._boundary_legend_text_edit = QLineEdit()
+        self._boundary_expression_edit = QLineEdit()
+        self._boundary_visible_checkbox = QCheckBox("Visible")
+        self._boundary_priority_edit = QLineEdit()
+        self._boundary_editor_color_selector = ColorSelector()
+        self._boundary_editor_line_width_combo = QComboBox()
+        self._boundary_editor_line_style_combo = QComboBox()
+        self._boundary_editor_apply_button = QPushButton("Apply")
         self._add_boundary_button = QPushButton("Add Boundary")
         self._add_region_button = QPushButton("Add Region")
         self._angle_units_combo = QComboBox()
@@ -287,6 +300,11 @@ class ControlsPanel(QWidget):
         self._region_boundary_list.currentItemChanged.connect(
             self._on_region_boundary_selection_changed
         )
+        self._boundary_editor_line_width_combo.addItems(["1.0", "1.5", "2.0", "2.5", "3.0"])
+        self._boundary_editor_line_style_combo.addItems(["solid", "dashed"])
+        self._boundary_editor_apply_button.clicked.connect(
+            self._emit_boundary_editor_apply
+        )
         self._add_boundary_button.clicked.connect(self.add_boundary_requested.emit)
         self._add_region_button.clicked.connect(self.add_region_requested.emit)
         self._angle_units_combo.addItems(["rad", "deg"])
@@ -321,11 +339,15 @@ class ControlsPanel(QWidget):
             self.save_boundary_styling_requested.emit
         )
         self._set_compact_button_policy(self._save_boundary_styling_button)
+        self._set_compact_button_policy(self._boundary_editor_apply_button)
         self._set_compact_button_policy(self._add_boundary_button)
         self._set_compact_button_policy(self._add_region_button)
         self._region_boundary_placeholder.setStyleSheet("color: #666;")
+        self._boundary_editor_placeholder.setStyleSheet("color: #666;")
+        self._boundary_editor_status.setStyleSheet("color: #b00020;")
         self._region_boundary_selection_label.setWordWrap(True)
         self._region_boundary_selection_label.setVisible(False)
+        self._boundary_editor_status.setVisible(False)
         self._sync_export_preset_state()
         self._trajectory_selector.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
@@ -619,6 +641,24 @@ class ControlsPanel(QWidget):
         region_boundary_layout.addWidget(self._region_boundary_list)
         region_boundary_layout.addWidget(self._region_boundary_placeholder)
         region_boundary_layout.addWidget(self._region_boundary_selection_label)
+        region_boundary_layout.addWidget(self._boundary_editor_placeholder)
+        boundary_editor_form = QFormLayout()
+        boundary_editor_form.setContentsMargins(0, 0, 0, 0)
+        boundary_editor_form.setHorizontalSpacing(6)
+        boundary_editor_form.setVerticalSpacing(4)
+        boundary_editor_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        boundary_editor_form.addRow("Alias", self._boundary_alias_edit)
+        boundary_editor_form.addRow("Display text", self._boundary_display_text_edit)
+        boundary_editor_form.addRow("Legend text", self._boundary_legend_text_edit)
+        boundary_editor_form.addRow("Expression", self._boundary_expression_edit)
+        boundary_editor_form.addRow("", self._boundary_visible_checkbox)
+        boundary_editor_form.addRow("Priority", self._boundary_priority_edit)
+        boundary_editor_form.addRow("Color", self._boundary_editor_color_selector)
+        boundary_editor_form.addRow("Line width", self._boundary_editor_line_width_combo)
+        boundary_editor_form.addRow("Line style", self._boundary_editor_line_style_combo)
+        region_boundary_layout.addLayout(boundary_editor_form)
+        region_boundary_layout.addWidget(self._boundary_editor_status)
+        region_boundary_layout.addWidget(self._boundary_editor_apply_button)
         region_boundary_actions = QGridLayout()
         region_boundary_actions.setHorizontalSpacing(6)
         region_boundary_actions.setVerticalSpacing(4)
@@ -628,6 +668,7 @@ class ControlsPanel(QWidget):
         region_boundary_actions.setColumnStretch(1, 1)
         region_boundary_layout.addLayout(region_boundary_actions)
         sections.append(region_boundary_section)
+        self._set_boundary_editor_enabled(False)
 
         lyapunov_section = CollapsibleSection("Lyapunov", expanded=False)
         lyapunov_section.set_tooltip("compute_lyapunov")
@@ -1073,6 +1114,53 @@ class ControlsPanel(QWidget):
         current_name = selected_item_name or self._current_region_boundary_item_name()
         self._rebuild_region_boundary_list(current_name)
 
+    def set_boundary_editor_values(
+        self,
+        boundary: tuple[str, str, str, str, bool, int, str, float, str] | None,
+    ) -> None:
+        if boundary is None:
+            self._show_boundary_editor_placeholder("Select a boundary to edit.")
+            return
+        (
+            name,
+            display_text,
+            legend_text,
+            expression,
+            visible,
+            priority,
+            color,
+            line_width,
+            line_style,
+        ) = boundary
+        blockers = [
+            QSignalBlocker(self._boundary_editor_color_selector),
+            QSignalBlocker(self._boundary_editor_line_width_combo),
+            QSignalBlocker(self._boundary_editor_line_style_combo),
+            QSignalBlocker(self._boundary_visible_checkbox),
+        ]
+        self._boundary_alias_edit.setText(name)
+        self._boundary_display_text_edit.setText(display_text)
+        self._boundary_legend_text_edit.setText(legend_text)
+        self._boundary_expression_edit.setText(expression)
+        self._boundary_visible_checkbox.setChecked(visible)
+        self._boundary_priority_edit.setText(str(priority))
+        self._boundary_editor_color_selector.set_color(color)
+        self._set_combo_value(
+            self._boundary_editor_line_width_combo,
+            f"{line_width:.1f}",
+            "1.0",
+        )
+        self._set_combo_value(
+            self._boundary_editor_line_style_combo,
+            line_style.strip().lower() or "solid",
+            "solid",
+        )
+        del blockers
+        self._boundary_editor_placeholder.setVisible(False)
+        self._boundary_editor_status.clear()
+        self._boundary_editor_status.setVisible(False)
+        self._set_boundary_editor_enabled(True)
+
     def _rebuild_region_boundary_list(self, selected_item_name: str | None = None) -> None:
         filter_mode = self._region_boundary_filter_combo.currentText().strip().lower() or "all"
         if selected_item_name is None:
@@ -1120,6 +1208,29 @@ class ControlsPanel(QWidget):
         self._region_boundary_placeholder.setVisible(True)
         self._region_boundary_selection_label.clear()
         self._region_boundary_selection_label.setVisible(False)
+        self._show_boundary_editor_placeholder("Select a boundary to edit.")
+
+    def _show_boundary_editor_placeholder(self, text: str) -> None:
+        self._boundary_editor_placeholder.setText(text)
+        self._boundary_editor_placeholder.setVisible(True)
+        self._boundary_editor_status.clear()
+        self._boundary_editor_status.setVisible(False)
+        self._set_boundary_editor_enabled(False)
+
+    def _set_boundary_editor_enabled(self, enabled: bool) -> None:
+        for widget in (
+            self._boundary_alias_edit,
+            self._boundary_display_text_edit,
+            self._boundary_legend_text_edit,
+            self._boundary_expression_edit,
+            self._boundary_visible_checkbox,
+            self._boundary_priority_edit,
+            self._boundary_editor_color_selector,
+            self._boundary_editor_line_width_combo,
+            self._boundary_editor_line_style_combo,
+            self._boundary_editor_apply_button,
+        ):
+            widget.setEnabled(enabled)
 
     def _on_region_boundary_selection_changed(
         self,
@@ -1146,7 +1257,42 @@ class ControlsPanel(QWidget):
             f"Selected {item_type}: {label}"
         )
         self._region_boundary_selection_label.setVisible(True)
+        if item_type != "boundary":
+            self._show_boundary_editor_placeholder(
+                "Boundary editor is available only for boundaries."
+            )
         self.region_boundary_item_selected.emit(name, item_type)
+
+    def _emit_boundary_editor_apply(self) -> None:
+        alias = self._boundary_alias_edit.text().strip()
+        if not alias:
+            self._boundary_editor_status.setText("Alias cannot be empty.")
+            self._boundary_editor_status.setVisible(True)
+            return
+        try:
+            priority = int(self._boundary_priority_edit.text().strip() or "0")
+            line_width = float(
+                self._boundary_editor_line_width_combo.currentText().strip() or "1.0"
+            )
+        except ValueError:
+            self._boundary_editor_status.setText("Priority or line width is invalid.")
+            self._boundary_editor_status.setVisible(True)
+            return
+        self._boundary_editor_status.clear()
+        self._boundary_editor_status.setVisible(False)
+        self.apply_boundary_editor_requested.emit(
+            {
+                "name": alias,
+                "display_text": self._boundary_display_text_edit.text().strip() or alias,
+                "legend_text": self._boundary_legend_text_edit.text().strip() or alias,
+                "expression": self._boundary_expression_edit.text().strip(),
+                "visible": self._boundary_visible_checkbox.isChecked(),
+                "priority": priority,
+                "color": self._boundary_editor_color_selector.color(),
+                "line_width": line_width,
+                "line_style": self._boundary_editor_line_style_combo.currentText().strip().lower() or "solid",
+            }
+        )
 
     def set_selected_boundary_color(self, color: str | None) -> None:
         self._boundary_color_selector.setEnabled(color is not None)
