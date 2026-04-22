@@ -413,6 +413,9 @@ class MainWindow(QMainWindow):
         self.controls_panel.add_region_requested.connect(
             self._on_add_region_requested
         )
+        self.controls_panel.delete_region_boundary_requested.connect(
+            self._on_delete_region_boundary_requested
+        )
         self.controls_panel.selected_seed_apply_requested.connect(
             self._on_selected_seed_apply
         )
@@ -1354,6 +1357,62 @@ class MainWindow(QMainWindow):
         )
         self._mark_scene_dirty()
         logger.info("Region created: name=%s alias=%s", name, alias)
+
+    def _on_delete_region_boundary_requested(self) -> None:
+        selected_name = self.controls_panel.current_region_boundary_item_name()
+        if selected_name is None:
+            return
+        selected_index = next(
+            (
+                index
+                for index, item in enumerate(self._config.regions)
+                if item.name == selected_name
+            ),
+            -1,
+        )
+        if selected_index < 0:
+            return
+        item = self._config.regions[selected_index]
+        item_type = "boundary" if item.region_type == "boundary" else "region"
+        item_label = item.display_text or item.name
+        answer = QMessageBox.question(
+            self,
+            "Delete Item",
+            f"Delete {item_type} '{item_label}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        self._config.regions.pop(selected_index)
+        remaining_items = sorted(self._config.regions, key=lambda entry: entry.priority)
+        next_name: str | None = None
+        if remaining_items:
+            next_index = min(selected_index, len(remaining_items) - 1)
+            next_name = remaining_items[next_index].name
+
+        if item.region_type == "boundary":
+            self._selected_boundary_name = (
+                next(
+                    (entry.name for entry in remaining_items if entry.region_type == "boundary"),
+                    None,
+                )
+            )
+        if item.region_type != "boundary":
+            self._selected_region_name = (
+                next(
+                    (entry.name for entry in remaining_items if entry.region_type != "boundary"),
+                    None,
+                )
+            )
+
+        self._refresh_region_boundary_views(next_name)
+        if next_name is None:
+            self.controls_panel.set_boundary_editor_values(None)
+            self.controls_panel.set_region_editor_values(None)
+        self._mark_scene_dirty()
+        logger.info("Scene item deleted: name=%s type=%s", item.name, item_type)
 
     def _on_apply_boundary_editor(self, payload: object) -> None:
         if not isinstance(payload, dict):
