@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -206,6 +207,29 @@ class MainWindow(QMainWindow):
         self._schedule_autosave_restore()
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if self._scene_dirty:
+            dialog = QMessageBox(self)
+            dialog.setIcon(QMessageBox.Icon.Warning)
+            dialog.setWindowTitle("Unsaved Changes")
+            dialog.setText("You have unsaved region or boundary changes.")
+            dialog.setInformativeText("Do you want to save them before closing?")
+            save_button = dialog.addButton("Save", QMessageBox.ButtonRole.AcceptRole)
+            discard_button = dialog.addButton(
+                "Discard",
+                QMessageBox.ButtonRole.DestructiveRole,
+            )
+            cancel_button = dialog.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+            dialog.setDefaultButton(save_button)
+            dialog.exec()
+            clicked = dialog.clickedButton()
+            if clicked == cancel_button:
+                event.ignore()
+                return
+            if clicked == save_button:
+                self._on_save_scene()
+            elif clicked != discard_button:
+                event.ignore()
+                return
         self._cancel_current_job()
         self._config.window.width = self.width()
         self._config.window.height = self.height()
