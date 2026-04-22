@@ -6,19 +6,20 @@ FORCE=false
 AUTO_YES=false
 DELETE_BRANCHES=false
 DELETE_MERGED_ONLY=false
+CLEAN_MERGED=false
 
 usage() {
     cat <<'EOF'
 Usage:
-  wt-clean.sh [--force] [--yes] [--delete-branches] [--delete-merged-only]
+  wt-clean.sh [--force] [--yes] [--delete-branches] [--delete-merged-only] [--clean-merged]
 
 Options:
   --force               remove dirty worktrees too
   --yes                 do not ask for confirmation
   --delete-branches     also delete local branches of removed worktrees
-  --delete-merged-only  in main repo, delete only branches already merged into current HEAD
-                        if not set, branch deletion still uses safe `git branch -d`
-                        and falls back to `-D` only when --force is set
+  --delete-merged-only  when deleting branches of removed worktrees, delete only those already merged
+  --clean-merged        independently clean all local branches already merged into current HEAD
+                        in the main repo (except protected/current branches)
 EOF
 }
 
@@ -37,6 +38,9 @@ for arg in "$@"; do
             DELETE_BRANCHES=true
             DELETE_MERGED_ONLY=true
             ;;
+        --clean-merged)
+            CLEAN_MERGED=true
+            ;;
         -h|--help)
             usage
             exit 0
@@ -53,7 +57,7 @@ done
 echo "== Git worktree cleanup =="
 
 main_repo="$(git rev-parse --show-toplevel)"
-current_branch="$(git branch --show-current || true)"
+current_branch="$(git -C "$main_repo" branch --show-current || true)"
 
 echo "Main repo: $main_repo"
 echo "Current branch in main repo: ${current_branch:-<detached>}"
@@ -100,20 +104,26 @@ else
             echo "  $path"
         fi
     done
-    echo
 fi
 
+echo
 if [[ "$DELETE_BRANCHES" == true ]]; then
-    echo "Branch cleanup enabled."
+    echo "Branch cleanup for removed worktrees enabled."
     if [[ "$DELETE_MERGED_ONLY" == true ]]; then
-        echo "Only branches already merged into current HEAD in main repo will be deleted."
+        echo "Only merged branches from removed worktrees will be deleted."
     else
         echo "Branch deletion uses safe delete (-d); with --force it may fall back to -D."
     fi
     echo
 fi
 
-if [[ ${#to_remove_paths[@]} -eq 0 && "$DELETE_BRANCHES" != true ]]; then
+if [[ "$CLEAN_MERGED" == true ]]; then
+    echo "Global merged-branch cleanup enabled."
+    echo "All local branches already merged into current HEAD may be deleted (except protected/current branches)."
+    echo
+fi
+
+if [[ ${#to_remove_paths[@]} -eq 0 && "$DELETE_BRANCHES" != true && "$CLEAN_MERGED" != true ]]; then
     echo "Nothing to do."
     exit 0
 fi
@@ -151,9 +161,28 @@ echo
 echo "Pruning..."
 git worktree prune
 
+delete_branch_safe() {
+    local br="$1"
+    if [[ "$br" == "main" || "$br" == "master" || "$br" == "$current_branch" ]]; then
+        echo "Skipping protected/current branch: $br"
+        return
+    fi
+
+    if git branch -d "$br"; then
+        echo "Deleted branch: $br"
+    else
+        if [[ "$FORCE" == true ]]; then
+            git branch -D "$br"
+            echo "Force deleted branch: $br"
+        else
+            echo "Branch not deleted: $br (not fully merged; use --force if you really want to remove it)"
+        fi
+    fi
+}
+
 if [[ "$DELETE_BRANCHES" == true && ${#removed_branches[@]} -gt 0 ]]; then
     echo
-    echo "Deleting local branches in main repo..."
+    echo "Deleting local branches for removed worktrees in main repo..."
     (
         cd "$main_repo"
 
@@ -161,32 +190,35 @@ if [[ "$DELETE_BRANCHES" == true && ${#removed_branches[@]} -gt 0 ]]; then
         merged_set=" ${merged_branches[*]} "
 
         for br in "${removed_branches[@]}"; do
+            if [[ "$DELETE_MERGED_ONLY" == true ]]; then
+                if [[ "$merged_set" == *" $br "* ]]; then
+                    delete_branch_safe "$br"
+                else
+                    echo "Skipping unmerged branch: $br"
+                fi
+            else
+                delete_branch_safe "$br"
+            fi
+        done
+    )
+fi
+
+if [[ "$CLEAN_MERGED" == true ]]; then
+    echo
+    echo "Cleaning all merged local branches in main repo..."
+    (
+        cd "$main_repo"
+        while IFS= read -r br; do
+            br="$(echo "$br" | sed 's/^\*//' | xargs)"
+            if [[ -z "$br" ]]; then
+                continue
+            fi
             if [[ "$br" == "main" || "$br" == "master" || "$br" == "$current_branch" ]]; then
                 echo "Skipping protected/current branch: $br"
                 continue
             fi
-
-            if [[ "$DELETE_MERGED_ONLY" == true ]]; then
-                if [[ "$merged_set" == *" $br "* ]]; then
-                    git branch -d "$br"
-                    echo "Deleted merged branch: $br"
-                else
-                    echo "Skipping unmerged branch: $br"
-                fi
-                continue
-            fi
-
-            if git branch -d "$br"; then
-                echo "Deleted branch: $br"
-            else
-                if [[ "$FORCE" == true ]]; then
-                    git branch -D "$br"
-                    echo "Force deleted branch: $br"
-                else
-                    echo "Branch not deleted: $br (not fully merged; use --force or --delete-merged-only)"
-                fi
-            fi
-        done
+            delete_branch_safe "$br"
+        done < <(git branch --merged)
     )
 fi
 
