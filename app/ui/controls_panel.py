@@ -461,19 +461,6 @@ class ControlsPanel(QWidget):
         scan_section.content_layout().addLayout(scan_actions)
         sections.append(scan_section)
 
-        lyapunov_section = CollapsibleSection("Lyapunov", expanded=False)
-        lyapunov_section.set_tooltip("compute_lyapunov")
-        apply_tooltip(self._compute_lyapunov_button, "compute_lyapunov")
-        self._set_compact_button_policy(self._compute_lyapunov_button)
-        lyapunov_section.content_layout().addWidget(self._compute_lyapunov_button)
-        for label in (
-            self._lyapunov_status,
-            self._lyapunov_steps,
-            self._lyapunov_value,
-        ):
-            lyapunov_section.content_layout().addWidget(label)
-        sections.append(lyapunov_section)
-
         phase_view_section = CollapsibleSection("Phase space options", expanded=False)
         phase_view_section.set_tooltip("show_phase_grid")
         phase_view_layout = phase_view_section.content_layout()
@@ -538,6 +525,19 @@ class ControlsPanel(QWidget):
         ):
             parameter_view_layout.addWidget(checkbox)
         sections.append(parameter_view_section)
+
+        lyapunov_section = CollapsibleSection("Lyapunov", expanded=False)
+        lyapunov_section.set_tooltip("compute_lyapunov")
+        apply_tooltip(self._compute_lyapunov_button, "compute_lyapunov")
+        self._set_compact_button_policy(self._compute_lyapunov_button)
+        lyapunov_section.content_layout().addWidget(self._compute_lyapunov_button)
+        for label in (
+            self._lyapunov_status,
+            self._lyapunov_steps,
+            self._lyapunov_value,
+        ):
+            lyapunov_section.content_layout().addWidget(label)
+        sections.append(lyapunov_section)
 
         export_section = CollapsibleSection("Export", expanded=False)
         export_section.set_tooltip("export_png")
