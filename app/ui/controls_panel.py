@@ -967,6 +967,24 @@ class ControlsPanel(QWidget):
         self._trajectory_color_selector.set_color(color)
         del blocker
 
+    def set_selected_trajectory_id(
+        self,
+        trajectory_id: int | None,
+        color: str | None = None,
+    ) -> None:
+        blocker = QSignalBlocker(self._trajectory_selector)
+        selected_index = -1
+        if trajectory_id is not None:
+            for index in range(self._trajectory_selector.count()):
+                item_data = self._trajectory_selector.itemData(index)
+                if item_data is not None and int(item_data) == trajectory_id:
+                    selected_index = index
+                    break
+        self._trajectory_selector.setCurrentIndex(selected_index)
+        del blocker
+        self._sync_selector_tooltip()
+        self.set_selected_trajectory_color(color)
+
     def set_boundary_items(
         self,
         items: list[tuple[str, str, str, float, str]],

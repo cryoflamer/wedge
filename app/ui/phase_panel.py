@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 class PhasePanel(QWidget):
     clicked = Signal(int, float, float)
     viewport_changed = Signal()
+    seed_selected = Signal(int)
     seed_drag_started = Signal(int)
     seed_drag_finished = Signal(int, float, float)
 
@@ -47,6 +48,8 @@ class PhasePanel(QWidget):
         self._hover_point: QPointF | None = None
         self._drag_seed_id: int | None = None
         self._drag_seed_preview: tuple[float, float] | None = None
+        self._pressed_seed_id: int | None = None
+        self._pressed_seed_anchor: QPointF | None = None
         self._stationary_point: tuple[float, float] | None = None
         self._click_threshold_px = 6.0
         self._padding = 24
@@ -80,19 +83,10 @@ class PhasePanel(QWidget):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.LeftButton:
-            dragged_seed_id = self._seed_at_position(event.position())
-            if dragged_seed_id is not None and self._view_config.show_seed_markers:
-                self._drag_seed_id = dragged_seed_id
-                self._drag_seed_preview = self._constrain_to_domain(
-                    *self._map_click(event.position())
-                )
-                self._last_click.setText(
-                    "drag: "
-                    f"d={self._drag_seed_preview[0]:.3f}, "
-                    f"τ={self._drag_seed_preview[1]:.3f}"
-                )
-                self.seed_drag_started.emit(dragged_seed_id)
-                self.update()
+            pressed_seed_id = self._seed_at_position(event.position())
+            if pressed_seed_id is not None and self._view_config.show_seed_markers:
+                self._pressed_seed_id = pressed_seed_id
+                self._pressed_seed_anchor = event.position()
                 return
 
         if self._fixed_domain and event.button() == Qt.RightButton:
@@ -144,6 +138,30 @@ class PhasePanel(QWidget):
             if plot.contains(event.position())
             else None
         )
+        if (
+            self._drag_seed_id is None
+            and self._pressed_seed_id is not None
+            and self._pressed_seed_anchor is not None
+        ):
+            delta = event.position() - self._pressed_seed_anchor
+            if (
+                abs(delta.x()) >= self._click_threshold_px
+                or abs(delta.y()) >= self._click_threshold_px
+            ):
+                self._drag_seed_id = self._pressed_seed_id
+                self._pressed_seed_id = None
+                self._pressed_seed_anchor = None
+                self._drag_seed_preview = self._constrain_to_domain(
+                    *self._map_click(event.position())
+                )
+                self._last_click.setText(
+                    "drag: "
+                    f"d={self._drag_seed_preview[0]:.3f}, "
+                    f"τ={self._drag_seed_preview[1]:.3f}"
+                )
+                self.seed_drag_started.emit(self._drag_seed_id)
+                self.update()
+                return
         if self._drag_seed_id is not None:
             self._drag_seed_preview = self._constrain_to_domain(
                 *self._map_click(event.position())
@@ -235,6 +253,13 @@ class PhasePanel(QWidget):
                     preview[0],
                     preview[1],
                 )
+            self.update()
+            return
+        if event.button() == Qt.LeftButton and self._pressed_seed_id is not None:
+            trajectory_id = self._pressed_seed_id
+            self._pressed_seed_id = None
+            self._pressed_seed_anchor = None
+            self.seed_selected.emit(trajectory_id)
             self.update()
             return
         if event.button() == Qt.RightButton:
@@ -980,6 +1005,21 @@ class PhasePanel(QWidget):
             self._update_hint()
             self.update()
             return
+
+        d_span = d_max - d_min
+        tau_span = tau_max - tau_min
+        plot_aspect = plot.width() / max(plot.height(), 1.0)
+        viewport_aspect = d_span / max(tau_span, 1.0e-12)
+        center_d = 0.5 * (d_min + d_max)
+        center_tau = 0.5 * (tau_min + tau_max)
+        if viewport_aspect < plot_aspect:
+            d_span = tau_span * plot_aspect
+        elif viewport_aspect > plot_aspect:
+            tau_span = d_span / plot_aspect
+        d_min = center_d - 0.5 * d_span
+        d_max = center_d + 0.5 * d_span
+        tau_min = center_tau - 0.5 * tau_span
+        tau_max = center_tau + 0.5 * tau_span
 
         self._viewport = (d_min, d_max, tau_min, tau_max)
         logger.info(
