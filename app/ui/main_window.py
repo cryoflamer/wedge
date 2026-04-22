@@ -260,7 +260,8 @@ class MainWindow(QMainWindow):
         apply_tooltip(self.phase_panel_wall_1, "phase_panel_wall_1")
         apply_tooltip(self.phase_panel_wall_2, "phase_panel_wall_2")
         apply_tooltip(self.wedge_panel, "wedge_panel")
-        apply_tooltip(self.angle_panel, "angle_panel")
+        self.angle_panel.setToolTip("")
+        self.angle_panel.setStatusTip("")
         apply_tooltip(self._status_label, "status_label")
         apply_tooltip(self._status_jobs_selector, "status_jobs_selector")
         apply_tooltip(self._status_progress, "status_progress")
@@ -308,6 +309,9 @@ class MainWindow(QMainWindow):
         )
         self.controls_panel.region_visibility_changed.connect(
             self._on_region_visibility_changed
+        )
+        self.controls_panel.plot_labels_changed.connect(
+            self._on_plot_labels_changed
         )
         self.controls_panel.branch_markers_changed.connect(
             self._on_branch_markers_changed
@@ -688,6 +692,19 @@ class MainWindow(QMainWindow):
         self._config.view.show_regions = show_regions
         self._config.view.show_region_labels = show_labels
         self._config.view.show_region_legend = show_legend
+        self.update_view()
+
+    def _on_plot_labels_changed(
+        self,
+        enabled: bool,
+        mode: str,
+        tooltip_mode: str,
+    ) -> None:
+        self._config.view.show_labels_on_plot = enabled
+        self._config.view.plot_label_mode = mode.strip().lower() or "legend"
+        self._config.view.tooltip_label_mode = (
+            tooltip_mode.strip().lower() or "legend"
+        )
         self.update_view()
 
     def _on_phase_grid_visibility_changed(
