@@ -19,6 +19,7 @@ from app.models.config import (
 )
 from app.models.constraint import ConstraintDescription
 from app.models.region import RegionDescription, RegionStyle
+from app.models.scene_item import SceneItemDescription, scene_item_from_region
 
 
 def load_config(path: str | Path) -> Config:
@@ -39,7 +40,7 @@ def load_config(path: str | Path) -> Config:
     autosave_data = data.get("autosave", {})
     scene_items = data.get("regions", [])
     constraints: list[ConstraintDescription] = []
-    regions: list[RegionDescription] = []
+    regions: list[SceneItemDescription] = []
 
     for item in scene_items:
         item_type = str(item.get("type", "predicate"))
@@ -71,7 +72,8 @@ def load_config(path: str | Path) -> Config:
             continue
 
         regions.append(
-            RegionDescription(
+            scene_item_from_region(
+                RegionDescription(
                 name=str(item["name"]),
                 display_text=str(
                     item.get("display_text", item.get("label", item["name"]))
@@ -100,6 +102,7 @@ def load_config(path: str | Path) -> Config:
                 ),
                 priority=int(item.get("priority", 0)),
                 visible=bool(item.get("visible", True)),
+                )
             )
         )
 
@@ -268,9 +271,12 @@ def save_runtime_config(
     if persist_scene_items:
         regions_payload: list[dict] = []
         for region in config.regions:
+            item_type = "predicate" if region.compatibility_predicate else (
+                "boundary" if region.relation == "=" else "implicit"
+            )
             item: dict[str, object] = {
                 "name": region.name,
-                "type": region.region_type,
+                "type": item_type,
                 "display_text": region.display_text,
                 "legend_text": region.legend_text,
                 "expression": region.expression,
@@ -285,7 +291,7 @@ def save_runtime_config(
                     "line_width": region.style.line_width,
                 },
             }
-            if region.relation is not None:
+            if region.relation is not None and item_type != "boundary":
                 item["relation"] = region.relation
             regions_payload.append(item)
         payload["regions"] = regions_payload

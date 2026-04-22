@@ -20,9 +20,9 @@ from app.core.point_constraints import (
     project_point_to_constraint,
 )
 from app.models.constraint import ConstraintDescription
-from app.core.region_eval import evaluate_region
+from app.core.region_eval import evaluate_scene_item
 from app.models.config import ViewConfig
-from app.models.region import RegionDescription
+from app.models.scene_item import SceneItemDescription, is_boundary_scene_item
 
 
 class AnglePanel(QWidget):
@@ -42,7 +42,9 @@ class AnglePanel(QWidget):
         self._beta = 0.0
         self._angle_units = "rad"
         self._active_constraint: ActivePointConstraint | None = None
-        self._regions: list[RegionDescription] = []
+        self._scene_items: list[SceneItemDescription] = []
+        self._boundary_item_names: set[str] = set()
+        self._predicate_item_names: set[str] = set()
         self._constraints: list[ConstraintDescription] = []
         self._boundary_segments_cache: dict[str, tuple[BoundarySegment, ...]] = {}
         self._hover_point: QPointF | None = None
@@ -82,12 +84,12 @@ class AnglePanel(QWidget):
         )
         self.update()
 
-    def set_regions(self, regions: list[RegionDescription]) -> None:
-        self._regions = sorted(regions, key=lambda item: item.priority)
+    def set_regions(self, regions: list[SceneItemDescription]) -> None:
+        self._scene_items = sorted(regions, key=lambda item: item.priority)
         self._boundary_segments_cache = {
-            region.name: tuple(build_boundary_segments(region, self._is_inside_domain))
-            for region in self._regions
-            if region.region_type == "boundary"
+            item.name: tuple(build_boundary_segments(item, self._is_inside_domain))
+            for item in self._scene_items
+            if is_boundary_scene_item(item)
         }
         self.update()
 
@@ -388,28 +390,28 @@ class AnglePanel(QWidget):
             painter.setPen(tick_pen)
 
     def _draw_regions(self, painter: QPainter) -> None:
-        if not self._regions or not self._view_config.show_regions:
+        if not self._scene_items or not self._view_config.show_regions:
             return
 
         legend_items: list[tuple[QColor, str, str]] = []
-        for region in self._regions:
-            if not region.visible:
+        for item in self._scene_items:
+            if not item.visible:
                 continue
 
             sample_points: list[QPointF] = []
             boundary_segments: list[tuple[QPointF, QPointF]] = []
-            if region.region_type == "boundary":
+            if is_boundary_scene_item(item):
                 is_active_boundary = (
                     self._active_constraint is not None
                     and self._active_constraint.kind == "boundary"
-                    and self._active_constraint.region_name == region.name
+                    and self._active_constraint.region_name == item.name
                 )
                 boundary_segments = [
                     (
                         self._to_canvas(segment.start_alpha, segment.start_beta),
                         self._to_canvas(segment.end_alpha, segment.end_beta),
                     )
-                    for segment in self._boundary_segments_cache.get(region.name, ())
+                    for segment in self._boundary_segments_cache.get(item.name, ())
                 ]
                 if not boundary_segments:
                     continue
@@ -422,34 +424,34 @@ class AnglePanel(QWidget):
                         beta = math.pi * beta_step / 80.0
                         if not self._is_inside_domain(alpha, beta):
                             continue
-                        if evaluate_region(region, alpha, beta):
+                        if evaluate_scene_item(item, alpha, beta):
                             sample_points.append(self._to_canvas(alpha, beta))
 
                 if not sample_points:
                     continue
 
-            color = QColor(region.style.fill)
-            color.setAlphaF(max(0.0, min(region.style.alpha, 1.0)))
+            color = QColor(item.style.fill)
+            color.setAlphaF(max(0.0, min(item.style.alpha, 1.0)))
             border_color = QColor("#d62728") if (
-                region.region_type == "boundary"
+                is_boundary_scene_item(item)
                 and self._active_constraint is not None
                 and self._active_constraint.kind == "boundary"
-                and self._active_constraint.region_name == region.name
-            ) else QColor(region.style.border)
-            base_width = max(float(region.style.line_width), 0.5)
+                and self._active_constraint.region_name == item.name
+            ) else QColor(item.style.border)
+            base_width = max(float(item.style.line_width), 0.5)
             if (
-                region.region_type == "boundary"
+                is_boundary_scene_item(item)
                 and self._active_constraint is not None
                 and self._active_constraint.kind == "boundary"
-                and self._active_constraint.region_name == region.name
+                and self._active_constraint.region_name == item.name
             ):
                 base_width = max(base_width, 2.0)
             border_pen = QPen(border_color, base_width)
-            border_pen.setStyle(self._pen_style(region.style.line_style))
+            border_pen.setStyle(self._pen_style(item.style.line_style))
             painter.setPen(border_pen)
-            painter.setBrush(self._region_brush(color, region.style.hatch))
+            painter.setBrush(self._region_brush(color, item.style.hatch))
 
-            if region.region_type == "boundary":
+            if is_boundary_scene_item(item):
                 boundary_path = QPainterPath()
                 for chain in self._ordered_boundary_chains(boundary_segments):
                     if len(chain) < 2:
@@ -468,21 +470,21 @@ class AnglePanel(QWidget):
             ):
                 center_x = sum(point.x() for point in sample_points) / len(sample_points)
                 center_y = sum(point.y() for point in sample_points) / len(sample_points)
-                plot_label = self._plot_label_text(region)
+                plot_label = self._plot_label_text(item)
                 self._draw_text_overlay(
                     painter,
                     self._plot_rect(),
                     QPointF(center_x + 4.0, center_y - 4.0),
                     plot_label,
-                    border_color=QColor(region.style.border),
+                    border_color=QColor(item.style.border),
                     anchor="top_left",
                 )
 
             legend_items.append(
                 (
-                    QColor(region.style.border),
-                    region.display_text,
-                    region.legend_text,
+                    QColor(item.style.border),
+                    item.display_text,
+                    item.legend_text,
                 )
             )
 
@@ -723,41 +725,41 @@ class AnglePanel(QWidget):
         )
 
     def _boundary_hover_text(self, point: QPointF) -> str | None:
-        best_region: RegionDescription | None = None
+        best_item: SceneItemDescription | None = None
         best_distance = math.inf
-        for region in self._regions:
-            if not region.visible or region.region_type != "boundary":
+        for item in self._scene_items:
+            if not item.visible or not is_boundary_scene_item(item):
                 continue
-            for segment in self._boundary_segments_cache.get(region.name, ()):
+            for segment in self._boundary_segments_cache.get(item.name, ()):
                 start = self._to_canvas(segment.start_alpha, segment.start_beta)
                 end = self._to_canvas(segment.end_alpha, segment.end_beta)
                 distance = self._distance_to_segment(point, start, end)
                 if distance < best_distance:
                     best_distance = distance
-                    best_region = region
-        if best_region is None or best_distance > 8.0:
+                    best_item = item
+        if best_item is None or best_distance > 8.0:
             return None
-        return self._tooltip_label_text(best_region)
+        return self._tooltip_label_text(best_item)
 
     def _region_hover_text(self, alpha: float, beta: float) -> str | None:
-        for region in reversed(self._regions):
-            if not region.visible or region.region_type == "boundary":
+        for item in reversed(self._scene_items):
+            if not item.visible or is_boundary_scene_item(item):
                 continue
-            if evaluate_region(region, alpha, beta):
-                return self._tooltip_label_text(region)
+            if evaluate_scene_item(item, alpha, beta):
+                return self._tooltip_label_text(item)
         return None
 
-    def _plot_label_text(self, region: RegionDescription) -> str:
+    def _plot_label_text(self, item: SceneItemDescription) -> str:
         mode = self._view_config.plot_label_mode.strip().lower()
         if mode == "alias":
-            return region.display_text
-        return region.legend_text
+            return item.display_text
+        return item.legend_text
 
-    def _tooltip_label_text(self, region: RegionDescription) -> str:
+    def _tooltip_label_text(self, item: SceneItemDescription) -> str:
         mode = self._view_config.tooltip_label_mode.strip().lower()
         if mode == "alias":
-            return region.display_text
-        return region.legend_text
+            return item.display_text
+        return item.legend_text
 
     def _draw_text_overlay(
         self,

@@ -35,6 +35,7 @@ def test_scene_item_from_region_maps_existing_fields() -> None:
     assert item.alias == "test_boundary"
     assert item.style == region.style
     assert item.style is not region.style
+    assert item.compatibility_predicate is False
 
 
 def test_scene_items_from_regions_maps_every_region() -> None:
@@ -72,5 +73,7 @@ def test_scene_items_from_regions_maps_every_region() -> None:
     items = scene_items_from_regions(regions)
 
     assert [item.name for item in items] == ["r1", "r2"]
+    assert items[0].compatibility_predicate is True
     assert items[0].relation is None
+    assert items[1].compatibility_predicate is False
     assert items[1].relation == "="

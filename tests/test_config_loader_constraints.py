@@ -5,6 +5,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
+from app.models.scene_item import SceneItemDescription
 from app.services.config_loader import load_config
 
 
@@ -64,7 +65,10 @@ class ConfigLoaderConstraintTests(unittest.TestCase):
 
         self.assertEqual(config.view.active_angle_constraint, "symmetric_angle")
         self.assertEqual(len(config.regions), 1)
+        self.assertIsInstance(config.regions[0], SceneItemDescription)
         self.assertEqual(config.regions[0].name, "n3_boundary")
+        self.assertEqual(config.regions[0].relation, "=")
+        self.assertFalse(config.regions[0].compatibility_predicate)
         self.assertEqual(len(config.constraints), 2)
         self.assertEqual(config.constraints[0].name, "symmetric_angle")
         self.assertEqual(config.constraints[0].constraint_type, "symmetry")
