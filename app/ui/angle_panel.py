@@ -269,23 +269,9 @@ class AnglePanel(QWidget):
         return path
 
     def _axis_tick_values(self) -> tuple[list[float], list[float]]:
-        alpha_ticks = [
-            math.pi / 12.0,
-            math.pi / 6.0,
-            math.pi / 4.0,
-            math.pi / 3.0,
-            5.0 * math.pi / 12.0,
-            math.pi / 2.0,
-        ]
-        beta_ticks = [
-            math.pi / 6.0,
-            math.pi / 4.0,
-            math.pi / 3.0,
-            math.pi / 2.0,
-            2.0 * math.pi / 3.0,
-            3.0 * math.pi / 4.0,
-            5.0 * math.pi / 6.0,
-        ]
+        # Always include 0 and endpoint (π/2 for alpha, π for beta)
+        alpha_ticks = [0.0, math.pi / 12.0, math.pi / 6.0, math.pi / 4.0, math.pi / 3.0, 5.0 * math.pi / 12.0, math.pi / 2.0]
+        beta_ticks = [0.0, math.pi / 6.0, math.pi / 4.0, math.pi / 3.0, math.pi / 2.0, 2.0 * math.pi / 3.0, 3.0 * math.pi / 4.0, 5.0 * math.pi / 6.0, math.pi]
         return alpha_ticks, beta_ticks
 
     def _format_tick_label(self, value: float) -> str:
@@ -294,18 +280,32 @@ class AnglePanel(QWidget):
         return self._format_pi_tick_label(value)
 
     def _format_pi_tick_label(self, value: float) -> str:
+        # Special case for zero
+        if abs(value) < 1e-8:
+            return "0"
+        # Special case for pi (endpoint)
+        if abs(value - math.pi) < 1e-8:
+            return "π"
+        # Common fractions
         common_fractions = {
-            round(math.pi / 12.0, 12): "pi/12",
-            round(math.pi / 6.0, 12): "pi/6",
-            round(math.pi / 4.0, 12): "pi/4",
-            round(math.pi / 3.0, 12): "pi/3",
-            round(5.0 * math.pi / 12.0, 12): "5pi/12",
-            round(math.pi / 2.0, 12): "pi/2",
-            round(2.0 * math.pi / 3.0, 12): "2pi/3",
-            round(3.0 * math.pi / 4.0, 12): "3pi/4",
-            round(5.0 * math.pi / 6.0, 12): "5pi/6",
+            round(math.pi / 12.0, 12): "π/12",
+            round(math.pi / 6.0, 12): "π/6",
+            round(math.pi / 4.0, 12): "π/4",
+            round(math.pi / 3.0, 12): "π/3",
+            round(5.0 * math.pi / 12.0, 12): "5π/12",
+            round(math.pi / 2.0, 12): "π/2",
+            round(2.0 * math.pi / 3.0, 12): "2π/3",
+            round(3.0 * math.pi / 4.0, 12): "3π/4",
+            round(5.0 * math.pi / 6.0, 12): "5π/6",
         }
-        return common_fractions.get(round(value, 12), f"{value / math.pi:.2f}pi")
+        rounded = round(value, 12)
+        if rounded in common_fractions:
+            return common_fractions[rounded]
+        # Fallback: format as a multiple of π
+        coeff = value / math.pi
+        if abs(coeff - round(coeff)) < 1e-8:
+            return f"{int(round(coeff))}π"
+        return f"{coeff:.2f}π"
 
     def _axis_label_margins(self) -> tuple[float, float]:
         metrics = self.fontMetrics()
