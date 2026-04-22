@@ -467,7 +467,8 @@ class MainWindow(QMainWindow):
             getattr(self, "_selected_boundary_name", None),
         )
         self.controls_panel.set_boundary_editor_values(
-            self._selected_boundary_editor_values()
+            self._selected_boundary_editor_values(),
+            sync_sections=False,
         )
         self.controls_panel.set_region_editor_values(
             self._selected_region_editor_values()
@@ -1174,6 +1175,9 @@ class MainWindow(QMainWindow):
     def _on_apply_boundary_editor(self, payload: object) -> None:
         if not isinstance(payload, dict):
             return
+        boundary_section_expanded, region_section_expanded = (
+            self.controls_panel.editor_section_state()
+        )
         boundary = self._selected_boundary_region()
         if boundary is None:
             return
@@ -1235,7 +1239,12 @@ class MainWindow(QMainWindow):
             self._selected_boundary_name,
         )
         self.controls_panel.set_boundary_editor_values(
-            self._selected_boundary_editor_values()
+            self._selected_boundary_editor_values(),
+            sync_sections=False,
+        )
+        self.controls_panel.restore_editor_section_state(
+            boundary_section_expanded,
+            region_section_expanded,
         )
         self.angle_panel.set_regions(self._config.regions)
         logger.info(
@@ -1247,6 +1256,9 @@ class MainWindow(QMainWindow):
     def _on_apply_region_editor(self, payload: object) -> None:
         if not isinstance(payload, dict):
             return
+        boundary_section_expanded, region_section_expanded = (
+            self.controls_panel.editor_section_state()
+        )
         region = self._selected_region_description(self._selected_region_name)
         if region is None:
             return
@@ -1284,7 +1296,12 @@ class MainWindow(QMainWindow):
             region.name,
         )
         self.controls_panel.set_region_editor_values(
-            self._selected_region_editor_values(region.name)
+            self._selected_region_editor_values(region.name),
+            sync_sections=False,
+        )
+        self.controls_panel.restore_editor_section_state(
+            boundary_section_expanded,
+            region_section_expanded,
         )
         self.angle_panel.set_regions(self._config.regions)
         logger.info(
