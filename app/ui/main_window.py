@@ -12,9 +12,13 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
+    QFormLayout,
     QGridLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QProgressBar,
     QPushButton,
@@ -28,6 +32,7 @@ from app.core.point_constraints import ActivePointConstraint, project_point_to_c
 from app.models.config import Config
 from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
+from app.models.region import RegionDescription, RegionStyle
 from app.models.session import Session
 from app.models.trajectory import TrajectorySeed
 from app.services.config_loader import save_runtime_config
@@ -49,6 +54,28 @@ from app.ui.tooltips import apply_tooltip
 from app.ui.wedge_panel import WedgePanel
 
 logger = logging.getLogger(__name__)
+
+
+class SceneItemCreateDialog(QDialog):
+    def __init__(self, item_kind: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(f"Add {item_kind.title()}")
+        self._name_edit = QLineEdit()
+        self._alias_edit = QLineEdit()
+
+        layout = QFormLayout(self)
+        layout.addRow("Name", self._name_edit)
+        layout.addRow("Alias", self._alias_edit)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
+
+    def values(self) -> tuple[str, str]:
+        return self._name_edit.text().strip(), self._alias_edit.text().strip()
 
 
 class MainWindow(QMainWindow):
@@ -355,6 +382,12 @@ class MainWindow(QMainWindow):
         )
         self.controls_panel.apply_region_editor_requested.connect(
             self._on_apply_region_editor
+        )
+        self.controls_panel.add_boundary_requested.connect(
+            self._on_add_boundary_requested
+        )
+        self.controls_panel.add_region_requested.connect(
+            self._on_add_region_requested
         )
         self.controls_panel.selected_seed_apply_requested.connect(
             self._on_selected_seed_apply
@@ -1172,6 +1205,117 @@ class MainWindow(QMainWindow):
             region.style.border,
         )
 
+    def _refresh_region_boundary_views(
+        self,
+        selected_name: str | None = None,
+    ) -> None:
+        self.controls_panel.set_boundary_items(
+            [
+                (
+                    item.name,
+                    item.display_text,
+                    item.style.border,
+                    item.style.line_width,
+                    item.style.line_style,
+                )
+                for item in sorted(self._config.regions, key=lambda entry: entry.priority)
+                if item.visible and item.region_type == "boundary"
+            ],
+            self._selected_boundary_name,
+        )
+        self.controls_panel.set_region_boundary_items(
+            [
+                (
+                    item.name,
+                    item.display_text,
+                    "boundary" if item.region_type == "boundary" else "region",
+                )
+                for item in sorted(self._config.regions, key=lambda entry: entry.priority)
+                if item.visible
+            ],
+            selected_name,
+        )
+        self.angle_panel.set_regions(self._config.regions)
+
+    def _create_scene_item_dialog(
+        self,
+        item_kind: str,
+    ) -> tuple[str, str] | None:
+        dialog = SceneItemCreateDialog(item_kind, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return None
+        name, alias = dialog.values()
+        if not name:
+            return None
+        if not alias:
+            alias = name
+        return name, alias
+
+    def _on_add_boundary_requested(self) -> None:
+        values = self._create_scene_item_dialog("boundary")
+        if values is None:
+            return
+        name, alias = values
+        self._config.regions.append(
+            RegionDescription(
+                name=name,
+                display_text=alias,
+                legend_text=alias,
+                region_type="boundary",
+                expression="alpha - beta",
+                relation="=",
+                style=RegionStyle(
+                    fill="#cccccc",
+                    alpha=0.0,
+                    hatch="",
+                    border="#333333",
+                    line_style="solid",
+                    line_width=1.0,
+                ),
+                priority=0,
+                visible=True,
+            )
+        )
+        self._selected_boundary_name = name
+        self._selected_region_name = None
+        self._refresh_region_boundary_views(name)
+        self.controls_panel.set_boundary_editor_values(
+            self._selected_boundary_editor_values()
+        )
+        logger.info("Boundary created: name=%s alias=%s", name, alias)
+
+    def _on_add_region_requested(self) -> None:
+        values = self._create_scene_item_dialog("region")
+        if values is None:
+            return
+        name, alias = values
+        self._config.regions.append(
+            RegionDescription(
+                name=name,
+                display_text=alias,
+                legend_text=alias,
+                region_type="predicate",
+                expression="False",
+                relation=None,
+                style=RegionStyle(
+                    fill="#cccccc",
+                    alpha=0.3,
+                    hatch="",
+                    border="#333333",
+                    line_style="solid",
+                    line_width=1.0,
+                ),
+                priority=0,
+                visible=True,
+            )
+        )
+        self._selected_region_name = name
+        self._refresh_region_boundary_views(name)
+        self.controls_panel.set_region_editor_values(
+            self._selected_region_editor_values(name)
+        )
+        logger.info("Region created: name=%s alias=%s", name, alias)
+
     def _on_apply_boundary_editor(self, payload: object) -> None:
         if not isinstance(payload, dict):
             return
@@ -1212,32 +1356,7 @@ class MainWindow(QMainWindow):
             == "dashed"
         ) else "solid"
         self._selected_boundary_name = boundary.name
-        self.controls_panel.set_boundary_items(
-            [
-                (
-                    item.name,
-                    item.display_text,
-                    item.style.border,
-                    item.style.line_width,
-                    item.style.line_style,
-                )
-                for item in sorted(self._config.regions, key=lambda entry: entry.priority)
-                if item.visible and item.region_type == "boundary"
-            ],
-            self._selected_boundary_name,
-        )
-        self.controls_panel.set_region_boundary_items(
-            [
-                (
-                    item.name,
-                    item.display_text,
-                    "boundary" if item.region_type == "boundary" else "region",
-                )
-                for item in sorted(self._config.regions, key=lambda entry: entry.priority)
-                if item.visible
-            ],
-            self._selected_boundary_name,
-        )
+        self._refresh_region_boundary_views(self._selected_boundary_name)
         self.controls_panel.set_boundary_editor_values(
             self._selected_boundary_editor_values(),
             sync_sections=False,
@@ -1246,7 +1365,6 @@ class MainWindow(QMainWindow):
             boundary_section_expanded,
             region_section_expanded,
         )
-        self.angle_panel.set_regions(self._config.regions)
         logger.info(
             "Boundary editor applied: previous_name=%s name=%s",
             previous_name,
@@ -1283,18 +1401,7 @@ class MainWindow(QMainWindow):
             or region.style.border
         )
         self._selected_region_name = region.name
-        self.controls_panel.set_region_boundary_items(
-            [
-                (
-                    item.name,
-                    item.display_text,
-                    "boundary" if item.region_type == "boundary" else "region",
-                )
-                for item in sorted(self._config.regions, key=lambda entry: entry.priority)
-                if item.visible
-            ],
-            region.name,
-        )
+        self._refresh_region_boundary_views(region.name)
         self.controls_panel.set_region_editor_values(
             self._selected_region_editor_values(region.name),
             sync_sections=False,
@@ -1303,7 +1410,6 @@ class MainWindow(QMainWindow):
             boundary_section_expanded,
             region_section_expanded,
         )
-        self.angle_panel.set_regions(self._config.regions)
         logger.info(
             "Region editor applied: previous_name=%s name=%s",
             previous_name,
