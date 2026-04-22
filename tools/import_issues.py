@@ -2,20 +2,27 @@
 """
 Import GitHub issues from CSV using gh CLI.
 
+Backward compatible with old CSV format.
+
+Supported CSV columns:
+- title            (required)
+- body             (required)
+- labels           (optional, comma-separated)
+- assignees        (optional, comma-separated)
+- milestone        (optional)
+- codex_mode       (optional: fast | normal | thinking)
+- agent_prompt     (optional: comment body to add after issue creation)
+- agent_comment    (optional alias for agent_prompt)
+
 Features:
-- creates issues from CSV columns: title, body
+- creates issues from CSV
 - supports global labels via --labels
 - supports per-row labels via CSV column "labels"
 - creates missing labels automatically
-- supports milestone and assignee
-- has dry-run mode
-
-CSV columns:
-- title   (required)
-- body    (required)
-- labels  (optional, comma-separated)
-- assignees (optional, comma-separated)
-- milestone (optional)
+- supports milestone and assignees
+- supports dry-run mode
+- can add Codex mode labels automatically from codex_mode
+- can add an initial issue comment with agent prompt
 """
 
 from __future__ import annotations
@@ -23,10 +30,18 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import Iterable
+
+
+CODEX_MODE_TO_LABEL = {
+    "fast": "codex:fast",
+    "normal": "codex:normal",
+    "thinking": "codex:thinking",
+}
 
 
 def run(cmd: list[str], capture_output: bool = False) -> subprocess.CompletedProcess[str]:
@@ -128,7 +143,6 @@ def create_label(repo: str, name: str, color: str = "d4c5f9", description: str =
     if result.returncode != 0:
         stderr = (result.stderr or "").lower()
         stdout = (result.stdout or "").lower()
-        # tolerate race / already exists
         if "already exists" in stderr or "already exists" in stdout:
             return
         die(f"Failed to create label '{name}'.\n{result.stderr}")
@@ -146,6 +160,20 @@ def ensure_labels_exist(repo: str, labels: Iterable[str], existing_labels: dict[
             existing_labels[label] = {"name": label}
 
 
+def normalize_codex_mode(value: str | None) -> str | None:
+    if not value:
+        return None
+    mode = value.strip().lower()
+    return mode if mode in CODEX_MODE_TO_LABEL else None
+
+
+def extract_issue_number(issue_url: str) -> int | None:
+    match = re.search(r'/issues/(\d+)$', issue_url.strip())
+    if not match:
+        return None
+    return int(match.group(1))
+
+
 def create_issue(
         repo: str,
         title: str,
@@ -154,7 +182,7 @@ def create_issue(
         assignees: list[str],
         milestone: str | None,
         dry_run: bool,
-) -> None:
+) -> str | None:
     cmd = [
         "gh", "issue", "create",
         "--repo", repo,
@@ -173,12 +201,49 @@ def create_issue(
 
     if dry_run:
         print("[DRY RUN]", " ".join(cmd))
-        return
+        return None
 
     result = run(cmd, capture_output=True)
     if result.returncode != 0:
         die(f"Failed to create issue '{title}'.\n{result.stderr}")
-    print(result.stdout.strip())
+
+    issue_ref = result.stdout.strip()
+    print(issue_ref)
+    return issue_ref
+
+
+def add_issue_comment(
+        repo: str,
+        issue_number: int,
+        comment_body: str,
+        dry_run: bool,
+) -> None:
+    cmd = [
+        "gh", "issue", "comment", str(issue_number),
+        "--repo", repo,
+        "--body", comment_body,
+    ]
+    if dry_run:
+        print("[DRY RUN]", " ".join(cmd))
+        return
+
+    result = run(cmd, capture_output=True)
+    if result.returncode != 0:
+        die(f"Failed to add comment to issue #{issue_number}.\n{result.stderr}")
+    output = result.stdout.strip()
+    if output:
+        print(output)
+
+
+def build_agent_comment(agent_prompt: str, codex_mode: str | None) -> str:
+    parts: list[str] = []
+    if codex_mode:
+        parts.append(f"Recommended mode: {codex_mode}")
+        parts.append("")
+    parts.append("Agent prompt:")
+    parts.append("")
+    parts.append(agent_prompt.strip())
+    return "\n".join(parts).strip() + "\n"
 
 
 def main() -> None:
@@ -198,9 +263,18 @@ def main() -> None:
         help="Default comma-separated assignees for rows that do not specify assignees",
     )
     parser.add_argument(
+        "--default-codex-mode",
+        help="Default codex mode for rows that do not specify codex_mode (fast|normal|thinking)",
+    )
+    parser.add_argument(
+        "--no-codex-mode-labels",
+        action="store_true",
+        help="Do not add codex:* labels automatically from codex_mode",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print actions without creating labels/issues",
+        help="Print actions without creating labels/issues/comments",
     )
 
     args = parser.parse_args()
@@ -215,6 +289,10 @@ def main() -> None:
     global_labels = parse_csv_list(args.labels)
     default_assignees = parse_csv_list(args.default_assignees)
     default_milestone = args.default_milestone
+    default_codex_mode = normalize_codex_mode(args.default_codex_mode)
+
+    if args.default_codex_mode and not default_codex_mode:
+        die("Invalid --default-codex-mode. Use: fast, normal, or thinking")
 
     with csv_path.open(newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -240,17 +318,23 @@ def main() -> None:
                 continue
 
             row_labels = parse_csv_list(row.get("labels"))
-            labels = uniq_keep_order([*global_labels, *row_labels])
+            codex_mode = normalize_codex_mode(row.get("codex_mode")) or default_codex_mode
+
+            labels = [*global_labels, *row_labels]
+            if codex_mode and not args.no_codex_mode_labels:
+                labels.append(CODEX_MODE_TO_LABEL[codex_mode])
+            labels = uniq_keep_order(labels)
 
             row_assignees = parse_csv_list(row.get("assignees"))
             assignees = row_assignees if row_assignees else default_assignees
 
             milestone = (row.get("milestone") or "").strip() or default_milestone
+            agent_prompt = (row.get("agent_prompt") or row.get("agent_comment") or "").strip()
 
             ensure_labels_exist(args.repo, labels, existing_labels, args.dry_run)
 
             print(f"\nCreating issue from row {idx}: {title}")
-            create_issue(
+            issue_ref = create_issue(
                 repo=args.repo,
                 title=title,
                 body=body,
@@ -259,6 +343,25 @@ def main() -> None:
                 milestone=milestone,
                 dry_run=args.dry_run,
             )
+
+            if agent_prompt:
+                comment_body = build_agent_comment(agent_prompt, codex_mode)
+                if args.dry_run:
+                    print(f"[DRY RUN] would add comment to created issue for row {idx}:")
+                    print(comment_body)
+                else:
+                    if not issue_ref:
+                        die(f"Could not determine issue reference for '{title}'")
+                    issue_number = extract_issue_number(issue_ref)
+                    if issue_number is None:
+                        die(f"Could not parse issue number from: {issue_ref}")
+                    print(f"Adding agent comment to issue #{issue_number}")
+                    add_issue_comment(
+                        repo=args.repo,
+                        issue_number=issue_number,
+                        comment_body=comment_body,
+                        dry_run=args.dry_run,
+                    )
 
         print(f"\nDone. Processed {row_count} row(s).")
 
