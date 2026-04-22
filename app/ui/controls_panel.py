@@ -105,6 +105,7 @@ class ControlsPanel(QWidget):
     apply_region_editor_requested = Signal(object)
     add_boundary_requested = Signal()
     add_region_requested = Signal()
+    delete_region_boundary_requested = Signal()
     selected_seed_apply_requested = Signal(float, float)
     trajectory_visibility_toggled = Signal(int)
     clear_selected_requested = Signal()
@@ -183,6 +184,7 @@ class ControlsPanel(QWidget):
         self._region_editor_section: CollapsibleSection | None = None
         self._add_boundary_button = QPushButton("Add Boundary")
         self._add_region_button = QPushButton("Add Region")
+        self._delete_region_boundary_button = QPushButton("Delete")
         self._angle_units_combo = QComboBox()
         self._export_mode_combo = QComboBox()
         self._export_preset_combo = QComboBox()
@@ -327,6 +329,9 @@ class ControlsPanel(QWidget):
         )
         self._add_boundary_button.clicked.connect(self.add_boundary_requested.emit)
         self._add_region_button.clicked.connect(self.add_region_requested.emit)
+        self._delete_region_boundary_button.clicked.connect(
+            self.delete_region_boundary_requested.emit
+        )
         self._angle_units_combo.addItems(["rad", "deg"])
         self._angle_units_combo.currentTextChanged.connect(
             self._on_angle_units_changed
@@ -364,6 +369,7 @@ class ControlsPanel(QWidget):
         self._set_compact_button_policy(self._boundary_editor_apply_button)
         self._set_compact_button_policy(self._add_boundary_button)
         self._set_compact_button_policy(self._add_region_button)
+        self._set_compact_button_policy(self._delete_region_boundary_button)
         self._region_boundary_placeholder.setStyleSheet("color: #666;")
         self._boundary_editor_placeholder.setStyleSheet("color: #666;")
         self._region_editor_placeholder.setStyleSheet("color: #666;")
@@ -708,6 +714,7 @@ class ControlsPanel(QWidget):
         region_boundary_actions.setVerticalSpacing(4)
         region_boundary_actions.addWidget(self._add_boundary_button, 0, 0)
         region_boundary_actions.addWidget(self._add_region_button, 0, 1)
+        region_boundary_actions.addWidget(self._delete_region_boundary_button, 1, 0, 1, 2)
         region_boundary_actions.setColumnStretch(0, 1)
         region_boundary_actions.setColumnStretch(1, 1)
         region_boundary_layout.addLayout(region_boundary_actions)
@@ -1301,6 +1308,9 @@ class ControlsPanel(QWidget):
         ):
             return None
         return str(data[0])
+
+    def current_region_boundary_item_name(self) -> str | None:
+        return self._current_region_boundary_item_name()
 
     def _show_region_boundary_placeholder(self) -> None:
         self._region_boundary_placeholder.setVisible(True)
