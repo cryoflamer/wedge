@@ -3,7 +3,14 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QMouseEvent, QPainter, QPainterPath, QPen
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QMouseEvent,
+    QPainter,
+    QPainterPath,
+    QPen,
+)
 from PySide6.QtWidgets import QLabel, QToolTip, QVBoxLayout, QWidget
 
 from app.core.point_constraints import (
@@ -324,10 +331,13 @@ class AnglePanel(QWidget):
             if self._view_config.show_region_labels:
                 center_x = sum(point.x() for point in sample_points) / len(sample_points)
                 center_y = sum(point.y() for point in sample_points) / len(sample_points)
-                painter.setPen(QColor(region.style.border))
-                painter.drawText(
+                self._draw_text_overlay(
+                    painter,
+                    self._plot_rect(),
                     QPointF(center_x + 4.0, center_y - 4.0),
                     region.display_text,
+                    border_color=QColor(region.style.border),
+                    anchor="top_left",
                 )
 
             legend_items.append(
@@ -347,29 +357,44 @@ class AnglePanel(QWidget):
         legend_items: list[tuple[QColor, str, str]],
     ) -> None:
         plot = self._plot_rect()
-        row_height = 18.0
-        legend_width = min(plot.width() * 0.48, 250.0)
-        legend_height = 12.0 + row_height * len(legend_items)
-        legend_rect = QRectF(
-            plot.right() - legend_width - 10.0,
-            plot.top() + 10.0,
-            legend_width,
-            legend_height,
+        margin = 10.0
+        line_x0 = 8.0
+        line_x1 = 22.0
+        text_x = 28.0
+        top_padding = 8.0
+        bottom_padding = 8.0
+        metrics = painter.fontMetrics()
+        row_height = float(max(metrics.height(), 14) + 4)
+        line_texts = [f"{display_text}: {legend_text}" for _, display_text, legend_text in legend_items]
+        text_width = max((metrics.horizontalAdvance(text) for text in line_texts), default=0)
+        legend_width = min(
+            max(text_x + text_width + 10.0, 120.0),
+            max(plot.width() - 2.0 * margin, 40.0),
+        )
+        legend_height = top_padding + bottom_padding + row_height * len(legend_items)
+        legend_rect = self._clamp_overlay_rect(
+            plot,
+            QRectF(
+                plot.right() - legend_width - margin,
+                plot.top() + margin,
+                legend_width,
+                legend_height,
+            ),
         )
         painter.setPen(QPen(QColor("#888888"), 1))
         painter.setBrush(QColor(255, 255, 255, 220))
         painter.drawRoundedRect(legend_rect, 6.0, 6.0)
 
         for index, (color, display_text, legend_text) in enumerate(legend_items):
-            y = legend_rect.top() + 16.0 + row_height * index
+            y = legend_rect.top() + top_padding + metrics.ascent() + row_height * index
             painter.setPen(QPen(color, 2))
             painter.drawLine(
-                QPointF(legend_rect.left() + 8.0, y - 4.0),
-                QPointF(legend_rect.left() + 22.0, y - 4.0),
+                QPointF(legend_rect.left() + line_x0, y - metrics.ascent() * 0.35),
+                QPointF(legend_rect.left() + line_x1, y - metrics.ascent() * 0.35),
             )
             painter.setPen(QColor("#222222"))
             painter.drawText(
-                QPointF(legend_rect.left() + 28.0, y),
+                QPointF(legend_rect.left() + text_x, y),
                 f"{display_text}: {legend_text}",
             )
 
@@ -480,13 +505,73 @@ class AnglePanel(QWidget):
             QPointF(point.x(), plot.bottom()),
         )
 
-        label_rect = QRectF(plot.left() + 8.0, plot.bottom() - 28.0, 210.0, 20.0)
-        painter.setPen(QPen(QColor("#666666"), 1))
+        self._draw_text_overlay(
+            painter,
+            plot,
+            QPointF(plot.left() + 8.0, plot.bottom() - 8.0),
+            f"alpha={self._format_angle(alpha)}, beta={self._format_angle(beta)}",
+            anchor="bottom_left",
+        )
+
+    def _draw_text_overlay(
+        self,
+        painter: QPainter,
+        plot: QRectF,
+        anchor_point: QPointF,
+        text: str,
+        *,
+        border_color: QColor | None = None,
+        anchor: str = "top_left",
+    ) -> None:
+        metrics = painter.fontMetrics()
+        text_rect = metrics.boundingRect(
+            QRectF(0.0, 0.0, max(plot.width() - 16.0, 20.0), 1000.0).toRect(),
+            Qt.TextWordWrap | Qt.AlignLeft | Qt.AlignVCenter,
+            text,
+        )
+        horizontal_padding = 6.0
+        vertical_padding = 4.0
+        overlay_rect = QRectF(
+            0.0,
+            0.0,
+            text_rect.width() + 2.0 * horizontal_padding,
+            text_rect.height() + 2.0 * vertical_padding,
+        )
+        if anchor == "bottom_left":
+            overlay_rect.moveBottomLeft(anchor_point)
+        else:
+            overlay_rect.moveTopLeft(anchor_point)
+        overlay_rect = self._clamp_overlay_rect(plot, overlay_rect)
+
+        painter.setPen(QPen(border_color or QColor("#666666"), 1))
         painter.setBrush(QColor(255, 255, 255, 220))
-        painter.drawRoundedRect(label_rect, 4.0, 4.0)
+        painter.drawRoundedRect(overlay_rect, 4.0, 4.0)
         painter.setPen(QColor("#222222"))
         painter.drawText(
-            label_rect.adjusted(6.0, 0.0, -6.0, 0.0),
-            Qt.AlignVCenter | Qt.AlignLeft,
-            f"alpha={self._format_angle(alpha)}, beta={self._format_angle(beta)}",
+            overlay_rect.adjusted(
+                horizontal_padding,
+                vertical_padding,
+                -horizontal_padding,
+                -vertical_padding,
+            ),
+            Qt.TextWordWrap | Qt.AlignLeft | Qt.AlignVCenter,
+            text,
         )
+
+    def _clamp_overlay_rect(self, plot: QRectF, rect: QRectF) -> QRectF:
+        clamped = QRectF(rect)
+        max_width = max(plot.width(), 20.0)
+        max_height = max(plot.height(), 20.0)
+        if clamped.width() > max_width:
+            clamped.setWidth(max_width)
+        if clamped.height() > max_height:
+            clamped.setHeight(max_height)
+        if clamped.left() < plot.left():
+            clamped.moveLeft(plot.left())
+        if clamped.right() > plot.right():
+            clamped.moveRight(plot.right())
+        if clamped.top() < plot.top():
+            clamped.moveTop(plot.top())
+        if clamped.bottom() > plot.bottom():
+            clamped.moveBottom(plot.bottom())
+        return clamped
