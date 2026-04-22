@@ -178,11 +178,12 @@ class AnglePanel(QWidget):
 
     def _plot_rect(self) -> QRectF:
         top = self._header_height() + 12.0
+        left_margin, bottom_margin = self._axis_label_margins()
         return QRectF(
-            self._padding,
+            self._padding + left_margin,
             top,
-            max(self.width() - 2 * self._padding, 1),
-            max(self.height() - top - self._bottom_margin, 1),
+            max(self.width() - (2 * self._padding + left_margin), 1),
+            max(self.height() - top - self._bottom_margin - bottom_margin, 1),
         )
 
     def _header_height(self) -> float:
@@ -266,6 +267,125 @@ class AnglePanel(QWidget):
 
         path.closeSubpath()
         return path
+
+    def _axis_tick_values(self) -> tuple[list[float], list[float]]:
+        alpha_ticks = [
+            math.pi / 12.0,
+            math.pi / 6.0,
+            math.pi / 4.0,
+            math.pi / 3.0,
+            5.0 * math.pi / 12.0,
+            math.pi / 2.0,
+        ]
+        beta_ticks = [
+            math.pi / 6.0,
+            math.pi / 4.0,
+            math.pi / 3.0,
+            math.pi / 2.0,
+            2.0 * math.pi / 3.0,
+            3.0 * math.pi / 4.0,
+            5.0 * math.pi / 6.0,
+        ]
+        return alpha_ticks, beta_ticks
+
+    def _format_tick_label(self, value: float) -> str:
+        if self._angle_units == "deg":
+            return f"{round(math.degrees(value))}°"
+        return self._format_pi_tick_label(value)
+
+    def _format_pi_tick_label(self, value: float) -> str:
+        common_fractions = {
+            round(math.pi / 12.0, 12): "pi/12",
+            round(math.pi / 6.0, 12): "pi/6",
+            round(math.pi / 4.0, 12): "pi/4",
+            round(math.pi / 3.0, 12): "pi/3",
+            round(5.0 * math.pi / 12.0, 12): "5pi/12",
+            round(math.pi / 2.0, 12): "pi/2",
+            round(2.0 * math.pi / 3.0, 12): "2pi/3",
+            round(3.0 * math.pi / 4.0, 12): "3pi/4",
+            round(5.0 * math.pi / 6.0, 12): "5pi/6",
+        }
+        return common_fractions.get(round(value, 12), f"{value / math.pi:.2f}pi")
+
+    def _axis_label_margins(self) -> tuple[float, float]:
+        metrics = self.fontMetrics()
+        alpha_ticks, beta_ticks = self._axis_tick_values()
+        x_labels = [self._format_tick_label(value) for value in alpha_ticks]
+        y_labels = [self._format_tick_label(value) for value in beta_ticks]
+        max_y_label_width = max(
+            (metrics.horizontalAdvance(label) for label in y_labels),
+            default=0,
+        )
+        x_label_height = metrics.height()
+        tick_length = 5.0
+        left_margin = max_y_label_width + tick_length + 8.0
+        bottom_margin = x_label_height + tick_length + 6.0
+        return left_margin, bottom_margin
+
+    def _draw_grid_and_axes(self, painter: QPainter, plot: QRectF) -> None:
+        alpha_ticks, beta_ticks = self._axis_tick_values()
+
+        grid_pen = QPen(QColor(215, 215, 215, 180), 1)
+        painter.setPen(grid_pen)
+        for alpha in alpha_ticks:
+            point = self._to_canvas(alpha, math.pi / 2.0)
+            painter.drawLine(
+                QPointF(point.x(), plot.top()),
+                QPointF(point.x(), plot.bottom()),
+            )
+        for beta in beta_ticks:
+            point = self._to_canvas(math.pi / 4.0, beta)
+            painter.drawLine(
+                QPointF(plot.left(), point.y()),
+                QPointF(plot.right(), point.y()),
+            )
+
+        axis_pen = QPen(QColor("#8a8a8a"), 1)
+        tick_pen = QPen(QColor("#7a7a7a"), 1)
+        label_pen = QPen(QColor("#444444"), 1)
+        metrics = painter.fontMetrics()
+        tick_length = 5.0
+
+        painter.setPen(axis_pen)
+        painter.drawLine(plot.bottomLeft(), plot.bottomRight())
+        painter.drawLine(plot.bottomLeft(), plot.topLeft())
+
+        painter.setPen(tick_pen)
+        for alpha in alpha_ticks:
+            point = self._to_canvas(alpha, math.pi / 2.0)
+            painter.drawLine(
+                QPointF(point.x(), plot.bottom()),
+                QPointF(point.x(), plot.bottom() + tick_length),
+            )
+            label = self._format_tick_label(alpha)
+            label_width = metrics.horizontalAdvance(label)
+            painter.setPen(label_pen)
+            painter.drawText(
+                QPointF(
+                    point.x() - label_width / 2.0,
+                    plot.bottom() + tick_length + metrics.ascent() + 2.0,
+                ),
+                label,
+            )
+            painter.setPen(tick_pen)
+
+        for beta in beta_ticks:
+            point = self._to_canvas(math.pi / 4.0, beta)
+            painter.drawLine(
+                QPointF(plot.left() - tick_length, point.y()),
+                QPointF(plot.left(), point.y()),
+            )
+            label = self._format_tick_label(beta)
+            label_width = metrics.horizontalAdvance(label)
+            painter.setPen(label_pen)
+            painter.drawText(
+                QPointF(
+                    plot.left() - tick_length - label_width - 4.0,
+                    point.y() + metrics.ascent() / 2.5,
+                ),
+                label,
+            )
+            painter.setPen(tick_pen)
 
     def _draw_regions(self, painter: QPainter) -> None:
         if not self._regions or not self._view_config.show_regions:
@@ -443,9 +563,7 @@ class AnglePanel(QWidget):
         painter.drawRect(self.rect().adjusted(0, 0, -1, -1))
         painter.drawRect(plot)
 
-        painter.setPen(QPen(QColor("#c8c8c8"), 1))
-        painter.drawLine(plot.bottomLeft(), plot.bottomRight())
-        painter.drawLine(plot.bottomLeft(), plot.topLeft())
+        self._draw_grid_and_axes(painter, plot)
 
         painter.setPen(QPen(QColor("#8fb9e8"), 2))
         painter.setBrush(QColor(214, 231, 248, 80))
