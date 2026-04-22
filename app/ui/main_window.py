@@ -444,6 +444,17 @@ class MainWindow(QMainWindow):
             boundary_items,
             self._selected_boundary_name,
         )
+        self.controls_panel.set_region_boundary_items(
+            [
+                (
+                    item.name,
+                    item.display_text,
+                    "boundary" if item.region_type == "boundary" else "region",
+                )
+                for item in sorted(self._config.regions, key=lambda entry: entry.priority)
+                if item.visible
+            ]
+        )
         self.angle_panel.set_angle_units(self._angle_units)
         self.angle_panel.set_regions(self._config.regions)
         self.angle_panel.set_constraints(self._config.constraints)

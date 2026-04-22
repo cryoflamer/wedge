@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
     QSizePolicy,
     QToolButton,
@@ -95,6 +97,9 @@ class ControlsPanel(QWidget):
     selected_boundary_line_width_changed = Signal(float)
     selected_boundary_line_style_changed = Signal(str)
     save_boundary_styling_requested = Signal()
+    region_boundary_item_selected = Signal(str, str)
+    add_boundary_requested = Signal()
+    add_region_requested = Signal()
     selected_seed_apply_requested = Signal(float, float)
     trajectory_visibility_toggled = Signal(int)
     clear_selected_requested = Signal()
@@ -142,6 +147,12 @@ class ControlsPanel(QWidget):
         self._heatmap_mode_combo = QComboBox()
         self._heatmap_resolution_combo = QComboBox()
         self._heatmap_normalization_combo = QComboBox()
+        self._region_boundary_filter_combo = QComboBox()
+        self._region_boundary_list = QListWidget()
+        self._region_boundary_placeholder = QLabel("Nothing selected")
+        self._region_boundary_selection_label = QLabel("")
+        self._add_boundary_button = QPushButton("Add Boundary")
+        self._add_region_button = QPushButton("Add Region")
         self._angle_units_combo = QComboBox()
         self._export_mode_combo = QComboBox()
         self._export_preset_combo = QComboBox()
@@ -269,6 +280,15 @@ class ControlsPanel(QWidget):
         self._heatmap_normalization_combo.currentTextChanged.connect(
             self._emit_heatmap_settings
         )
+        self._region_boundary_filter_combo.addItems(["All", "Boundaries", "Regions"])
+        self._region_boundary_filter_combo.currentTextChanged.connect(
+            self._on_region_boundary_filter_changed
+        )
+        self._region_boundary_list.currentItemChanged.connect(
+            self._on_region_boundary_selection_changed
+        )
+        self._add_boundary_button.clicked.connect(self.add_boundary_requested.emit)
+        self._add_region_button.clicked.connect(self.add_region_requested.emit)
         self._angle_units_combo.addItems(["rad", "deg"])
         self._angle_units_combo.currentTextChanged.connect(
             self._on_angle_units_changed
@@ -301,6 +321,11 @@ class ControlsPanel(QWidget):
             self.save_boundary_styling_requested.emit
         )
         self._set_compact_button_policy(self._save_boundary_styling_button)
+        self._set_compact_button_policy(self._add_boundary_button)
+        self._set_compact_button_policy(self._add_region_button)
+        self._region_boundary_placeholder.setStyleSheet("color: #666;")
+        self._region_boundary_selection_label.setWordWrap(True)
+        self._region_boundary_selection_label.setVisible(False)
         self._sync_export_preset_state()
         self._trajectory_selector.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
@@ -580,6 +605,29 @@ class ControlsPanel(QWidget):
         )
         parameter_view_layout.addWidget(boundary_styling_section)
         sections.append(parameter_view_section)
+
+        region_boundary_section = CollapsibleSection("Regions / Boundaries", expanded=False)
+        region_boundary_layout = region_boundary_section.content_layout()
+        region_boundary_form = QFormLayout()
+        region_boundary_form.setContentsMargins(0, 0, 0, 0)
+        region_boundary_form.setHorizontalSpacing(6)
+        region_boundary_form.setVerticalSpacing(4)
+        region_boundary_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        region_boundary_form.addRow("Filter", self._region_boundary_filter_combo)
+        region_boundary_layout.addLayout(region_boundary_form)
+        self._region_boundary_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        region_boundary_layout.addWidget(self._region_boundary_list)
+        region_boundary_layout.addWidget(self._region_boundary_placeholder)
+        region_boundary_layout.addWidget(self._region_boundary_selection_label)
+        region_boundary_actions = QGridLayout()
+        region_boundary_actions.setHorizontalSpacing(6)
+        region_boundary_actions.setVerticalSpacing(4)
+        region_boundary_actions.addWidget(self._add_boundary_button, 0, 0)
+        region_boundary_actions.addWidget(self._add_region_button, 0, 1)
+        region_boundary_actions.setColumnStretch(0, 1)
+        region_boundary_actions.setColumnStretch(1, 1)
+        region_boundary_layout.addLayout(region_boundary_actions)
+        sections.append(region_boundary_section)
 
         lyapunov_section = CollapsibleSection("Lyapunov", expanded=False)
         lyapunov_section.set_tooltip("compute_lyapunov")
@@ -1015,6 +1063,90 @@ class ControlsPanel(QWidget):
         self._boundary_selector.setEnabled(self._boundary_selector.count() > 0)
         if boundary_name is not None and boundary_name != selected_boundary_name:
             self.boundary_selected.emit(boundary_name)
+
+    def set_region_boundary_items(
+        self,
+        items: list[tuple[str, str, str]],
+        selected_item_name: str | None = None,
+    ) -> None:
+        self._region_boundary_items = list(items)
+        current_name = selected_item_name or self._current_region_boundary_item_name()
+        self._rebuild_region_boundary_list(current_name)
+
+    def _rebuild_region_boundary_list(self, selected_item_name: str | None = None) -> None:
+        filter_mode = self._region_boundary_filter_combo.currentText().strip().lower() or "all"
+        if selected_item_name is None:
+            selected_item_name = self._current_region_boundary_item_name()
+        blocker = QSignalBlocker(self._region_boundary_list)
+        self._region_boundary_list.clear()
+        selected_row = -1
+        visible_items = 0
+        for name, label, item_type in getattr(self, "_region_boundary_items", []):
+            normalized_type = item_type.strip().lower()
+            if filter_mode == "boundaries" and normalized_type != "boundary":
+                continue
+            if filter_mode == "regions" and normalized_type != "region":
+                continue
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, (name, normalized_type, label))
+            self._region_boundary_list.addItem(item)
+            if name == selected_item_name:
+                selected_row = visible_items
+            visible_items += 1
+        if selected_row >= 0:
+            self._region_boundary_list.setCurrentRow(selected_row)
+        del blocker
+        if selected_row < 0:
+            self._region_boundary_list.setCurrentRow(-1)
+            self._show_region_boundary_placeholder()
+
+    def _on_region_boundary_filter_changed(self, _value: str) -> None:
+        self._rebuild_region_boundary_list()
+
+    def _current_region_boundary_item_name(self) -> str | None:
+        current_item = self._region_boundary_list.currentItem()
+        if current_item is None:
+            return None
+        data = current_item.data(Qt.UserRole)
+        if (
+            not isinstance(data, Sequence)
+            or isinstance(data, (str, bytes))
+            or len(data) != 3
+        ):
+            return None
+        return str(data[0])
+
+    def _show_region_boundary_placeholder(self) -> None:
+        self._region_boundary_placeholder.setVisible(True)
+        self._region_boundary_selection_label.clear()
+        self._region_boundary_selection_label.setVisible(False)
+
+    def _on_region_boundary_selection_changed(
+        self,
+        current: QListWidgetItem | None,
+        previous: QListWidgetItem | None,
+    ) -> None:
+        del previous
+        if current is None:
+            self._show_region_boundary_placeholder()
+            return
+        data = current.data(Qt.UserRole)
+        if (
+            not isinstance(data, Sequence)
+            or isinstance(data, (str, bytes))
+            or len(data) != 3
+        ):
+            self._show_region_boundary_placeholder()
+            return
+        name = str(data[0])
+        item_type = str(data[1])
+        label = str(data[2])
+        self._region_boundary_placeholder.setVisible(False)
+        self._region_boundary_selection_label.setText(
+            f"Selected {item_type}: {label}"
+        )
+        self._region_boundary_selection_label.setVisible(True)
+        self.region_boundary_item_selected.emit(name, item_type)
 
     def set_selected_boundary_color(self, color: str | None) -> None:
         self._boundary_color_selector.setEnabled(color is not None)
