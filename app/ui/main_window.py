@@ -59,6 +59,7 @@ class MainWindow(QMainWindow):
         self._window_position_restored = False
         self._next_trajectory_id = 1
         self._selected_trajectory_id: int | None = None
+        self._selected_region_name: str | None = None
         self._angle_units = "rad"
         self._base_angle_constraint_name = config.view.active_angle_constraint
         self._active_angle_constraint_name = config.view.active_angle_constraint
@@ -352,6 +353,9 @@ class MainWindow(QMainWindow):
         self.controls_panel.apply_boundary_editor_requested.connect(
             self._on_apply_boundary_editor
         )
+        self.controls_panel.apply_region_editor_requested.connect(
+            self._on_apply_region_editor
+        )
         self.controls_panel.selected_seed_apply_requested.connect(
             self._on_selected_seed_apply
         )
@@ -463,7 +467,11 @@ class MainWindow(QMainWindow):
             getattr(self, "_selected_boundary_name", None),
         )
         self.controls_panel.set_boundary_editor_values(
-            self._selected_boundary_editor_values()
+            self._selected_boundary_editor_values(),
+            sync_sections=False,
+        )
+        self.controls_panel.set_region_editor_values(
+            self._selected_region_editor_values()
         )
         self.angle_panel.set_angle_units(self._angle_units)
         self.angle_panel.set_regions(self._config.regions)
@@ -1048,10 +1056,17 @@ class MainWindow(QMainWindow):
     def _on_region_boundary_item_selected(self, item_name: str, item_type: str) -> None:
         if item_type != "boundary":
             self.controls_panel.set_boundary_editor_values(None)
+        else:
+            self._selected_boundary_name = item_name
+            self.controls_panel.set_boundary_editor_values(
+                self._selected_boundary_editor_values()
+            )
+        if item_type != "region":
+            self.controls_panel.set_region_editor_values(None)
             return
-        self._selected_boundary_name = item_name
-        self.controls_panel.set_boundary_editor_values(
-            self._selected_boundary_editor_values()
+        self._selected_region_name = item_name
+        self.controls_panel.set_region_editor_values(
+            self._selected_region_editor_values(item_name)
         )
 
     def _on_selected_boundary_color_changed(self, color: str) -> None:
@@ -1126,9 +1141,43 @@ class MainWindow(QMainWindow):
             boundary.style.line_style,
         )
 
+    def _selected_region_description(self, name: str | None):
+        if name is None:
+            return None
+        return next(
+            (
+                item
+                for item in self._config.regions
+                if item.name == name and item.region_type != "boundary"
+            ),
+            None,
+        )
+
+    def _selected_region_editor_values(
+        self,
+        item_name: str | None = None,
+    ) -> tuple[str, str, str, bool, int, str, str] | None:
+        if item_name is None:
+            item_name = self._selected_region_name
+        region = self._selected_region_description(item_name)
+        if region is None:
+            return None
+        return (
+            region.name,
+            region.display_text,
+            region.expression,
+            region.visible,
+            region.priority,
+            region.style.fill,
+            region.style.border,
+        )
+
     def _on_apply_boundary_editor(self, payload: object) -> None:
         if not isinstance(payload, dict):
             return
+        boundary_section_expanded, region_section_expanded = (
+            self.controls_panel.editor_section_state()
+        )
         boundary = self._selected_boundary_region()
         if boundary is None:
             return
@@ -1190,13 +1239,75 @@ class MainWindow(QMainWindow):
             self._selected_boundary_name,
         )
         self.controls_panel.set_boundary_editor_values(
-            self._selected_boundary_editor_values()
+            self._selected_boundary_editor_values(),
+            sync_sections=False,
+        )
+        self.controls_panel.restore_editor_section_state(
+            boundary_section_expanded,
+            region_section_expanded,
         )
         self.angle_panel.set_regions(self._config.regions)
         logger.info(
             "Boundary editor applied: previous_name=%s name=%s",
             previous_name,
             boundary.name,
+        )
+
+    def _on_apply_region_editor(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            return
+        boundary_section_expanded, region_section_expanded = (
+            self.controls_panel.editor_section_state()
+        )
+        region = self._selected_region_description(self._selected_region_name)
+        if region is None:
+            return
+        previous_name = region.name
+        region.name = str(payload.get("name", region.name)).strip() or region.name
+        region.display_text = (
+            str(payload.get("display_text", region.display_text)).strip()
+            or region.display_text
+        )
+        region.expression = str(payload.get("expression", region.expression)).strip()
+        region.visible = bool(payload.get("visible", region.visible))
+        try:
+            region.priority = int(payload.get("priority", region.priority))
+        except (TypeError, ValueError):
+            pass
+        region.style.fill = (
+            str(payload.get("fill", region.style.fill)).strip()
+            or region.style.fill
+        )
+        region.style.border = (
+            str(payload.get("border", region.style.border)).strip()
+            or region.style.border
+        )
+        self._selected_region_name = region.name
+        self.controls_panel.set_region_boundary_items(
+            [
+                (
+                    item.name,
+                    item.display_text,
+                    "boundary" if item.region_type == "boundary" else "region",
+                )
+                for item in sorted(self._config.regions, key=lambda entry: entry.priority)
+                if item.visible
+            ],
+            region.name,
+        )
+        self.controls_panel.set_region_editor_values(
+            self._selected_region_editor_values(region.name),
+            sync_sections=False,
+        )
+        self.controls_panel.restore_editor_section_state(
+            boundary_section_expanded,
+            region_section_expanded,
+        )
+        self.angle_panel.set_regions(self._config.regions)
+        logger.info(
+            "Region editor applied: previous_name=%s name=%s",
+            previous_name,
+            region.name,
         )
 
     def _refresh_boundary_style_preview(self) -> None:
