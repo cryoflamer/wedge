@@ -52,6 +52,9 @@ view:
   show_reflection_points: true
   show_regions: true
   show_region_labels: true
+  show_labels_on_plot: false
+  plot_label_mode: legend
+  tooltip_label_mode: legend
   show_region_legend: true
   show_branch_markers: true
   active_angle_constraint: null
