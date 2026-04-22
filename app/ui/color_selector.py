@@ -2,18 +2,18 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QColorDialog,
     QFrame,
     QGridLayout,
-    QHBoxLayout,
-    QLabel,
+    QMenu,
     QPushButton,
     QSizePolicy,
     QToolButton,
-    QVBoxLayout,
+    QWidgetAction,
+    QHBoxLayout,
     QWidget,
 )
 
@@ -43,42 +43,28 @@ class ColorSelector(QWidget):
         self._preset_colors = tuple(preset_colors or DEFAULT_PRESET_COLORS)
         self._color = self._normalize_color(color)
         self._preset_buttons: list[QToolButton] = []
+        self._popup = QMenu(self)
+        self._popup.setSeparatorsCollapsible(False)
 
         self._preview = QFrame()
         self._preview.setFrameShape(QFrame.Box)
-        self._preview.setFixedSize(24, 24)
+        self._preview.setFixedSize(16, 16)
         self._preview.setSizePolicy(
             QSizePolicy.Policy.Fixed,
             QSizePolicy.Policy.Fixed,
         )
+        self._trigger_button = QToolButton()
+        self._trigger_button.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        self._trigger_button.setArrowType(Qt.DownArrow)
+        self._trigger_button.setText("")
+        self._trigger_button.clicked.connect(self._show_popup)
 
-        self._value_label = QLabel(self._color)
-        self._value_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-
-        self._custom_button = QPushButton("Custom...")
-        self._custom_button.clicked.connect(self._choose_custom_color)
-
-        layout = QVBoxLayout(self)
+        layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
-
-        preview_row = QHBoxLayout()
-        preview_row.setContentsMargins(0, 0, 0, 0)
-        preview_row.setSpacing(6)
-        preview_row.addWidget(QLabel("Current"))
-        preview_row.addWidget(self._preview)
-        preview_row.addWidget(self._value_label, 1)
-        layout.addLayout(preview_row)
-
-        presets_label = QLabel("Palette")
-        layout.addWidget(presets_label)
-
-        self._presets_layout = QGridLayout()
-        self._presets_layout.setContentsMargins(0, 0, 0, 0)
-        self._presets_layout.setHorizontalSpacing(4)
-        self._presets_layout.setVerticalSpacing(4)
-        layout.addLayout(self._presets_layout)
-        layout.addWidget(self._custom_button, 0, Qt.AlignLeft)
+        layout.setSpacing(4)
+        layout.addWidget(self._preview)
+        layout.addWidget(self._trigger_button)
+        layout.addStretch(1)
 
         self.set_preset_colors(self._preset_colors)
         self._refresh_preview()
@@ -104,12 +90,13 @@ class ColorSelector(QWidget):
         self._refresh_preview()
 
     def _rebuild_preset_buttons(self) -> None:
-        while self._presets_layout.count():
-            item = self._presets_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+        self._popup.clear()
         self._preset_buttons.clear()
+        palette_widget = QWidget(self._popup)
+        palette_layout = QGridLayout(palette_widget)
+        palette_layout.setContentsMargins(6, 6, 6, 6)
+        palette_layout.setHorizontalSpacing(4)
+        palette_layout.setVerticalSpacing(4)
 
         for index, color in enumerate(self._preset_colors):
             button = QToolButton()
@@ -118,24 +105,40 @@ class ColorSelector(QWidget):
             button.setFixedSize(22, 22)
             button.setToolTip(color)
             button.clicked.connect(
-                lambda checked=False, selected=color: self.set_color(selected)
+                lambda checked=False, selected=color: self._select_color_from_popup(selected)
             )
             self._apply_button_color(button, color)
-            self._presets_layout.addWidget(button, index // 4, index % 4)
+            palette_layout.addWidget(button, index // 4, index % 4)
             self._preset_buttons.append(button)
+
+        palette_action = QWidgetAction(self._popup)
+        palette_action.setDefaultWidget(palette_widget)
+        self._popup.addAction(palette_action)
+        self._popup.addSeparator()
+        custom_action = self._popup.addAction("Custom...")
+        custom_action.triggered.connect(self._choose_custom_color)
 
     def _refresh_preview(self) -> None:
         self._preview.setStyleSheet(
             f"background-color: {self._color}; border: 1px solid #666666;"
         )
-        self._value_label.setText(self._color)
+        self._trigger_button.setToolTip(self._color)
         for button, color in zip(self._preset_buttons, self._preset_colors):
             button.setChecked(color == self._color)
+
+    def _show_popup(self) -> None:
+        popup_pos = self.mapToGlobal(QPoint(0, self.height()))
+        self._popup.popup(popup_pos)
+
+    def _select_color_from_popup(self, color: str) -> None:
+        self.set_color(color)
+        self._popup.hide()
 
     def _choose_custom_color(self) -> None:
         selected = QColorDialog.getColor(QColor(self._color), self, "Select color")
         if selected.isValid():
             self.set_color(selected.name(QColor.NameFormat.HexRgb))
+        self._popup.hide()
 
     def _apply_button_color(self, button: QToolButton, color: str) -> None:
         button.setStyleSheet(

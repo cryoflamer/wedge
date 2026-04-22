@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from app.models.config import Config
 from app.services.parameter_parser import parse_real_expression
+from app.ui.color_selector import ColorSelector
 from app.ui.tooltips import apply_tooltip, tooltip_text
 
 
@@ -87,6 +88,7 @@ class ControlsPanel(QWidget):
     compute_lyapunov_requested = Signal()
     export_data_requested = Signal()
     trajectory_selected = Signal(int)
+    selected_trajectory_color_changed = Signal(str)
     selected_seed_apply_requested = Signal(float, float)
     trajectory_visibility_toggled = Signal(int)
     clear_selected_requested = Signal()
@@ -153,6 +155,7 @@ class ControlsPanel(QWidget):
         self._selected_seed_tau_edit = QLineEdit()
         self._selected_seed_wall_edit = QLineEdit()
         self._selected_seed_status = QLabel("")
+        self._trajectory_color_selector = ColorSelector()
         self._trajectory_wall_summary = QLabel("wall: -")
         self._trajectory_d_summary = QLabel("d0: -")
         self._trajectory_tau_summary = QLabel("τ0: -")
@@ -262,6 +265,10 @@ class ControlsPanel(QWidget):
         self._compute_lyapunov_button.clicked.connect(
             self.compute_lyapunov_requested.emit
         )
+        self._trajectory_color_selector.color_changed.connect(
+            self.selected_trajectory_color_changed.emit
+        )
+        self._trajectory_color_selector.setEnabled(False)
         self._sync_export_preset_state()
         self._trajectory_selector.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
@@ -293,6 +300,7 @@ class ControlsPanel(QWidget):
         seed_form.addRow("d", self._selected_seed_d_edit)
         seed_form.addRow("τ", self._selected_seed_tau_edit)
         seed_form.addRow("wall", self._selected_seed_wall_edit)
+        seed_form.addRow("color", self._trajectory_color_selector)
         layout.addLayout(seed_form)
         layout.addWidget(self._selected_seed_status)
 
@@ -893,6 +901,24 @@ class ControlsPanel(QWidget):
             self._trajectory_selector.setCurrentIndex(0)
         del selector_blocker
         self._sync_selector_tooltip()
+
+        selected_color = next(
+            (
+                color
+                for trajectory_id, _, _, color, _ in items
+                if trajectory_id == selected_trajectory_id
+            ),
+            None,
+        )
+        self.set_selected_trajectory_color(selected_color)
+
+    def set_selected_trajectory_color(self, color: str | None) -> None:
+        self._trajectory_color_selector.setEnabled(color is not None)
+        if color is None:
+            return
+        blocker = QSignalBlocker(self._trajectory_color_selector)
+        self._trajectory_color_selector.set_color(color)
+        del blocker
 
     def _color_icon(self, color: str, visible: bool) -> QIcon:
         pixmap = QPixmap(12, 12)

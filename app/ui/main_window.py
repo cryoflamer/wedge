@@ -324,6 +324,9 @@ class MainWindow(QMainWindow):
         )
         self.controls_panel.export_data_requested.connect(self._on_export_data)
         self.controls_panel.trajectory_selected.connect(self._on_trajectory_selected)
+        self.controls_panel.selected_trajectory_color_changed.connect(
+            self._on_selected_trajectory_color_changed
+        )
         self.controls_panel.selected_seed_apply_requested.connect(
             self._on_selected_seed_apply
         )
@@ -943,6 +946,21 @@ class MainWindow(QMainWindow):
             "Trajectory visibility toggled: id=%s visible=%s",
             trajectory_id,
             seed.visible,
+        )
+
+    def _on_selected_trajectory_color_changed(self, color: str) -> None:
+        if self._selected_trajectory_id is None:
+            return
+        seed = self._trajectory_seeds.get(self._selected_trajectory_id)
+        if seed is None or seed.color == color:
+            return
+        seed.color = color
+        self._autosave_session()
+        self.update_view()
+        logger.info(
+            "Trajectory color changed: id=%s color=%s",
+            self._selected_trajectory_id,
+            color,
         )
 
     def _on_clear_selected_trajectory(self) -> None:
