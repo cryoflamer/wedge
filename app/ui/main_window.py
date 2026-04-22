@@ -59,9 +59,9 @@ logger = logging.getLogger(__name__)
 
 
 class SceneItemCreateDialog(QDialog):
-    def __init__(self, item_kind: str, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle(f"Add {item_kind.title()}")
+        self.setWindowTitle("Add Item")
         self._name_edit = QLineEdit()
         self._alias_edit = QLineEdit()
 
@@ -88,7 +88,7 @@ class MainWindow(QMainWindow):
         self._window_position_restored = False
         self._next_trajectory_id = 1
         self._selected_trajectory_id: int | None = None
-        self._selected_region_name: str | None = None
+        self._selected_scene_item_name: str | None = None
         self._scene_dirty = False
         self._angle_units = "rad"
         self._base_angle_constraint_name = config.view.active_angle_constraint
@@ -386,7 +386,6 @@ class MainWindow(QMainWindow):
         self.controls_panel.selected_trajectory_color_changed.connect(
             self._on_selected_trajectory_color_changed
         )
-        self.controls_panel.boundary_selected.connect(self._on_boundary_selected)
         self.controls_panel.selected_boundary_color_changed.connect(
             self._on_selected_boundary_color_changed
         )
@@ -399,20 +398,14 @@ class MainWindow(QMainWindow):
         self.controls_panel.save_scene_requested.connect(
             self._on_save_scene
         )
-        self.controls_panel.region_boundary_item_selected.connect(
-            self._on_region_boundary_item_selected
+        self.controls_panel.scene_item_selected.connect(
+            self._on_scene_item_selected
         )
-        self.controls_panel.apply_boundary_editor_requested.connect(
-            self._on_apply_boundary_editor
+        self.controls_panel.apply_scene_item_editor_requested.connect(
+            self._on_apply_scene_item_editor
         )
-        self.controls_panel.apply_region_editor_requested.connect(
-            self._on_apply_region_editor
-        )
-        self.controls_panel.add_boundary_requested.connect(
-            self._on_add_boundary_requested
-        )
-        self.controls_panel.add_region_requested.connect(
-            self._on_add_region_requested
+        self.controls_panel.add_scene_item_requested.connect(
+            self._on_add_scene_item_requested
         )
         self.controls_panel.delete_region_boundary_requested.connect(
             self._on_delete_region_boundary_requested
@@ -505,34 +498,31 @@ class MainWindow(QMainWindow):
             for item in sorted(self._config.regions, key=lambda entry: entry.priority)
             if item.visible and is_boundary_scene_item(item)
         ]
-        if not hasattr(self, "_selected_boundary_name"):
-            self._selected_boundary_name = boundary_items[0][0] if boundary_items else None
-        elif self._selected_boundary_name not in {
-            name for name, _, _, _, _ in boundary_items
+        if self._selected_scene_item_name not in {
+            item.name for item in self._config.regions
         }:
-            self._selected_boundary_name = boundary_items[0][0] if boundary_items else None
+            self._selected_scene_item_name = (
+                self._config.regions[0].name if self._config.regions else None
+            )
+        selected_boundary_name = self._selected_boundary_name()
         self.controls_panel.set_boundary_items(
             boundary_items,
-            self._selected_boundary_name,
+            selected_boundary_name,
         )
-        self.controls_panel.set_region_boundary_items(
+        self.controls_panel.set_scene_item_items(
             [
                 (
                     item.name,
                     item.display_text,
-                    "boundary" if is_boundary_scene_item(item) else "region",
+                    item.relation or "",
                 )
                 for item in sorted(self._config.regions, key=lambda entry: entry.priority)
-                if item.visible
             ],
-            getattr(self, "_selected_boundary_name", None),
+            self._selected_scene_item_name,
         )
-        self.controls_panel.set_boundary_editor_values(
-            self._selected_boundary_editor_values(),
+        self.controls_panel.set_scene_item_editor_values(
+            self._selected_scene_item_editor_values(),
             sync_sections=False,
-        )
-        self.controls_panel.set_region_editor_values(
-            self._selected_region_editor_values()
         )
         self.angle_panel.set_angle_units(self._angle_units)
         self.angle_panel.set_regions(self._config.regions)
@@ -1108,26 +1098,10 @@ class MainWindow(QMainWindow):
             color,
         )
 
-    def _on_boundary_selected(self, boundary_name: str) -> None:
-        self._selected_boundary_name = boundary_name
-        self.controls_panel.set_boundary_editor_values(
-            self._selected_boundary_editor_values()
-        )
-
-    def _on_region_boundary_item_selected(self, item_name: str, item_type: str) -> None:
-        if item_type != "boundary":
-            self.controls_panel.set_boundary_editor_values(None)
-        else:
-            self._selected_boundary_name = item_name
-            self.controls_panel.set_boundary_editor_values(
-                self._selected_boundary_editor_values()
-            )
-        if item_type != "region":
-            self.controls_panel.set_region_editor_values(None)
-            return
-        self._selected_region_name = item_name
-        self.controls_panel.set_region_editor_values(
-            self._selected_region_editor_values(item_name)
+    def _on_scene_item_selected(self, item_name: str) -> None:
+        self._selected_scene_item_name = item_name
+        self.controls_panel.set_scene_item_editor_values(
+            self._selected_scene_item_editor_values()
         )
 
     def _on_selected_boundary_color_changed(self, color: str) -> None:
@@ -1183,8 +1157,29 @@ class MainWindow(QMainWindow):
         self._clear_scene_dirty()
         logger.info("Scene saved to config: path=%s", saved_path)
 
+    def _selected_scene_item(self) -> SceneItemDescription | None:
+        if self._selected_scene_item_name is None:
+            return None
+        return next(
+            (
+                item
+                for item in self._config.regions
+                if item.name == self._selected_scene_item_name
+            ),
+            None,
+        )
+
+    def _selected_boundary_name(self) -> str | None:
+        item = self._selected_scene_item()
+        if item is not None and is_boundary_scene_item(item):
+            return item.name
+        return next(
+            (item.name for item in self._config.regions if is_boundary_scene_item(item)),
+            None,
+        )
+
     def _selected_boundary_region(self):
-        selected_name = getattr(self, "_selected_boundary_name", None)
+        selected_name = self._selected_boundary_name()
         if selected_name is None:
             return None
         return next(
@@ -1196,59 +1191,33 @@ class MainWindow(QMainWindow):
             None,
         )
 
-    def _selected_boundary_editor_values(
+    def _selected_scene_item_editor_values(
         self,
-    ) -> tuple[str, str, str, str, bool, int, str, float, str] | None:
-        boundary = self._selected_boundary_region()
-        if boundary is None:
+    ) -> tuple[str, str, str, str, str | None, bool, int, str, str, float, str] | None:
+        item = self._selected_scene_item()
+        if item is None:
             return None
         return (
-            boundary.name,
-            boundary.display_text,
-            boundary.legend_text,
-            boundary.expression,
-            boundary.visible,
-            boundary.priority,
-            boundary.style.border,
-            boundary.style.line_width,
-            boundary.style.line_style,
+            item.alias,
+            item.display_text,
+            item.legend_text,
+            item.expression,
+            item.relation,
+            item.visible,
+            item.priority,
+            item.style.fill,
+            item.style.border,
+            item.style.line_width,
+            item.style.line_style,
         )
 
-    def _selected_region_description(self, name: str | None):
-        if name is None:
-            return None
-        return next(
-            (
-                item
-                for item in self._config.regions
-                if item.name == name and not is_boundary_scene_item(item)
-            ),
-            None,
-        )
-
-    def _selected_region_editor_values(
-        self,
-        item_name: str | None = None,
-    ) -> tuple[str, str, str, bool, int, str, str] | None:
-        if item_name is None:
-            item_name = self._selected_region_name
-        region = self._selected_region_description(item_name)
-        if region is None:
-            return None
-        return (
-            region.name,
-            region.display_text,
-            region.expression,
-            region.visible,
-            region.priority,
-            region.style.fill,
-            region.style.border,
-        )
-
-    def _refresh_region_boundary_views(
+    def _refresh_scene_item_views(
         self,
         selected_name: str | None = None,
     ) -> None:
+        if selected_name is not None:
+            self._selected_scene_item_name = selected_name
+        selected_boundary_name = self._selected_boundary_name()
         self.controls_panel.set_boundary_items(
             [
                 (
@@ -1261,28 +1230,28 @@ class MainWindow(QMainWindow):
                 for item in sorted(self._config.regions, key=lambda entry: entry.priority)
                 if item.visible and is_boundary_scene_item(item)
             ],
-            self._selected_boundary_name,
+            selected_boundary_name,
         )
-        self.controls_panel.set_region_boundary_items(
+        self.controls_panel.set_scene_item_items(
             [
                 (
                     item.name,
                     item.display_text,
-                    "boundary" if is_boundary_scene_item(item) else "region",
+                    item.relation or "",
                 )
                 for item in sorted(self._config.regions, key=lambda entry: entry.priority)
-                if item.visible
             ],
-            selected_name,
+            self._selected_scene_item_name,
+        )
+        self.controls_panel.set_scene_item_editor_values(
+            self._selected_scene_item_editor_values(),
+            sync_sections=False,
         )
         self.angle_panel.set_regions(self._config.regions)
         self.controls_panel.set_scene_dirty(self._scene_dirty)
 
-    def _create_scene_item_dialog(
-        self,
-        item_kind: str,
-    ) -> tuple[str, str] | None:
-        dialog = SceneItemCreateDialog(item_kind, self)
+    def _create_scene_item_dialog(self) -> tuple[str, str] | None:
+        dialog = SceneItemCreateDialog(self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return None
         name, alias = dialog.values()
@@ -1292,53 +1261,19 @@ class MainWindow(QMainWindow):
             alias = name
         return name, alias
 
-    def _on_add_boundary_requested(self) -> None:
-        values = self._create_scene_item_dialog("boundary")
+    def _on_add_scene_item_requested(self) -> None:
+        values = self._create_scene_item_dialog()
         if values is None:
             return
         name, alias = values
         self._config.regions.append(
             SceneItemDescription(
                 name=name,
-                alias=name,
+                alias=alias,
                 display_text=alias,
                 legend_text=alias,
-                expression="alpha - beta",
+                expression="0",
                 relation="=",
-                visible=True,
-                priority=0,
-                style=RegionStyle(
-                    fill="#cccccc",
-                    alpha=0.0,
-                    hatch="",
-                    border="#333333",
-                    line_style="solid",
-                    line_width=1.0,
-                ),
-            )
-        )
-        self._selected_boundary_name = name
-        self._selected_region_name = None
-        self._refresh_region_boundary_views(name)
-        self.controls_panel.set_boundary_editor_values(
-            self._selected_boundary_editor_values()
-        )
-        self._mark_scene_dirty()
-        logger.info("Boundary created: name=%s alias=%s", name, alias)
-
-    def _on_add_region_requested(self) -> None:
-        values = self._create_scene_item_dialog("region")
-        if values is None:
-            return
-        name, alias = values
-        self._config.regions.append(
-            SceneItemDescription(
-                name=name,
-                alias=name,
-                display_text=alias,
-                legend_text=alias,
-                expression="False",
-                relation=None,
                 visible=True,
                 priority=0,
                 style=RegionStyle(
@@ -1349,16 +1284,12 @@ class MainWindow(QMainWindow):
                     line_style="solid",
                     line_width=1.0,
                 ),
-                compatibility_predicate=True,
             )
         )
-        self._selected_region_name = name
-        self._refresh_region_boundary_views(name)
-        self.controls_panel.set_region_editor_values(
-            self._selected_region_editor_values(name)
-        )
+        self._selected_scene_item_name = name
+        self._refresh_scene_item_views(name)
         self._mark_scene_dirty()
-        logger.info("Region created: name=%s alias=%s", name, alias)
+        logger.info("Scene item created: name=%s alias=%s", name, alias)
 
     def _on_delete_region_boundary_requested(self) -> None:
         selected_name = self.controls_panel.current_region_boundary_item_name()
@@ -1394,128 +1325,69 @@ class MainWindow(QMainWindow):
             next_index = min(selected_index, len(remaining_items) - 1)
             next_name = remaining_items[next_index].name
 
-        if is_boundary_scene_item(item):
-            self._selected_boundary_name = (
-                next(
-                    (entry.name for entry in remaining_items if is_boundary_scene_item(entry)),
-                    None,
-                )
-            )
-        if not is_boundary_scene_item(item):
-            self._selected_region_name = (
-                next(
-                    (entry.name for entry in remaining_items if not is_boundary_scene_item(entry)),
-                    None,
-                )
-            )
-
-        self._refresh_region_boundary_views(next_name)
+        self._selected_scene_item_name = next_name
+        self._refresh_scene_item_views(next_name)
         if next_name is None:
-            self.controls_panel.set_boundary_editor_values(None)
-            self.controls_panel.set_region_editor_values(None)
+            self.controls_panel.set_scene_item_editor_values(None)
         self._mark_scene_dirty()
         logger.info("Scene item deleted: name=%s type=%s", item.name, item_type)
 
-    def _on_apply_boundary_editor(self, payload: object) -> None:
+    def _on_apply_scene_item_editor(self, payload: object) -> None:
         if not isinstance(payload, dict):
             return
-        boundary_section_expanded, region_section_expanded = (
-            self.controls_panel.editor_section_state()
-        )
-        boundary = self._selected_boundary_region()
-        if boundary is None:
+        section_expanded = self.controls_panel.editor_section_state()
+        item = self._selected_scene_item()
+        if item is None:
             return
-        previous_name = boundary.name
-        boundary.name = str(payload.get("name", boundary.name)).strip() or boundary.name
-        boundary.display_text = (
-            str(payload.get("display_text", boundary.display_text)).strip()
-            or boundary.display_text
+        previous_name = item.name
+        item.alias = str(payload.get("alias", item.alias)).strip() or item.alias
+        item.display_text = (
+            str(payload.get("display_text", item.display_text)).strip()
+            or item.display_text
         )
-        boundary.legend_text = (
-            str(payload.get("legend_text", boundary.legend_text)).strip()
-            or boundary.legend_text
+        item.legend_text = (
+            str(payload.get("legend_text", item.legend_text)).strip()
+            or item.legend_text
         )
-        boundary.expression = str(payload.get("expression", boundary.expression)).strip()
-        boundary.visible = bool(payload.get("visible", boundary.visible))
+        item.expression = str(payload.get("expression", item.expression)).strip()
+        item.relation = str(payload.get("relation", item.relation or "=")).strip() or "="
+        item.visible = bool(payload.get("visible", item.visible))
         try:
-            boundary.priority = int(payload.get("priority", boundary.priority))
+            item.priority = int(payload.get("priority", item.priority))
         except (TypeError, ValueError):
             pass
-        boundary.style.border = (
-            str(payload.get("color", boundary.style.border)).strip()
-            or boundary.style.border
+        item.style.fill = (
+            str(payload.get("fill", item.style.fill)).strip()
+            or item.style.fill
+        )
+        item.style.border = (
+            str(payload.get("border", item.style.border)).strip()
+            or item.style.border
         )
         try:
-            boundary.style.line_width = float(
-                payload.get("line_width", boundary.style.line_width)
+            item.style.line_width = float(
+                payload.get("line_width", item.style.line_width)
             )
         except (TypeError, ValueError):
             pass
-        boundary.style.line_style = "dashed" if (
-            str(payload.get("line_style", boundary.style.line_style)).strip().lower()
+        item.style.line_style = "dashed" if (
+            str(payload.get("line_style", item.style.line_style)).strip().lower()
             == "dashed"
         ) else "solid"
-        self._selected_boundary_name = boundary.name
-        self._refresh_region_boundary_views(self._selected_boundary_name)
-        self.controls_panel.set_boundary_editor_values(
-            self._selected_boundary_editor_values(),
+        item.compatibility_predicate = False
+        self._selected_scene_item_name = item.name
+        self._refresh_scene_item_views(self._selected_scene_item_name)
+        self.controls_panel.set_scene_item_editor_values(
+            self._selected_scene_item_editor_values(),
             sync_sections=False,
         )
-        self.controls_panel.restore_editor_section_state(
-            boundary_section_expanded,
-            region_section_expanded,
-        )
+        self.controls_panel.restore_editor_section_state(section_expanded)
         self._mark_scene_dirty()
         logger.info(
-            "Boundary editor applied: previous_name=%s name=%s",
+            "Scene item editor applied: previous_name=%s name=%s relation=%s",
             previous_name,
-            boundary.name,
-        )
-
-    def _on_apply_region_editor(self, payload: object) -> None:
-        if not isinstance(payload, dict):
-            return
-        boundary_section_expanded, region_section_expanded = (
-            self.controls_panel.editor_section_state()
-        )
-        region = self._selected_region_description(self._selected_region_name)
-        if region is None:
-            return
-        previous_name = region.name
-        region.name = str(payload.get("name", region.name)).strip() or region.name
-        region.display_text = (
-            str(payload.get("display_text", region.display_text)).strip()
-            or region.display_text
-        )
-        region.expression = str(payload.get("expression", region.expression)).strip()
-        region.visible = bool(payload.get("visible", region.visible))
-        try:
-            region.priority = int(payload.get("priority", region.priority))
-        except (TypeError, ValueError):
-            pass
-        region.style.fill = (
-            str(payload.get("fill", region.style.fill)).strip()
-            or region.style.fill
-        )
-        region.style.border = (
-            str(payload.get("border", region.style.border)).strip()
-            or region.style.border
-        )
-        self._selected_region_name = region.name
-        self._refresh_region_boundary_views(region.name)
-        self.controls_panel.set_region_editor_values(
-            self._selected_region_editor_values(region.name),
-            sync_sections=False,
-        )
-        self.controls_panel.restore_editor_section_state(
-            boundary_section_expanded,
-            region_section_expanded,
-        )
-        self._mark_scene_dirty()
-        logger.info(
-            "Region editor applied: previous_name=%s name=%s",
-            previous_name,
-            region.name,
+            item.name,
+            item.relation,
         )
 
     def _refresh_boundary_style_preview(self) -> None:
