@@ -87,6 +87,7 @@ class MainWindow(QMainWindow):
         self._next_trajectory_id = 1
         self._selected_trajectory_id: int | None = None
         self._selected_region_name: str | None = None
+        self._scene_dirty = False
         self._angle_units = "rad"
         self._base_angle_constraint_name = config.view.active_angle_constraint
         self._active_angle_constraint_name = config.view.active_angle_constraint
@@ -214,7 +215,6 @@ class MainWindow(QMainWindow):
         save_runtime_config(
             self._config,
             self._config_path,
-            persist_boundary_styles=True,
         )
         super().closeEvent(event)
 
@@ -371,8 +371,8 @@ class MainWindow(QMainWindow):
         self.controls_panel.selected_boundary_line_style_changed.connect(
             self._on_selected_boundary_line_style_changed
         )
-        self.controls_panel.save_boundary_styling_requested.connect(
-            self._on_save_boundary_styling
+        self.controls_panel.save_scene_requested.connect(
+            self._on_save_scene
         )
         self.controls_panel.region_boundary_item_selected.connect(
             self._on_region_boundary_item_selected
@@ -1108,6 +1108,7 @@ class MainWindow(QMainWindow):
             return
         boundary.style.border = color
         self._refresh_boundary_style_preview()
+        self._mark_scene_dirty()
         logger.info("Boundary color changed: name=%s color=%s", boundary.name, color)
 
     def _on_selected_boundary_line_width_changed(self, line_width: float) -> None:
@@ -1116,6 +1117,7 @@ class MainWindow(QMainWindow):
             return
         boundary.style.line_width = line_width
         self._refresh_boundary_style_preview()
+        self._mark_scene_dirty()
         logger.info(
             "Boundary line width changed: name=%s line_width=%s",
             boundary.name,
@@ -1129,19 +1131,29 @@ class MainWindow(QMainWindow):
             return
         boundary.style.line_style = normalized
         self._refresh_boundary_style_preview()
+        self._mark_scene_dirty()
         logger.info(
             "Boundary line style changed: name=%s line_style=%s",
             boundary.name,
             normalized,
         )
 
-    def _on_save_boundary_styling(self) -> None:
+    def _mark_scene_dirty(self) -> None:
+        self._scene_dirty = True
+        self.controls_panel.set_scene_dirty(True)
+
+    def _clear_scene_dirty(self) -> None:
+        self._scene_dirty = False
+        self.controls_panel.set_scene_dirty(False)
+
+    def _on_save_scene(self) -> None:
         saved_path = save_runtime_config(
             self._config,
             self._config_path,
-            persist_boundary_styles=True,
+            persist_scene_items=True,
         )
-        logger.info("Boundary styling saved to config: path=%s", saved_path)
+        self._clear_scene_dirty()
+        logger.info("Scene saved to config: path=%s", saved_path)
 
     def _selected_boundary_region(self):
         selected_name = getattr(self, "_selected_boundary_name", None)
@@ -1236,6 +1248,7 @@ class MainWindow(QMainWindow):
             selected_name,
         )
         self.angle_panel.set_regions(self._config.regions)
+        self.controls_panel.set_scene_dirty(self._scene_dirty)
 
     def _create_scene_item_dialog(
         self,
@@ -1282,6 +1295,7 @@ class MainWindow(QMainWindow):
         self.controls_panel.set_boundary_editor_values(
             self._selected_boundary_editor_values()
         )
+        self._mark_scene_dirty()
         logger.info("Boundary created: name=%s alias=%s", name, alias)
 
     def _on_add_region_requested(self) -> None:
@@ -1314,6 +1328,7 @@ class MainWindow(QMainWindow):
         self.controls_panel.set_region_editor_values(
             self._selected_region_editor_values(name)
         )
+        self._mark_scene_dirty()
         logger.info("Region created: name=%s alias=%s", name, alias)
 
     def _on_apply_boundary_editor(self, payload: object) -> None:
@@ -1365,6 +1380,7 @@ class MainWindow(QMainWindow):
             boundary_section_expanded,
             region_section_expanded,
         )
+        self._mark_scene_dirty()
         logger.info(
             "Boundary editor applied: previous_name=%s name=%s",
             previous_name,
@@ -1410,6 +1426,7 @@ class MainWindow(QMainWindow):
             boundary_section_expanded,
             region_section_expanded,
         )
+        self._mark_scene_dirty()
         logger.info(
             "Region editor applied: previous_name=%s name=%s",
             previous_name,
