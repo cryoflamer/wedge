@@ -360,6 +360,7 @@ class ControlsPanel(QWidget):
         )
         self._set_compact_button_policy(self._save_boundary_styling_button)
         self._scene_dirty_label.setStyleSheet("color: #666;")
+        self._save_boundary_styling_button.setEnabled(False)
         self._set_compact_button_policy(self._boundary_editor_apply_button)
         self._set_compact_button_policy(self._add_boundary_button)
         self._set_compact_button_policy(self._add_region_button)
@@ -646,10 +647,6 @@ class ControlsPanel(QWidget):
         boundary_styling_form.addRow("Line width", self._boundary_line_width_combo)
         boundary_styling_form.addRow("Line style", self._boundary_line_style_combo)
         boundary_styling_section.content_layout().addLayout(boundary_styling_form)
-        boundary_styling_section.content_layout().addWidget(self._scene_dirty_label)
-        boundary_styling_section.content_layout().addWidget(
-            self._save_boundary_styling_button
-        )
         parameter_view_layout.addWidget(boundary_styling_section)
         sections.append(parameter_view_section)
 
@@ -714,6 +711,13 @@ class ControlsPanel(QWidget):
         region_boundary_actions.setColumnStretch(0, 1)
         region_boundary_actions.setColumnStretch(1, 1)
         region_boundary_layout.addLayout(region_boundary_actions)
+        region_boundary_save_row = QHBoxLayout()
+        region_boundary_save_row.setContentsMargins(0, 0, 0, 0)
+        region_boundary_save_row.setSpacing(6)
+        region_boundary_save_row.addWidget(self._scene_dirty_label)
+        region_boundary_save_row.addStretch(1)
+        region_boundary_save_row.addWidget(self._save_boundary_styling_button)
+        region_boundary_layout.addLayout(region_boundary_save_row)
         sections.append(region_boundary_section)
         self._set_boundary_editor_enabled(False)
         self._set_region_editor_enabled(False)
@@ -1519,6 +1523,7 @@ class ControlsPanel(QWidget):
         self._scene_dirty_label.setStyleSheet(
             "color: #b00020;" if dirty else "color: #666;"
         )
+        self._save_boundary_styling_button.setEnabled(dirty)
 
     def _color_icon(self, color: str, visible: bool) -> QIcon:
         pixmap = QPixmap(12, 12)
