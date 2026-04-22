@@ -1212,7 +1212,7 @@ class ControlsPanel(QWidget):
         region: tuple[str, str, str, bool, int, str, str] | None,
     ) -> None:
         if region is None:
-            self._show_region_editor_placeholder("Select a region to edit.")
+            self._show_region_editor_placeholder(self._region_editor_empty_message())
             return
         (
             name,
@@ -1294,7 +1294,7 @@ class ControlsPanel(QWidget):
         self._region_boundary_selection_label.clear()
         self._region_boundary_selection_label.setVisible(False)
         self._show_boundary_editor_placeholder("Select a boundary to edit.")
-        self._show_region_editor_placeholder("Select a region to edit.")
+        self._show_region_editor_placeholder(self._region_editor_empty_message())
 
     def _show_boundary_editor_placeholder(self, text: str) -> None:
         self._boundary_editor_placeholder.setText(text)
@@ -1313,6 +1313,15 @@ class ControlsPanel(QWidget):
         self._set_region_editor_enabled(False)
         if self._region_editor_section is not None:
             self._region_editor_section.set_expanded(False)
+
+    def _region_editor_empty_message(self) -> str:
+        has_regions = any(
+            item_type.strip().lower() == "region"
+            for _, _, item_type in getattr(self, "_region_boundary_items", [])
+        )
+        if not has_regions:
+            return "No regions defined. Click 'Add Region' to create one."
+        return "Select a region from the list"
 
     def _set_boundary_editor_enabled(self, enabled: bool) -> None:
         for widget in (
