@@ -33,8 +33,9 @@ from app.core.point_constraints import ActivePointConstraint, project_point_to_c
 from app.models.config import Config
 from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
-from app.models.region import RegionDescription, RegionStyle
+from app.models.region import RegionStyle
 from app.models.session import Session
+from app.models.scene_item import SceneItemDescription, is_boundary_scene_item
 from app.models.trajectory import TrajectorySeed
 from app.services.config_loader import save_runtime_config
 from app.services.background_jobs import (
@@ -502,7 +503,7 @@ class MainWindow(QMainWindow):
                 item.style.line_style,
             )
             for item in sorted(self._config.regions, key=lambda entry: entry.priority)
-            if item.visible and item.region_type == "boundary"
+            if item.visible and is_boundary_scene_item(item)
         ]
         if not hasattr(self, "_selected_boundary_name"):
             self._selected_boundary_name = boundary_items[0][0] if boundary_items else None
@@ -519,7 +520,7 @@ class MainWindow(QMainWindow):
                 (
                     item.name,
                     item.display_text,
-                    "boundary" if item.region_type == "boundary" else "region",
+                    "boundary" if is_boundary_scene_item(item) else "region",
                 )
                 for item in sorted(self._config.regions, key=lambda entry: entry.priority)
                 if item.visible
@@ -1190,7 +1191,7 @@ class MainWindow(QMainWindow):
             (
                 item
                 for item in self._config.regions
-                if item.name == selected_name and item.region_type == "boundary"
+                if item.name == selected_name and is_boundary_scene_item(item)
             ),
             None,
         )
@@ -1220,7 +1221,7 @@ class MainWindow(QMainWindow):
             (
                 item
                 for item in self._config.regions
-                if item.name == name and item.region_type != "boundary"
+                if item.name == name and not is_boundary_scene_item(item)
             ),
             None,
         )
@@ -1258,7 +1259,7 @@ class MainWindow(QMainWindow):
                     item.style.line_style,
                 )
                 for item in sorted(self._config.regions, key=lambda entry: entry.priority)
-                if item.visible and item.region_type == "boundary"
+                if item.visible and is_boundary_scene_item(item)
             ],
             self._selected_boundary_name,
         )
@@ -1267,7 +1268,7 @@ class MainWindow(QMainWindow):
                 (
                     item.name,
                     item.display_text,
-                    "boundary" if item.region_type == "boundary" else "region",
+                    "boundary" if is_boundary_scene_item(item) else "region",
                 )
                 for item in sorted(self._config.regions, key=lambda entry: entry.priority)
                 if item.visible
@@ -1297,13 +1298,15 @@ class MainWindow(QMainWindow):
             return
         name, alias = values
         self._config.regions.append(
-            RegionDescription(
+            SceneItemDescription(
                 name=name,
+                alias=name,
                 display_text=alias,
                 legend_text=alias,
-                region_type="boundary",
                 expression="alpha - beta",
                 relation="=",
+                visible=True,
+                priority=0,
                 style=RegionStyle(
                     fill="#cccccc",
                     alpha=0.0,
@@ -1312,8 +1315,6 @@ class MainWindow(QMainWindow):
                     line_style="solid",
                     line_width=1.0,
                 ),
-                priority=0,
-                visible=True,
             )
         )
         self._selected_boundary_name = name
@@ -1331,13 +1332,15 @@ class MainWindow(QMainWindow):
             return
         name, alias = values
         self._config.regions.append(
-            RegionDescription(
+            SceneItemDescription(
                 name=name,
+                alias=name,
                 display_text=alias,
                 legend_text=alias,
-                region_type="predicate",
                 expression="False",
                 relation=None,
+                visible=True,
+                priority=0,
                 style=RegionStyle(
                     fill="#cccccc",
                     alpha=0.3,
@@ -1346,8 +1349,7 @@ class MainWindow(QMainWindow):
                     line_style="solid",
                     line_width=1.0,
                 ),
-                priority=0,
-                visible=True,
+                compatibility_predicate=True,
             )
         )
         self._selected_region_name = name
@@ -1373,7 +1375,7 @@ class MainWindow(QMainWindow):
         if selected_index < 0:
             return
         item = self._config.regions[selected_index]
-        item_type = "boundary" if item.region_type == "boundary" else "region"
+        item_type = "boundary" if is_boundary_scene_item(item) else "region"
         item_label = item.display_text or item.name
         answer = QMessageBox.question(
             self,
@@ -1392,17 +1394,17 @@ class MainWindow(QMainWindow):
             next_index = min(selected_index, len(remaining_items) - 1)
             next_name = remaining_items[next_index].name
 
-        if item.region_type == "boundary":
+        if is_boundary_scene_item(item):
             self._selected_boundary_name = (
                 next(
-                    (entry.name for entry in remaining_items if entry.region_type == "boundary"),
+                    (entry.name for entry in remaining_items if is_boundary_scene_item(entry)),
                     None,
                 )
             )
-        if item.region_type != "boundary":
+        if not is_boundary_scene_item(item):
             self._selected_region_name = (
                 next(
-                    (entry.name for entry in remaining_items if entry.region_type != "boundary"),
+                    (entry.name for entry in remaining_items if not is_boundary_scene_item(entry)),
                     None,
                 )
             )

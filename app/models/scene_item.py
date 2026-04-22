@@ -18,6 +18,7 @@ class SceneItemDescription:
     visible: bool
     priority: int
     style: RegionStyle
+    compatibility_predicate: bool = False
 
 
 def scene_item_from_region(region: RegionDescription) -> SceneItemDescription:
@@ -46,6 +47,7 @@ def scene_item_from_region(region: RegionDescription) -> SceneItemDescription:
             line_style=region.style.line_style,
             line_width=region.style.line_width,
         ),
+        compatibility_predicate=region.region_type == "predicate",
     )
 
 
@@ -53,3 +55,7 @@ def scene_items_from_regions(
     regions: list[RegionDescription],
 ) -> list[SceneItemDescription]:
     return [scene_item_from_region(region) for region in regions]
+
+
+def is_boundary_scene_item(item: SceneItemDescription) -> bool:
+    return item.relation == "=" and not item.compatibility_predicate

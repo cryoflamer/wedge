@@ -3,8 +3,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from app.core.region_eval import evaluate_boundary_value
-from app.models.region import RegionDescription
+from app.core.region_eval import evaluate_scene_item_value
+from app.models.scene_item import SceneItemDescription
 
 
 @dataclass(frozen=True)
@@ -61,7 +61,7 @@ def project_point_to_boundary(
 
 
 def build_boundary_segments(
-    region: RegionDescription,
+    item: SceneItemDescription,
     is_inside_domain,
     alpha_steps: int = 160,
     beta_steps: int = 320,
@@ -82,7 +82,11 @@ def build_boundary_segments(
             if not is_inside_domain(alpha, beta):
                 row.append(None)
                 continue
-            row.append(evaluate_boundary_value(region, alpha, beta))
+            value = evaluate_scene_item_value(item, alpha, beta)
+            if not isinstance(value, (int, float)) or not math.isfinite(value):
+                row.append(None)
+                continue
+            row.append(float(value))
         value_grid.append(row)
 
     segments: list[BoundarySegment] = []
@@ -125,7 +129,7 @@ def build_boundary_segments(
                 center_alpha = 0.5 * (alpha0 + alpha1)
                 center_beta = 0.5 * (beta0 + beta1)
                 center_value = evaluate_boundary_value(
-                    region,
+                    item,
                     center_alpha,
                     center_beta,
                 )
@@ -143,6 +147,17 @@ def build_boundary_segments(
                     )
 
     return segments
+
+
+def evaluate_boundary_value(
+    item: SceneItemDescription,
+    alpha: float,
+    beta: float,
+) -> float | None:
+    value = evaluate_scene_item_value(item, alpha, beta)
+    if not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    return float(value)
 
 
 def _project_point_to_segment(

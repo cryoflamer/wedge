@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.models.constraint import ConstraintDescription
-from app.models.region import RegionDescription
+from app.models.scene_item import SceneItemDescription
 
 
 @dataclass
@@ -120,5 +120,5 @@ class Config:
     background: BackgroundConfig = field(default_factory=BackgroundConfig)
     window: WindowConfig = field(default_factory=WindowConfig)
     autosave: AutosaveConfig = field(default_factory=AutosaveConfig)
-    regions: list[RegionDescription] = field(default_factory=list)
+    regions: list[SceneItemDescription] = field(default_factory=list)
     constraints: list[ConstraintDescription] = field(default_factory=list)
