@@ -108,7 +108,7 @@ class ControlsPanel(QWidget):
         self._beta_edit = QLineEdit()
         self._n_phase_edit = QLineEdit()
         self._n_geom_edit = QLineEdit()
-        self._fixed_domain_checkbox = QCheckBox("Fixed domain (disable for zoom/pan)")
+        self._fixed_domain_checkbox = QCheckBox("Fixed domain")
         self._constraint_mode_combo = QComboBox()
         self._constraint_label = QLabel("Constraint")
         self._constraint_combo = QComboBox()
@@ -287,7 +287,7 @@ class ControlsPanel(QWidget):
         actions_grid.setHorizontalSpacing(6)
         actions_grid.setVerticalSpacing(4)
 
-        toggle_button = QPushButton("Hide/Show")
+        toggle_button = QPushButton("Toggle")
         toggle_button.clicked.connect(self._toggle_current_visibility)
         apply_tooltip(toggle_button, "toggle_visibility")
         actions_grid.addWidget(toggle_button, 0, 0)
@@ -300,17 +300,17 @@ class ControlsPanel(QWidget):
         add_button = QPushButton("Add")
         add_button.clicked.connect(self._expand_add_section)
         apply_tooltip(add_button, "add_seed_shortcut")
-        actions_grid.addWidget(add_button, 0, 2)
+        actions_grid.addWidget(add_button, 1, 0)
 
         lyapunov_button = QPushButton("Lyapunov")
         lyapunov_button.clicked.connect(self.compute_lyapunov_requested.emit)
         apply_tooltip(lyapunov_button, "compute_lyapunov")
-        actions_grid.addWidget(lyapunov_button, 1, 0)
+        actions_grid.addWidget(lyapunov_button, 1, 1)
 
         clear_all_button = QPushButton("Clear all")
         clear_all_button.clicked.connect(self.clear_all_requested.emit)
         apply_tooltip(clear_all_button, "clear_all")
-        actions_grid.addWidget(clear_all_button, 1, 1)
+        actions_grid.addWidget(clear_all_button, 2, 0, 1, 2)
 
         for button in (
             toggle_button,
@@ -322,7 +322,6 @@ class ControlsPanel(QWidget):
             self._set_compact_button_policy(button)
         actions_grid.setColumnStretch(0, 1)
         actions_grid.setColumnStretch(1, 1)
-        actions_grid.setColumnStretch(2, 1)
 
         layout.addLayout(actions_grid)
 
@@ -346,10 +345,6 @@ class ControlsPanel(QWidget):
         outer_layout = QVBoxLayout(box)
         outer_layout.setContentsMargins(8, 8, 8, 8)
         outer_layout.setSpacing(6)
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(4)
-
         left_layout = QFormLayout()
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
@@ -362,30 +357,14 @@ class ControlsPanel(QWidget):
         left_layout.addRow("N_phase", self._n_phase_edit)
         left_layout.addRow("N_geom", self._n_geom_edit)
 
-        right_layout = QVBoxLayout()
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(4)
-        right_layout.addWidget(self._fixed_domain_checkbox)
-        right_layout.addWidget(self._show_seed_markers_checkbox)
-        right_layout.addWidget(self._show_stationary_point_checkbox)
-        right_layout.addWidget(self._show_regions_checkbox)
-        right_layout.addWidget(self._show_region_labels_checkbox)
-        right_layout.addWidget(self._show_region_legend_checkbox)
-        right_layout.addWidget(self._show_branch_markers_checkbox)
-        right_layout.addWidget(self._show_heatmap_checkbox)
-        right_layout.addStretch(1)
-
-        grid.addLayout(left_layout, 0, 0)
-        grid.addLayout(right_layout, 0, 1)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
-        outer_layout.addLayout(grid)
+        outer_layout.addLayout(left_layout)
+        outer_layout.addWidget(self._fixed_domain_checkbox)
         outer_layout.addWidget(self._parameter_status)
 
         apply_button = QPushButton("Apply")
         apply_button.clicked.connect(self._emit_parameters)
         apply_tooltip(apply_button, "apply")
-        reset_phase_view_button = QPushButton("Reset phase view")
+        reset_phase_view_button = QPushButton("Reset view")
         reset_phase_view_button.clicked.connect(
             self.reset_phase_view_requested.emit
         )
@@ -393,12 +372,11 @@ class ControlsPanel(QWidget):
         self._set_compact_button_policy(apply_button)
         self._set_compact_button_policy(reset_phase_view_button)
 
-        button_row = QGridLayout()
-        button_row.setHorizontalSpacing(6)
-        button_row.addWidget(apply_button, 0, 0)
-        button_row.addWidget(reset_phase_view_button, 0, 1)
-        button_row.setColumnStretch(0, 1)
-        button_row.setColumnStretch(1, 1)
+        button_row = QVBoxLayout()
+        button_row.setContentsMargins(0, 0, 0, 0)
+        button_row.setSpacing(4)
+        button_row.addWidget(apply_button)
+        button_row.addWidget(reset_phase_view_button)
         outer_layout.addLayout(button_row)
         return box
 
