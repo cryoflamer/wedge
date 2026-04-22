@@ -144,6 +144,7 @@ class ControlsPanel(QWidget):
         self._manual_d_edit = QLineEdit()
         self._manual_tau_edit = QLineEdit()
         self._manual_wall_combo = QComboBox()
+        self._compute_lyapunov_button = QPushButton("Lyapunov")
         self._lyapunov_status = QLabel("Lyapunov: not computed")
         self._lyapunov_steps = QLabel("Lyapunov steps: -")
         self._lyapunov_value = QLabel("Lyapunov λ: -")
@@ -258,6 +259,9 @@ class ControlsPanel(QWidget):
         self._scan_mode_combo.addItems(["grid", "random"])
         self._scan_wall_combo.addItems(["1", "2"])
         self._manual_wall_combo.addItems(["1", "2"])
+        self._compute_lyapunov_button.clicked.connect(
+            self.compute_lyapunov_requested.emit
+        )
         self._sync_export_preset_state()
         self._trajectory_selector.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
@@ -319,10 +323,7 @@ class ControlsPanel(QWidget):
         apply_tooltip(add_button, "add_seed_shortcut")
         actions_grid.addWidget(add_button, 1, 0)
 
-        lyapunov_button = QPushButton("Lyapunov")
-        lyapunov_button.clicked.connect(self.compute_lyapunov_requested.emit)
-        apply_tooltip(lyapunov_button, "compute_lyapunov")
-        actions_grid.addWidget(lyapunov_button, 1, 1)
+        actions_grid.addWidget(QWidget(), 1, 1)
 
         clear_all_button = QPushButton("Clear all")
         clear_all_button.clicked.connect(self.clear_all_requested.emit)
@@ -333,7 +334,6 @@ class ControlsPanel(QWidget):
             toggle_button,
             clear_selected_button,
             add_button,
-            lyapunov_button,
             clear_all_button,
         ):
             self._set_compact_button_policy(button)
@@ -460,6 +460,19 @@ class ControlsPanel(QWidget):
         scan_actions.setColumnStretch(0, 1)
         scan_section.content_layout().addLayout(scan_actions)
         sections.append(scan_section)
+
+        lyapunov_section = CollapsibleSection("Lyapunov", expanded=False)
+        lyapunov_section.set_tooltip("compute_lyapunov")
+        apply_tooltip(self._compute_lyapunov_button, "compute_lyapunov")
+        self._set_compact_button_policy(self._compute_lyapunov_button)
+        lyapunov_section.content_layout().addWidget(self._compute_lyapunov_button)
+        for label in (
+            self._lyapunov_status,
+            self._lyapunov_steps,
+            self._lyapunov_value,
+        ):
+            lyapunov_section.content_layout().addWidget(label)
+        sections.append(lyapunov_section)
 
         phase_view_section = CollapsibleSection("Phase space options", expanded=False)
         phase_view_section.set_tooltip("show_phase_grid")
