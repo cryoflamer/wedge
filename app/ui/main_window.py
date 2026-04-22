@@ -281,6 +281,8 @@ class MainWindow(QMainWindow):
         self.phase_panel_wall_2.seed_drag_started.connect(
             self._on_seed_drag_started
         )
+        self.phase_panel_wall_1.seed_selected.connect(self._on_trajectory_selected)
+        self.phase_panel_wall_2.seed_selected.connect(self._on_trajectory_selected)
         self.phase_panel_wall_1.seed_drag_finished.connect(
             self._on_seed_drag_finished
         )
@@ -371,6 +373,20 @@ class MainWindow(QMainWindow):
         self._update_panel_views()
         self._update_status_view()
 
+    def _update_selected_trajectory_view(self) -> None:
+        selected_seed = (
+            self._trajectory_seeds.get(self._selected_trajectory_id)
+            if self._selected_trajectory_id is not None
+            else None
+        )
+        self.controls_panel.set_selected_trajectory_id(
+            self._selected_trajectory_id,
+            selected_seed.color if selected_seed is not None else None,
+        )
+        self._update_selected_trajectory_controls()
+        self._update_panel_views()
+        self._update_status_view()
+
     def _update_controls_config_view(self) -> None:
         self.controls_panel.load_config(self._config)
         self.controls_panel.set_angle_units(self._angle_units)
@@ -458,6 +474,9 @@ class MainWindow(QMainWindow):
             trajectory_items,
             self._selected_trajectory_id,
         )
+        self._update_selected_trajectory_controls()
+
+    def _update_selected_trajectory_controls(self) -> None:
         selected_orbit = (
             self._trajectory_orbits.get(self._selected_trajectory_id)
             if self._selected_trajectory_id is not None
@@ -903,8 +922,7 @@ class MainWindow(QMainWindow):
             return
         self._selected_trajectory_id = trajectory_id
         self._reset_replay_views()
-        self._autosave_session()
-        self.update_view()
+        self._update_selected_trajectory_view()
 
     def _on_phase_view_mode_changed(self, fixed_domain: bool) -> None:
         self.phase_panel_wall_1.set_fixed_domain_mode(fixed_domain)
@@ -919,8 +937,7 @@ class MainWindow(QMainWindow):
         self.update_view()
 
     def _on_phase_viewport_changed(self) -> None:
-        self._autosave_session()
-        self.update_view()
+        self._schedule_autosave()
 
     def _rebuild_orbits(self) -> None:
         self._trajectory_orbits = {
