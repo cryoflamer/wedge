@@ -148,22 +148,6 @@ class PhasePanel(QWidget):
             self._drag_seed_preview = self._constrain_to_domain(
                 *self._map_click(event.position())
             )
-            self._last_click.setText(
-                "drag: "
-                f"d={self._drag_seed_preview[0]:.3f}, "
-                f"τ={self._drag_seed_preview[1]:.3f}"
-            )
-            seed = self._seeds.get(self._drag_seed_id)
-            if seed is not None and self._drag_seed_preview is not None:
-                QToolTip.showText(
-                    event.globalPosition().toPoint(),
-                    self._seed_tooltip_text(
-                        seed,
-                        self._drag_seed_preview[0],
-                        self._drag_seed_preview[1],
-                    ),
-                    self,
-                )
             self.update()
             return
         hovered_seed_id = self._seed_at_position(event.position())

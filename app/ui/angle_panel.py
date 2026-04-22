@@ -436,14 +436,28 @@ class AnglePanel(QWidget):
                 and self._active_constraint.kind == "boundary"
                 and self._active_constraint.region_name == region.name
             ) else QColor(region.style.border)
-            border_pen = QPen(border_color, 2 if region.region_type == "boundary" and self._active_constraint is not None and self._active_constraint.kind == "boundary" and self._active_constraint.region_name == region.name else 1)
+            base_width = max(float(region.style.line_width), 0.5)
+            if (
+                region.region_type == "boundary"
+                and self._active_constraint is not None
+                and self._active_constraint.kind == "boundary"
+                and self._active_constraint.region_name == region.name
+            ):
+                base_width = max(base_width, 2.0)
+            border_pen = QPen(border_color, base_width)
             border_pen.setStyle(self._pen_style(region.style.line_style))
             painter.setPen(border_pen)
             painter.setBrush(self._region_brush(color, region.style.hatch))
 
             if region.region_type == "boundary":
-                for start, end in boundary_segments:
-                    painter.drawLine(start, end)
+                boundary_path = QPainterPath()
+                for chain in self._ordered_boundary_chains(boundary_segments):
+                    if len(chain) < 2:
+                        continue
+                    boundary_path.moveTo(chain[0])
+                    for point in chain[1:]:
+                        boundary_path.lineTo(point)
+                painter.drawPath(boundary_path)
             else:
                 for point in sample_points:
                     painter.drawEllipse(point, 2, 2)
@@ -606,6 +620,43 @@ class AnglePanel(QWidget):
                 self._to_canvas(0.0, math.pi),
                 self._to_canvas(math.pi / 2.0, math.pi / 2.0),
             )
+
+    def _ordered_boundary_chains(
+        self,
+        segments: list[tuple[QPointF, QPointF]],
+    ) -> list[list[QPointF]]:
+        remaining = list(segments)
+        chains: list[list[QPointF]] = []
+        tolerance = 1.5
+
+        while remaining:
+            start, end = remaining.pop(0)
+            chain = [start, end]
+            extended = True
+            while extended:
+                extended = False
+                for index, (segment_start, segment_end) in enumerate(remaining):
+                    if self._points_close(chain[-1], segment_start, tolerance):
+                        chain.append(segment_end)
+                    elif self._points_close(chain[-1], segment_end, tolerance):
+                        chain.append(segment_start)
+                    elif self._points_close(chain[0], segment_end, tolerance):
+                        chain.insert(0, segment_start)
+                    elif self._points_close(chain[0], segment_start, tolerance):
+                        chain.insert(0, segment_end)
+                    else:
+                        continue
+                    remaining.pop(index)
+                    extended = True
+                    break
+            chains.append(chain)
+        return chains
+
+    def _points_close(self, first: QPointF, second: QPointF, tolerance: float) -> bool:
+        return (
+            abs(first.x() - second.x()) <= tolerance
+            and abs(first.y() - second.y()) <= tolerance
+        )
 
     def _draw_crosshair_overlay(
         self,

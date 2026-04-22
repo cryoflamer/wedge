@@ -183,7 +183,11 @@ class MainWindow(QMainWindow):
         self._config.window.x = self.x()
         self._config.window.y = self.y()
         self._autosave_session()
-        save_runtime_config(self._config, self._config_path)
+        save_runtime_config(
+            self._config,
+            self._config_path,
+            persist_boundary_styles=True,
+        )
         super().closeEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
@@ -331,6 +335,15 @@ class MainWindow(QMainWindow):
         self.controls_panel.selected_boundary_color_changed.connect(
             self._on_selected_boundary_color_changed
         )
+        self.controls_panel.selected_boundary_line_width_changed.connect(
+            self._on_selected_boundary_line_width_changed
+        )
+        self.controls_panel.selected_boundary_line_style_changed.connect(
+            self._on_selected_boundary_line_style_changed
+        )
+        self.controls_panel.save_boundary_styling_requested.connect(
+            self._on_save_boundary_styling
+        )
         self.controls_panel.selected_seed_apply_requested.connect(
             self._on_selected_seed_apply
         )
@@ -399,13 +412,17 @@ class MainWindow(QMainWindow):
                 item.name,
                 item.display_text,
                 item.style.border,
+                item.style.line_width,
+                item.style.line_style,
             )
             for item in sorted(self._config.regions, key=lambda entry: entry.priority)
             if item.visible and item.region_type == "boundary"
         ]
         if not hasattr(self, "_selected_boundary_name"):
             self._selected_boundary_name = boundary_items[0][0] if boundary_items else None
-        elif self._selected_boundary_name not in {name for name, _, _ in boundary_items}:
+        elif self._selected_boundary_name not in {
+            name for name, _, _, _, _ in boundary_items
+        }:
             self._selected_boundary_name = boundary_items[0][0] if boundary_items else None
         self.controls_panel.set_boundary_items(
             boundary_items,
@@ -988,10 +1005,51 @@ class MainWindow(QMainWindow):
         self._selected_boundary_name = boundary_name
 
     def _on_selected_boundary_color_changed(self, color: str) -> None:
+        boundary = self._selected_boundary_region()
+        if boundary is None or boundary.style.border == color:
+            return
+        boundary.style.border = color
+        self._refresh_boundary_style_preview()
+        logger.info("Boundary color changed: name=%s color=%s", boundary.name, color)
+
+    def _on_selected_boundary_line_width_changed(self, line_width: float) -> None:
+        boundary = self._selected_boundary_region()
+        if boundary is None or boundary.style.line_width == line_width:
+            return
+        boundary.style.line_width = line_width
+        self._refresh_boundary_style_preview()
+        logger.info(
+            "Boundary line width changed: name=%s line_width=%s",
+            boundary.name,
+            line_width,
+        )
+
+    def _on_selected_boundary_line_style_changed(self, line_style: str) -> None:
+        boundary = self._selected_boundary_region()
+        normalized = "dashed" if line_style.strip().lower() == "dashed" else "solid"
+        if boundary is None or boundary.style.line_style == normalized:
+            return
+        boundary.style.line_style = normalized
+        self._refresh_boundary_style_preview()
+        logger.info(
+            "Boundary line style changed: name=%s line_style=%s",
+            boundary.name,
+            normalized,
+        )
+
+    def _on_save_boundary_styling(self) -> None:
+        saved_path = save_runtime_config(
+            self._config,
+            self._config_path,
+            persist_boundary_styles=True,
+        )
+        logger.info("Boundary styling saved to config: path=%s", saved_path)
+
+    def _selected_boundary_region(self):
         selected_name = getattr(self, "_selected_boundary_name", None)
         if selected_name is None:
-            return
-        boundary = next(
+            return None
+        return next(
             (
                 item
                 for item in self._config.regions
@@ -999,11 +1057,9 @@ class MainWindow(QMainWindow):
             ),
             None,
         )
-        if boundary is None or boundary.style.border == color:
-            return
-        boundary.style.border = color
-        self.update_view()
-        logger.info("Boundary color changed: name=%s color=%s", selected_name, color)
+
+    def _refresh_boundary_style_preview(self) -> None:
+        self.angle_panel.update()
 
     def _on_clear_selected_trajectory(self) -> None:
         if self._selected_trajectory_id is None:

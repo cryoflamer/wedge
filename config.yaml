@@ -82,8 +82,9 @@ regions:
     fill: '#ffffff'
     alpha: 0.0
     hatch: ''
-    border: '#d62828'
-    line_style: dashdot
+    border: '#17becf'
+    line_style: solid
+    line_width: 1.5
 - name: symmetric_angle
   type: constraint
   constraint_type: symmetry
