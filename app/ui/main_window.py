@@ -454,15 +454,7 @@ class MainWindow(QMainWindow):
         self.controls_panel.load_config(self._config)
         self.controls_panel.set_angle_units(self._angle_units)
         self.controls_panel.set_constraint_options(
-            [
-                (
-                    item.name,
-                    item.display_text,
-                    item.constraint_type,
-                )
-                for item in sorted(self._config.constraints, key=lambda entry: entry.priority)
-                if item.visible
-            ],
+            self._angle_constraint_options(),
             self._base_angle_constraint_name,
         )
         self.controls_panel.set_constraint_mode(
@@ -780,7 +772,7 @@ class MainWindow(QMainWindow):
             selected_name = (
                 self.controls_panel.active_constraint_name()
                 or self._base_angle_constraint_name
-                or self._default_symmetry_constraint_name()
+                or self._default_angle_constraint_name()
             )
             self._base_angle_constraint_name = selected_name
             self._active_angle_constraint_name = selected_name
@@ -1619,6 +1611,37 @@ class MainWindow(QMainWindow):
                 return constraint.name
         return None
 
+    def _default_angle_constraint_name(self) -> str | None:
+        return self._default_symmetry_constraint_name() or next(
+            (
+                item.name
+                for item in sorted(self._config.regions, key=lambda entry: entry.priority)
+                if item.visible and is_boundary_scene_item(item)
+            ),
+            None,
+        )
+
+    def _angle_constraint_options(self) -> list[tuple[str, str, str]]:
+        options = [
+            (
+                item.name,
+                item.display_text,
+                item.constraint_type,
+            )
+            for item in sorted(self._config.constraints, key=lambda entry: entry.priority)
+            if item.visible and item.constraint_type.strip().lower() == "symmetry"
+        ]
+        options.extend(
+            (
+                item.name,
+                item.display_text,
+                "boundary",
+            )
+            for item in sorted(self._config.regions, key=lambda entry: entry.priority)
+            if item.visible and is_boundary_scene_item(item)
+        )
+        return options
+
     def _constraint_name_is_symmetry(self, name: str | None) -> bool:
         if name is None:
             return False
@@ -1629,6 +1652,14 @@ class MainWindow(QMainWindow):
         if constraint is None:
             return False
         return constraint.constraint_type.strip().lower() == "symmetry"
+
+    def _boundary_scene_item_exists(self, name: str | None) -> bool:
+        if name is None:
+            return False
+        return any(
+            item.name == name and item.visible and is_boundary_scene_item(item)
+            for item in self._config.regions
+        )
 
     def _resolved_angle_constraint(self) -> ActivePointConstraint | None:
         if self._active_angle_constraint_name is None:
@@ -1644,6 +1675,11 @@ class MainWindow(QMainWindow):
             None,
         )
         if constraint is None:
+            if self._boundary_scene_item_exists(self._active_angle_constraint_name):
+                return ActivePointConstraint(
+                    kind="boundary",
+                    region_name=self._active_angle_constraint_name,
+                )
             return None
 
         kind = constraint.constraint_type.strip().lower()
