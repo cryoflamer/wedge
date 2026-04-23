@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 
 from app.core.geometry_builder import build_wedge_geometry
 from app.core.orbit_builder import build_orbit
-from app.core.point_constraints import ActivePointConstraint, project_point_to_constraint
+from app.core.point_constraints import ActivePointConstraint
 from app.models.config import Config
 from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
@@ -1660,13 +1660,12 @@ class MainWindow(QMainWindow):
         return None
 
     def _project_angles_to_active_constraint(self) -> None:
-        constraint = self.angle_panel.hydrated_constraint(
-            self._resolved_angle_constraint()
-        )
-        alpha, beta = project_point_to_constraint(
+        self.angle_panel.set_constraints(self._config.constraints)
+        self.angle_panel.set_regions(self._config.regions)
+        self.angle_panel.set_active_constraint(self._resolved_angle_constraint())
+        alpha, beta = self.angle_panel.project_point_to_snap_constraints(
             self._config.simulation.alpha,
             self._config.simulation.beta,
-            constraint,
         )
         self._config.simulation.alpha = alpha
         self._config.simulation.beta = beta
