@@ -509,6 +509,7 @@ class MainWindow(QMainWindow):
         )
         self.angle_panel.set_angle_units(self._angle_units)
         self.angle_panel.set_regions(self._config.regions)
+        self.angle_panel.set_selected_scene_item(self._selected_scene_item_name)
         self.angle_panel.set_constraints(self._config.constraints)
         self.angle_panel.set_active_constraint(self._resolved_angle_constraint())
         self.angle_panel.set_angles(
@@ -1092,6 +1093,7 @@ class MainWindow(QMainWindow):
         self.controls_panel.set_scene_item_editor_values(
             self._selected_scene_item_editor_values()
         )
+        self.angle_panel.set_selected_scene_item(item_name)
 
     def _mark_scene_dirty(self) -> None:
         self._scene_dirty = True
@@ -1165,6 +1167,7 @@ class MainWindow(QMainWindow):
             sync_sections=False,
         )
         self.angle_panel.set_regions(self._config.regions)
+        self.angle_panel.set_selected_scene_item(self._selected_scene_item_name)
         self.controls_panel.set_scene_dirty(self._scene_dirty)
 
     def _create_scene_item_dialog(self) -> tuple[str, str] | None:

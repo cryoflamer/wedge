@@ -43,6 +43,7 @@ class AnglePanel(QWidget):
         self._angle_units = "rad"
         self._active_constraint: ActivePointConstraint | None = None
         self._scene_items: list[SceneItemDescription] = []
+        self._selected_scene_item_name: str | None = None
         self._boundary_item_names: set[str] = set()
         self._predicate_item_names: set[str] = set()
         self._constraints: list[ConstraintDescription] = []
@@ -91,6 +92,12 @@ class AnglePanel(QWidget):
             for item in self._scene_items
             if is_boundary_scene_item(item)
         }
+        self.update()
+
+    def set_selected_scene_item(self, name: str | None) -> None:
+        if name == self._selected_scene_item_name:
+            return
+        self._selected_scene_item_name = name
         self.update()
 
     def set_constraints(self, constraints: list[ConstraintDescription]) -> None:
@@ -397,6 +404,7 @@ class AnglePanel(QWidget):
         for item in self._scene_items:
             if not item.visible:
                 continue
+            is_selected_scene_item = item.name == self._selected_scene_item_name
 
             sample_points: list[QPointF] = []
             boundary_segments: list[tuple[QPointF, QPointF]] = []
@@ -439,6 +447,14 @@ class AnglePanel(QWidget):
                 and self._active_constraint.region_name == item.name
             ) else QColor(item.style.border)
             base_width = max(float(item.style.line_width), 0.5)
+            if is_selected_scene_item:
+                if item.relation == "=":
+                    border_color = border_color.lighter(125)
+                    base_width = max(base_width + 1.0, 2.0)
+                else:
+                    color.setAlphaF(min(color.alphaF() + 0.12, 0.75))
+                    border_color = border_color.lighter(115)
+                    base_width = max(base_width + 0.75, 1.25)
             if (
                 is_boundary_scene_item(item)
                 and self._active_constraint is not None
