@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import math
 
 from app.models.scene_item import SceneItemDescription, scene_item_from_region
@@ -83,13 +84,31 @@ def evaluate_scene_item_value(
     return _evaluate_expression(item.expression, alpha, beta)
 
 
-def _evaluate_expression(
-    expression: str,
-    alpha: float,
-    beta: float,
-) -> object:
-    safe_globals = {"__builtins__": {}}
-    safe_locals = {
+def validate_scene_item_expression(expression: str) -> tuple[bool, str | None]:
+    if not expression.strip():
+        return False, "empty expression"
+    try:
+        tree = ast.parse(expression, mode="eval")
+    except SyntaxError as exc:
+        return False, exc.msg
+
+    try:
+        value = eval(
+            compile(tree, "<scene-item-expression>", "eval"),
+            {"__builtins__": {}},
+            _expression_locals(math.pi / 4.0, math.pi / 2.0),
+        )
+    except Exception as exc:
+        return False, str(exc) or type(exc).__name__
+    if not isinstance(value, (bool, int, float)):
+        return False, "expression must evaluate to a number or boolean"
+    if isinstance(value, (int, float)) and not math.isfinite(float(value)):
+        return False, "expression must evaluate to a finite value"
+    return True, None
+
+
+def _expression_locals(alpha: float, beta: float) -> dict[str, object]:
+    return {
         "alpha": alpha,
         "α": alpha,
         "beta": beta,
@@ -105,6 +124,15 @@ def _evaluate_expression(
         "sqrt": math.sqrt,
         "abs": abs,
     }
+
+
+def _evaluate_expression(
+    expression: str,
+    alpha: float,
+    beta: float,
+) -> object:
+    safe_globals = {"__builtins__": {}}
+    safe_locals = _expression_locals(alpha, beta)
 
     try:
         return eval(expression, safe_globals, safe_locals)

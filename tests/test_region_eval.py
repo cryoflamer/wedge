@@ -8,6 +8,7 @@ from app.core.region_eval import (
     evaluate_region,
     evaluate_scene_item,
     matches_relation,
+    validate_scene_item_expression,
 )
 from app.models.region import RegionDescription, RegionStyle
 from app.models.scene_item import SceneItemDescription
@@ -121,6 +122,16 @@ class RegionEvalAliasesTest(unittest.TestCase):
 
         self.assertTrue(evaluate_region(region, 0.4, 0.9))
         self.assertFalse(evaluate_region(region, 0.9, 0.4))
+
+    def test_scene_item_expression_validation_accepts_scalar_and_boolean(self) -> None:
+        self.assertEqual(validate_scene_item_expression("alpha - beta"), (True, None))
+        self.assertEqual(validate_scene_item_expression("False"), (True, None))
+
+    def test_scene_item_expression_validation_rejects_invalid_expression(self) -> None:
+        valid, error = validate_scene_item_expression("alpha -")
+
+        self.assertFalse(valid)
+        self.assertIsNotNone(error)
 
 
 if __name__ == "__main__":
