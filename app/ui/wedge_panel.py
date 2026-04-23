@@ -33,6 +33,8 @@ class WedgePanel(QWidget):
         self._geometry_bounds_cache: tuple[float, float, float, float] | None = None
         self._canvas_transform_cache: _CanvasTransform | None = None
         self._geometry_cache_signature: tuple[object, ...] | None = None
+        self._geometry_cache_dirty = True
+        self._canvas_transform_dirty = True
 
         for label in (self._title, self._hint):
             label.setFixedHeight(label.sizeHint().height())
@@ -53,6 +55,8 @@ class WedgePanel(QWidget):
         self.setStyleSheet(
             "WedgePanel { background: #ffffff; border: 1px solid #a0a0a0; }"
         )
+        self._geometry_bounds_cache = self._default_geometry_bounds()
+        self._rebuild_canvas_transform_cache()
 
     def set_geometries(
         self,
@@ -62,6 +66,7 @@ class WedgePanel(QWidget):
         active_segment_indices: dict[int, int] | None = None,
     ) -> None:
         geometry_signature = self._geometry_signature(geometries)
+        geometry_changed = geometry_signature != self._geometry_cache_signature
         if geometry_signature != self._geometry_cache_signature:
             self._geometry_cache_signature = geometry_signature
             self._invalidate_geometry_cache()
@@ -69,11 +74,14 @@ class WedgePanel(QWidget):
         self._geometries = geometries
         self._selected_trajectory_id = selected_trajectory_id
         self._active_segment_indices = active_segment_indices or {}
+        if geometry_changed:
+            self._rebuild_geometry_cache()
         self.update()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._invalidate_canvas_transform_cache()
+        self._rebuild_canvas_transform_cache()
 
     def _plot_rect(self) -> QRectF:
         available_width = max(self.width() - 2 * self._padding, 1)
@@ -113,26 +121,32 @@ class WedgePanel(QWidget):
         return points
 
     def _invalidate_geometry_cache(self) -> None:
-        self._geometry_bounds_cache = None
+        self._geometry_cache_dirty = True
         self._invalidate_canvas_transform_cache()
 
     def _invalidate_canvas_transform_cache(self) -> None:
-        self._canvas_transform_cache = None
+        self._canvas_transform_dirty = True
 
     # IMPORTANT: geometry bounds computation is expensive because it scans all
     # walls, reflections, segments, and samples. It must never happen inside
-    # _to_canvas() or any per-point transform path. Bounds and derived canvas
-    # transform values must be recomputed only when geometry changes or when the
-    # widget size changes. Breaking this invariant causes severe UI lag during
-    # trajectory selection because every repaint degenerates into repeated
-    # O(N_samples) geometry scans.
-    def _ensure_geometry_cache(self) -> None:
+    # _to_canvas(), inside per-point transforms, or from paint-time draw helpers.
+    # Bounds and derived canvas transform values must only be recomputed when
+    # geometry data changes or the widget size changes. Breaking this invariant
+    # causes severe trajectory-selection lag because a simple repaint can
+    # repeatedly degrade into O(N_samples) scans.
+    def _rebuild_geometry_cache(self) -> None:
+        self._geometry_bounds_cache = self._geometry_bounds()
+        self._geometry_cache_dirty = False
+        self._canvas_transform_dirty = True
+        self._rebuild_canvas_transform_cache()
+
+    def _rebuild_canvas_transform_cache(self) -> None:
         if self._geometry_bounds_cache is None:
-            self._geometry_bounds_cache = self._compute_geometry_bounds()
-        if self._canvas_transform_cache is None:
-            self._canvas_transform_cache = self._build_canvas_transform(
-                self._geometry_bounds_cache
-            )
+            self._geometry_bounds_cache = self._default_geometry_bounds()
+        self._canvas_transform_cache = self._build_canvas_transform(
+            self._geometry_bounds_cache
+        )
+        self._canvas_transform_dirty = False
 
     def _geometry_signature(
         self,
@@ -147,19 +161,16 @@ class WedgePanel(QWidget):
         )
 
     def _to_canvas(self, x_value: float, y_value: float) -> QPointF:
-        self._ensure_geometry_cache()
         assert self._canvas_transform_cache is not None
         transform = self._canvas_transform_cache
         canvas_x = transform.offset_x + (x_value - transform.min_x) * transform.scale
         canvas_y = transform.offset_y + (transform.max_y - y_value) * transform.scale
         return QPointF(canvas_x, canvas_y)
 
-    def _geometry_bounds(self) -> tuple[float, float, float, float]:
-        self._ensure_geometry_cache()
-        assert self._geometry_bounds_cache is not None
-        return self._geometry_bounds_cache
+    def _default_geometry_bounds(self) -> tuple[float, float, float, float]:
+        return (0.0, 1.0, 0.0, 1.0)
 
-    def _compute_geometry_bounds(self) -> tuple[float, float, float, float]:
+    def _geometry_bounds(self) -> tuple[float, float, float, float]:
         points = self._all_points()
         min_x = min((point[0] for point in points), default=0.0)
         max_x = max((point[0] for point in points), default=1.0)
@@ -213,7 +224,8 @@ class WedgePanel(QWidget):
         self._draw_reflections(painter)
 
     def _draw_axes(self, painter: QPainter) -> None:
-        min_x, max_x, min_y, max_y = self._geometry_bounds()
+        assert self._geometry_bounds_cache is not None
+        min_x, max_x, min_y, max_y = self._geometry_bounds_cache
         plot = self._plot_rect()
         tick_length = 5.0
         axis_color = QColor(125, 125, 125, 220)
@@ -267,7 +279,8 @@ class WedgePanel(QWidget):
         if not self._view_config.show_directrix:
             return
 
-        min_x, max_x, _, _ = self._geometry_bounds()
+        assert self._geometry_bounds_cache is not None
+        min_x, max_x, _, _ = self._geometry_bounds_cache
         if abs(max_x - min_x) <= 1.0e-9:
             max_x = min_x + 1.0
 
