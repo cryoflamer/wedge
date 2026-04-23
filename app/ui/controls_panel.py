@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.core.region_eval import validate_scene_item_expression
 from app.models.config import Config
 from app.services.parameter_parser import parse_real_expression
 from app.ui.color_selector import ColorSelector
@@ -150,6 +151,7 @@ class ControlsPanel(QWidget):
         self._scene_item_status_label = QLabel("Nothing selected")
         self._scene_item_editor_placeholder = QLabel("Select an item to edit.")
         self._scene_item_editor_status = QLabel("")
+        self._scene_item_expression_status = QLabel("")
         self._scene_item_name_edit = QLineEdit()
         self._scene_item_alias_edit = QLineEdit()
         self._scene_item_display_text_edit = QLineEdit()
@@ -339,6 +341,7 @@ class ControlsPanel(QWidget):
         self._scene_item_editor_placeholder.setStyleSheet("color: #666;")
         self._scene_item_editor_status.setStyleSheet("color: #b00020;")
         self._scene_item_status_label.setWordWrap(True)
+        self._scene_item_expression_status.setVisible(False)
         self._scene_item_editor_status.setVisible(False)
         self._scene_item_name_edit.setReadOnly(True)
         self._sync_export_preset_state()
@@ -624,6 +627,7 @@ class ControlsPanel(QWidget):
         scene_item_editor_form.addRow("Display text", self._scene_item_display_text_edit)
         scene_item_editor_form.addRow("Legend text", self._scene_item_legend_text_edit)
         scene_item_editor_form.addRow("Expression", self._scene_item_expression_edit)
+        scene_item_editor_form.addRow("", self._scene_item_expression_status)
         scene_item_editor_form.addRow("Relation", self._scene_item_relation_combo)
         scene_item_editor_form.addRow("", self._scene_item_visible_checkbox)
         scene_item_editor_form.addRow("Priority", self._scene_item_priority_edit)
@@ -1118,6 +1122,8 @@ class ControlsPanel(QWidget):
         self._scene_item_editor_placeholder.setVisible(False)
         self._scene_item_editor_status.clear()
         self._scene_item_editor_status.setVisible(False)
+        self._scene_item_expression_status.clear()
+        self._scene_item_expression_status.setVisible(False)
         self._set_scene_item_editor_enabled(True)
         self._sync_scene_item_editor_mode()
         if sync_sections and self._scene_item_editor_section is not None:
@@ -1168,6 +1174,8 @@ class ControlsPanel(QWidget):
         self._scene_item_editor_placeholder.setVisible(True)
         self._scene_item_editor_status.clear()
         self._scene_item_editor_status.setVisible(False)
+        self._scene_item_expression_status.clear()
+        self._scene_item_expression_status.setVisible(False)
         self._set_scene_item_editor_enabled(False)
         self._scene_item_name_edit.clear()
         self._scene_item_alias_edit.clear()
@@ -1194,6 +1202,11 @@ class ControlsPanel(QWidget):
         if self._scene_item_editor_section is not None:
             self._scene_item_editor_section.set_expanded(expanded)
 
+    def set_scene_item_expression_valid(self) -> None:
+        self._scene_item_expression_status.setText("Valid")
+        self._scene_item_expression_status.setStyleSheet("color: #0a7f27;")
+        self._scene_item_expression_status.setVisible(True)
+
     def _set_scene_item_editor_enabled(self, enabled: bool) -> None:
         for widget in (
             self._scene_item_name_edit,
@@ -1201,6 +1214,7 @@ class ControlsPanel(QWidget):
             self._scene_item_display_text_edit,
             self._scene_item_legend_text_edit,
             self._scene_item_expression_edit,
+            self._scene_item_expression_status,
             self._scene_item_relation_combo,
             self._scene_item_visible_checkbox,
             self._scene_item_priority_edit,
@@ -1256,6 +1270,16 @@ class ControlsPanel(QWidget):
             self._scene_item_editor_status.setText("Priority or line width is invalid.")
             self._scene_item_editor_status.setVisible(True)
             return
+        expression = self._scene_item_expression_edit.text().strip()
+        is_valid, error = validate_scene_item_expression(expression)
+        if not is_valid:
+            self._scene_item_expression_status.setText(f"Error: {error}")
+            self._scene_item_expression_status.setStyleSheet("color: #b00020;")
+            self._scene_item_expression_status.setVisible(True)
+            return
+        self._scene_item_expression_status.setText("Valid")
+        self._scene_item_expression_status.setStyleSheet("color: #0a7f27;")
+        self._scene_item_expression_status.setVisible(True)
         self._scene_item_editor_status.clear()
         self._scene_item_editor_status.setVisible(False)
         self.apply_scene_item_editor_requested.emit(
@@ -1263,7 +1287,7 @@ class ControlsPanel(QWidget):
                 "alias": alias,
                 "display_text": self._scene_item_display_text_edit.text().strip() or alias,
                 "legend_text": self._scene_item_legend_text_edit.text().strip() or alias,
-                "expression": self._scene_item_expression_edit.text().strip(),
+                "expression": expression,
                 "relation": self._scene_item_relation_combo.currentText().strip() or "=",
                 "visible": self._scene_item_visible_checkbox.isChecked(),
                 "priority": priority,

@@ -1327,6 +1327,7 @@ class MainWindow(QMainWindow):
             self._selected_scene_item_editor_values(),
             sync_sections=False,
         )
+        self.controls_panel.set_scene_item_expression_valid()
         self.controls_panel.restore_editor_section_state(section_expanded)
         self._mark_scene_dirty()
         logger.info(
