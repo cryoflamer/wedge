@@ -1080,6 +1080,8 @@ class ControlsPanel(QWidget):
         if item is None:
             self._show_scene_item_editor_placeholder(self._scene_item_empty_message())
             return
+        if self._scene_item_editor_section is not None:
+            self._scene_item_editor_section.setVisible(True)
         (
             name,
             alias,
@@ -1166,10 +1168,11 @@ class ControlsPanel(QWidget):
         return self._current_scene_item_name()
 
     def _show_scene_item_empty_state(self) -> None:
-        self._scene_item_status_label.setText("Nothing selected")
+        self._scene_item_status_label.setText(self._scene_item_empty_message())
         self._show_scene_item_editor_placeholder(self._scene_item_empty_message())
 
     def _show_scene_item_editor_placeholder(self, text: str) -> None:
+        has_items = bool(getattr(self, "_scene_item_items", []))
         self._scene_item_editor_placeholder.setText(text)
         self._scene_item_editor_placeholder.setVisible(True)
         self._scene_item_editor_status.clear()
@@ -1184,11 +1187,12 @@ class ControlsPanel(QWidget):
         self._scene_item_expression_edit.clear()
         self._scene_item_priority_edit.clear()
         if self._scene_item_editor_section is not None:
+            self._scene_item_editor_section.setVisible(has_items)
             self._scene_item_editor_section.set_expanded(False)
 
     def _scene_item_empty_message(self) -> str:
         if not getattr(self, "_scene_item_items", []):
-            return "No scene items defined. Click 'Add Item' to create one."
+            return "No scene items defined. Click Add Item to create one."
         return "Select an item from the list"
 
     def editor_section_state(self) -> bool:

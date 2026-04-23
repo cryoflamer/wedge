@@ -188,11 +188,19 @@ class AnglePanel(QWidget):
     def _plot_rect(self) -> QRectF:
         top = self._header_height() + 12.0
         left_margin, bottom_margin = self._axis_label_margins()
+        available_left = self._padding + left_margin
+        available_top = top
+        available_width = max(self.width() - (2 * self._padding + left_margin), 1)
+        available_height = max(
+            self.height() - top - self._bottom_margin - bottom_margin,
+            1,
+        )
+        side = max(min(available_width, available_height), 1)
         return QRectF(
-            self._padding + left_margin,
-            top,
-            max(self.width() - (2 * self._padding + left_margin), 1),
-            max(self.height() - top - self._bottom_margin - bottom_margin, 1),
+            available_left + (available_width - side) / 2.0,
+            available_top + (available_height - side) / 2.0,
+            side,
+            side,
         )
 
     def _header_height(self) -> float:
