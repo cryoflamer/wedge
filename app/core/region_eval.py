@@ -11,6 +11,9 @@ def evaluate_region(
     beta: float,
     eps: float = 1.0e-9,
 ) -> bool:
+    # Compatibility entrypoint only. New runtime paths should pass
+    # SceneItemDescription to evaluate_scene_item(); legacy RegionDescription
+    # objects are adapted at this boundary and must not become runtime state.
     scene_item = (
         region
         if isinstance(region, SceneItemDescription)
@@ -31,6 +34,8 @@ def evaluate_scene_item(
     *,
     eps: float = 1.0e-9,
 ) -> bool:
+    # Unified evaluator entrypoint. Keep semantics expression + relation based:
+    # do not reintroduce region_type dispatch here or in render/UI paths.
     value = evaluate_scene_item_value(item, alpha, beta)
     if item.compatibility_predicate and item.relation is None:
         return bool(value)
@@ -54,6 +59,8 @@ def evaluate_boundary_value(
     alpha: float,
     beta: float,
 ) -> float | None:
+    # Compatibility helper for boundary rendering. It still consumes the unified
+    # SceneItem model after adaptation; relation "=" is the only boundary test.
     item = (
         region
         if isinstance(region, SceneItemDescription)

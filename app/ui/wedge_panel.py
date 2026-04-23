@@ -30,6 +30,9 @@ class WedgePanel(QWidget):
         self._top_margin = 16
         self._bottom_margin = 16
         self._header_spacing = 4
+        # Performance guard: bounds scan all geometry samples and are expensive.
+        # These caches are the only data _to_canvas() may read for per-point
+        # conversion. Do not replace them with paint-time bounds recomputation.
         self._geometry_bounds_cache: tuple[float, float, float, float] | None = None
         self._canvas_transform_cache: _CanvasTransform | None = None
         self._geometry_cache_signature: tuple[object, ...] | None = None
@@ -74,14 +77,15 @@ class WedgePanel(QWidget):
         self._geometries = geometries
         self._selected_trajectory_id = selected_trajectory_id
         self._active_segment_indices = active_segment_indices or {}
-        if geometry_changed:
+        if geometry_changed and self._geometry_cache_dirty:
             self._rebuild_geometry_cache()
         self.update()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._invalidate_canvas_transform_cache()
-        self._rebuild_canvas_transform_cache()
+        if self._canvas_transform_dirty:
+            self._rebuild_canvas_transform_cache()
 
     def _plot_rect(self) -> QRectF:
         available_width = max(self.width() - 2 * self._padding, 1)
@@ -121,21 +125,24 @@ class WedgePanel(QWidget):
         return points
 
     def _invalidate_geometry_cache(self) -> None:
+        # Geometry-data changes are the only reason to invalidate bounds.
+        # Selection/highlight changes must not set this flag.
         self._geometry_cache_dirty = True
         self._invalidate_canvas_transform_cache()
 
     def _invalidate_canvas_transform_cache(self) -> None:
+        # Widget-size changes affect only scale/offset; do not rescan samples.
         self._canvas_transform_dirty = True
 
     # IMPORTANT: geometry bounds computation is expensive because it scans all
-    # walls, reflections, segments, and samples. It must never happen inside
-    # _to_canvas(), inside per-point transforms, or from paint-time draw helpers.
-    # Bounds and derived canvas transform values must only be recomputed when
-    # geometry data changes or the widget size changes. Breaking this invariant
-    # causes severe trajectory-selection lag because a simple repaint can
-    # repeatedly degrade into O(N_samples) scans.
+    # walls, reflections, segments, and samples. Calling that scan from
+    # _to_canvas(), inside per-point transforms, or from paint-time draw helpers
+    # is forbidden: it causes severe trajectory-selection lag by turning a
+    # simple repaint into repeated O(N_samples) work. Bounds and derived canvas
+    # transform values must only be rebuilt from set_geometries() when geometry
+    # data changes, or from resizeEvent() for size-dependent transform values.
     def _rebuild_geometry_cache(self) -> None:
-        self._geometry_bounds_cache = self._geometry_bounds()
+        self._geometry_bounds_cache = self._compute_geometry_bounds()
         self._geometry_cache_dirty = False
         self._canvas_transform_dirty = True
         self._rebuild_canvas_transform_cache()
@@ -161,6 +168,9 @@ class WedgePanel(QWidget):
         )
 
     def _to_canvas(self, x_value: float, y_value: float) -> QPointF:
+        # Hot path: this must use cached transform only. Calling
+        # _compute_geometry_bounds(), _all_points(), or any sample scan here is
+        # forbidden and will reintroduce trajectory-selection lag.
         assert self._canvas_transform_cache is not None
         transform = self._canvas_transform_cache
         canvas_x = transform.offset_x + (x_value - transform.min_x) * transform.scale
@@ -170,7 +180,7 @@ class WedgePanel(QWidget):
     def _default_geometry_bounds(self) -> tuple[float, float, float, float]:
         return (0.0, 1.0, 0.0, 1.0)
 
-    def _geometry_bounds(self) -> tuple[float, float, float, float]:
+    def _compute_geometry_bounds(self) -> tuple[float, float, float, float]:
         points = self._all_points()
         min_x = min((point[0] for point in points), default=0.0)
         max_x = max((point[0] for point in points), default=1.0)

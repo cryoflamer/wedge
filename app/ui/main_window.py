@@ -212,7 +212,7 @@ class MainWindow(QMainWindow):
             dialog = QMessageBox(self)
             dialog.setIcon(QMessageBox.Icon.Warning)
             dialog.setWindowTitle("Unsaved Changes")
-            dialog.setText("You have unsaved region or boundary changes.")
+            dialog.setText("You have unsaved SceneItem changes.")
             dialog.setInformativeText("Do you want to save them before closing?")
             save_button = dialog.addButton("Save", QMessageBox.ButtonRole.AcceptRole)
             discard_button = dialog.addButton(
@@ -429,6 +429,10 @@ class MainWindow(QMainWindow):
         self._update_status_view()
 
     def _update_selected_trajectory_view(self) -> None:
+        # Selection hot path: keep this lightweight. Do not call update_view()
+        # here; it reloads config/control state and reintroduces visible lag for
+        # dropdown and seed-based trajectory selection. Only selected-trajectory
+        # controls plus selection-dependent panels should be refreshed.
         selected_seed = (
             self._trajectory_seeds.get(self._selected_trajectory_id)
             if self._selected_trajectory_id is not None
@@ -668,6 +672,9 @@ class MainWindow(QMainWindow):
         self.update_view()
 
     def _on_seed_drag_started(self, trajectory_id: int) -> None:
+        # Drag-start selection uses the same lightweight path as dropdown/seed
+        # click selection. Calling update_view() here makes seed dragging and
+        # selection laggy because unrelated controls/config are rebuilt.
         if trajectory_id != self._selected_trajectory_id:
             self._selected_trajectory_id = trajectory_id
             self._reset_replay_views()
@@ -973,6 +980,9 @@ class MainWindow(QMainWindow):
         )
 
     def _on_trajectory_selected(self, trajectory_id: int) -> None:
+        # Selection hot path: route through _update_selected_trajectory_view(),
+        # never the full update_view() cycle. Full refresh is for structural
+        # changes, not simple selected-id switches.
         if trajectory_id == self._selected_trajectory_id:
             return
         self._selected_trajectory_id = trajectory_id

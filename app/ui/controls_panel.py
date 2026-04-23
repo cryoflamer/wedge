@@ -1647,10 +1647,10 @@ class ControlsPanel(QWidget):
             "Show parameter-space labels directly on the plot."
         )
         self._plot_label_mode_combo.setToolTip(
-            "Choose whether plot labels use region alias or legend text."
+            "Choose whether plot labels use SceneItem alias or legend text."
         )
         self._tooltip_label_mode_combo.setToolTip(
-            "Choose whether hover tooltip uses region alias or legend text."
+            "Choose whether hover tooltip uses SceneItem alias or legend text."
         )
         apply_tooltip(self._show_branch_markers_checkbox, "show_branch_markers")
         apply_tooltip(self._show_heatmap_checkbox, "show_heatmap")

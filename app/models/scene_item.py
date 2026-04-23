@@ -7,6 +7,15 @@ from app.models.region import RegionDescription, RegionStyle
 
 @dataclass
 class SceneItemDescription:
+    """Runtime source of truth for parameter-space scene items.
+
+    SceneItemDescription is the model evaluator/render/UI code must consume.
+    RegionDescription and region_type are legacy config/load-boundary concepts
+    only. Do not reintroduce runtime routing based on region_type; behavior is
+    derived from expression + relation, where "=" renders/evaluates as a
+    boundary-like item and inequalities render/evaluate as region-like items.
+    """
+
     name: str
     # Transitional fallback only: the old RegionDescription model does not
     # store a separate alias yet, so the adapter currently mirrors `name`.
@@ -23,6 +32,10 @@ class SceneItemDescription:
 
 def scene_item_from_region(region: RegionDescription) -> SceneItemDescription:
     """Adapt the old region/boundary runtime model into a transitional scene item.
+
+    This adapter is a compatibility/load boundary. After config loading,
+    evaluator/render/UI paths must use SceneItemDescription directly and must
+    not branch on RegionDescription.region_type.
 
     Compatibility notes:
     - boundary items keep `expression` and use relation "="

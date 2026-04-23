@@ -38,6 +38,10 @@ def load_config(path: str | Path) -> Config:
     phase_grid_data = view_data.get("phase_grid", {})
     window_data = data.get("window", {})
     autosave_data = data.get("autosave", {})
+    # Config still stores historical "regions" entries, but runtime uses
+    # SceneItemDescription exclusively. RegionDescription is instantiated only
+    # inside this load-boundary adapter and must not leak into UI/evaluator/render
+    # code or revive region_type-based runtime routing.
     scene_items = data.get("regions", [])
     constraints: list[ConstraintDescription] = []
     regions: list[SceneItemDescription] = []
