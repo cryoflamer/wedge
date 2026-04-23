@@ -99,6 +99,7 @@ class ControlsPanel(QWidget):
     scene_item_selected = Signal(str)
     apply_scene_item_editor_requested = Signal(object)
     add_scene_item_requested = Signal()
+    duplicate_scene_item_requested = Signal()
     delete_scene_item_requested = Signal()
     selected_seed_apply_requested = Signal(float, float)
     trajectory_visibility_toggled = Signal(int)
@@ -166,6 +167,7 @@ class ControlsPanel(QWidget):
         self._scene_item_fill_row_label = QLabel("Fill")
         self._scene_item_fill_row_widget = self._scene_item_fill_color_selector
         self._add_scene_item_button = QPushButton("Add Item")
+        self._duplicate_scene_item_button = QPushButton("Duplicate")
         self._delete_scene_item_button = QPushButton("Delete")
         self._angle_units_combo = QComboBox()
         self._export_mode_combo = QComboBox()
@@ -295,6 +297,9 @@ class ControlsPanel(QWidget):
             self._emit_scene_item_editor_apply
         )
         self._add_scene_item_button.clicked.connect(self.add_scene_item_requested.emit)
+        self._duplicate_scene_item_button.clicked.connect(
+            self.duplicate_scene_item_requested.emit
+        )
         self._delete_scene_item_button.clicked.connect(
             self.delete_scene_item_requested.emit
         )
@@ -328,6 +333,7 @@ class ControlsPanel(QWidget):
         self._save_scene_button.setEnabled(False)
         self._set_compact_button_policy(self._scene_item_editor_apply_button)
         self._set_compact_button_policy(self._add_scene_item_button)
+        self._set_compact_button_policy(self._duplicate_scene_item_button)
         self._set_compact_button_policy(self._delete_scene_item_button)
         self._scene_item_status_label.setStyleSheet("color: #666;")
         self._scene_item_editor_placeholder.setStyleSheet("color: #666;")
@@ -633,7 +639,8 @@ class ControlsPanel(QWidget):
         scene_item_actions.setHorizontalSpacing(6)
         scene_item_actions.setVerticalSpacing(4)
         scene_item_actions.addWidget(self._add_scene_item_button, 0, 0)
-        scene_item_actions.addWidget(self._delete_scene_item_button, 0, 1)
+        scene_item_actions.addWidget(self._duplicate_scene_item_button, 0, 1)
+        scene_item_actions.addWidget(self._delete_scene_item_button, 1, 0, 1, 2)
         scene_item_actions.setColumnStretch(0, 1)
         scene_item_actions.setColumnStretch(1, 1)
         scene_item_layout.addLayout(scene_item_actions)

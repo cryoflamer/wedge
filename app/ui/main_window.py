@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
+from copy import deepcopy
 import math
 import logging
 import sys
@@ -397,6 +398,9 @@ class MainWindow(QMainWindow):
         )
         self.controls_panel.add_scene_item_requested.connect(
             self._on_add_scene_item_requested
+        )
+        self.controls_panel.duplicate_scene_item_requested.connect(
+            self._on_duplicate_scene_item_requested
         )
         self.controls_panel.delete_scene_item_requested.connect(
             self._on_delete_scene_item_requested
@@ -1203,6 +1207,35 @@ class MainWindow(QMainWindow):
         self._refresh_scene_item_views(name)
         self._mark_scene_dirty()
         logger.info("Scene item created: name=%s alias=%s", name, alias)
+
+    def _on_duplicate_scene_item_requested(self) -> None:
+        selected = self._selected_scene_item()
+        if selected is None:
+            return
+
+        duplicate = deepcopy(selected)
+        duplicate.name = self._unique_scene_item_copy_name(selected.name)
+        self._config.regions.append(duplicate)
+        self._selected_scene_item_name = duplicate.name
+        self._refresh_scene_item_views(duplicate.name)
+        self._mark_scene_dirty()
+        logger.info(
+            "Scene item duplicated: source=%s duplicate=%s",
+            selected.name,
+            duplicate.name,
+        )
+
+    def _unique_scene_item_copy_name(self, base_name: str) -> str:
+        existing_names = {item.name for item in self._config.regions}
+        candidate = f"{base_name}_copy"
+        if candidate not in existing_names:
+            return candidate
+        index = 2
+        while True:
+            candidate = f"{base_name}_copy{index}"
+            if candidate not in existing_names:
+                return candidate
+            index += 1
 
     def _on_delete_scene_item_requested(self) -> None:
         selected_name = self.controls_panel.current_scene_item_name()
