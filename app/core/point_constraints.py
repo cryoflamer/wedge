@@ -44,6 +44,22 @@ def project_point_to_constraint(
     return alpha, beta
 
 
+def project_point_to_nearest_constraint(
+    alpha: float,
+    beta: float,
+    constraints: tuple[ActivePointConstraint, ...] | list[ActivePointConstraint],
+) -> tuple[float, float]:
+    best_point = (alpha, beta)
+    best_distance = math.inf
+    for constraint in constraints:
+        point = project_point_to_constraint(alpha, beta, constraint)
+        distance = math.hypot(point[0] - alpha, point[1] - beta)
+        if distance < best_distance:
+            best_distance = distance
+            best_point = point
+    return best_point
+
+
 def project_point_to_boundary(
     alpha: float,
     beta: float,

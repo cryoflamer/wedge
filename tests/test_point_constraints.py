@@ -7,6 +7,7 @@ from app.core.point_constraints import (
     ActivePointConstraint,
     BoundarySegment,
     project_point_to_constraint,
+    project_point_to_nearest_constraint,
 )
 
 
@@ -37,6 +38,42 @@ class PointConstraintTests(unittest.TestCase):
 
         self.assertAlmostEqual(alpha, 0.4, places=12)
         self.assertAlmostEqual(beta, 1.0, places=12)
+
+    def test_projects_to_nearest_constraint_curve(self) -> None:
+        alpha, beta = project_point_to_nearest_constraint(
+            0.4,
+            1.08,
+            (
+                ActivePointConstraint(kind="symmetry"),
+                ActivePointConstraint(
+                    kind="boundary",
+                    boundary_segments=(
+                        BoundarySegment(0.0, 1.0, 1.0, 1.0),
+                    ),
+                ),
+            ),
+        )
+
+        self.assertAlmostEqual(alpha, 0.4, places=12)
+        self.assertAlmostEqual(beta, 1.0, places=12)
+
+    def test_nearest_constraint_keeps_symmetry_available(self) -> None:
+        alpha, beta = project_point_to_nearest_constraint(
+            0.4,
+            math.pi - 0.38,
+            (
+                ActivePointConstraint(kind="symmetry"),
+                ActivePointConstraint(
+                    kind="boundary",
+                    boundary_segments=(
+                        BoundarySegment(0.0, 1.0, 1.0, 1.0),
+                    ),
+                ),
+            ),
+        )
+
+        self.assertAlmostEqual(alpha, 0.4, places=12)
+        self.assertAlmostEqual(beta, math.pi - 0.4, places=12)
 
 
 if __name__ == "__main__":

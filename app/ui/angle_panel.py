@@ -18,6 +18,7 @@ from app.core.point_constraints import (
     BoundarySegment,
     build_boundary_segments,
     project_point_to_constraint,
+    project_point_to_nearest_constraint,
 )
 from app.models.constraint import ConstraintDescription
 from app.core.region_eval import evaluate_scene_item
@@ -223,7 +224,63 @@ class AnglePanel(QWidget):
 
     def _selection_from_position(self, point: QPointF) -> tuple[float, float]:
         alpha, beta = self._map_click(point)
+        return self.project_point_to_snap_constraints(alpha, beta)
+
+    def project_point_to_snap_constraints(
+        self,
+        alpha: float,
+        beta: float,
+    ) -> tuple[float, float]:
+        if self._active_constraint is not None and self._active_constraint.kind == "symmetry":
+            return project_point_to_constraint(alpha, beta, self._active_constraint)
+        constraints = self._snap_constraint_candidates()
+        if constraints:
+            return project_point_to_nearest_constraint(alpha, beta, constraints)
         return project_point_to_constraint(alpha, beta, self._active_constraint)
+
+    def _snap_constraint_candidates(self) -> list[ActivePointConstraint]:
+        if self._active_constraint is None:
+            return []
+
+        candidates: list[ActivePointConstraint] = []
+        for constraint in self._constraints:
+            if not constraint.visible:
+                continue
+            kind = constraint.constraint_type.strip().lower()
+            if kind == "symmetry":
+                candidates.append(
+                    ActivePointConstraint(
+                        kind="symmetry",
+                        region_name=constraint.name,
+                    )
+                )
+            elif kind == "boundary" and constraint.target:
+                boundary_segments = self._boundary_segments_cache.get(
+                    constraint.target,
+                    (),
+                )
+                if boundary_segments:
+                    candidates.append(
+                        ActivePointConstraint(
+                            kind="boundary",
+                            region_name=constraint.target,
+                            boundary_segments=boundary_segments,
+                        )
+                    )
+
+        hydrated_active = self._hydrate_constraint(self._active_constraint)
+        if (
+            hydrated_active is not None
+            and hydrated_active.kind == "boundary"
+            and hydrated_active.boundary_segments
+            and all(
+                candidate.kind != hydrated_active.kind
+                or candidate.region_name != hydrated_active.region_name
+                for candidate in candidates
+            )
+        ):
+            candidates.append(hydrated_active)
+        return candidates
 
     def _hydrate_constraint(
         self,
