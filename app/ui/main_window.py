@@ -1162,6 +1162,7 @@ class MainWindow(QMainWindow):
         )
         self.angle_panel.set_regions(self._config.regions)
         self.angle_panel.set_selected_scene_item(self._selected_scene_item_name)
+        self._sync_angle_constraint_controls()
         self.controls_panel.set_scene_dirty(self._scene_dirty)
 
     def _create_scene_item_dialog(self) -> tuple[str, str] | None:
@@ -1641,6 +1642,34 @@ class MainWindow(QMainWindow):
             if item.visible and is_boundary_scene_item(item)
         )
         return options
+
+    def _sync_angle_constraint_controls(self) -> None:
+        options = self._angle_constraint_options()
+        option_names = {name for name, _, _ in options}
+        if (
+            self._active_angle_constraint_name is not None
+            and self._active_angle_constraint_name not in option_names
+        ):
+            self._active_angle_constraint_name = self._default_angle_constraint_name()
+            self._base_angle_constraint_name = self._active_angle_constraint_name
+            self._config.view.active_angle_constraint = self._active_angle_constraint_name
+            self._symmetric_mode = self._constraint_name_is_symmetry(
+                self._active_angle_constraint_name
+            )
+            self.angle_panel.set_active_constraint(self._resolved_angle_constraint())
+        elif (
+            self._base_angle_constraint_name is not None
+            and self._base_angle_constraint_name not in option_names
+        ):
+            self._base_angle_constraint_name = self._default_angle_constraint_name()
+        self.controls_panel.set_constraint_options(
+            options,
+            self._base_angle_constraint_name,
+        )
+        self.controls_panel.set_constraint_mode(
+            "constraint" if self._active_angle_constraint_name is not None else "free"
+        )
+        self.controls_panel.set_symmetric_mode(self._symmetric_mode)
 
     def _constraint_name_is_symmetry(self, name: str | None) -> bool:
         if name is None:
