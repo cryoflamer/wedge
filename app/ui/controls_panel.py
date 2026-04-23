@@ -146,8 +146,7 @@ class ControlsPanel(QWidget):
         self._heatmap_resolution_combo = QComboBox()
         self._heatmap_normalization_combo = QComboBox()
         self._scene_item_list = QListWidget()
-        self._scene_item_placeholder = QLabel("Nothing selected")
-        self._scene_item_selection_label = QLabel("")
+        self._scene_item_status_label = QLabel("Nothing selected")
         self._scene_item_editor_placeholder = QLabel("Select an item to edit.")
         self._scene_item_editor_status = QLabel("")
         self._scene_item_name_edit = QLineEdit()
@@ -192,7 +191,6 @@ class ControlsPanel(QWidget):
         self._selected_seed_wall_edit = QLineEdit()
         self._selected_seed_status = QLabel("")
         self._trajectory_color_selector = ColorSelector()
-        self._boundary_color_selector = ColorSelector()
         self._trajectory_wall_summary = QLabel("wall: -")
         self._trajectory_d_summary = QLabel("d0: -")
         self._trajectory_tau_summary = QLabel("τ0: -")
@@ -331,11 +329,10 @@ class ControlsPanel(QWidget):
         self._set_compact_button_policy(self._scene_item_editor_apply_button)
         self._set_compact_button_policy(self._add_scene_item_button)
         self._set_compact_button_policy(self._delete_scene_item_button)
-        self._scene_item_placeholder.setStyleSheet("color: #666;")
+        self._scene_item_status_label.setStyleSheet("color: #666;")
         self._scene_item_editor_placeholder.setStyleSheet("color: #666;")
         self._scene_item_editor_status.setStyleSheet("color: #b00020;")
-        self._scene_item_selection_label.setWordWrap(True)
-        self._scene_item_selection_label.setVisible(False)
+        self._scene_item_status_label.setWordWrap(True)
         self._scene_item_editor_status.setVisible(False)
         self._scene_item_name_edit.setReadOnly(True)
         self._sync_export_preset_state()
@@ -607,8 +604,7 @@ class ControlsPanel(QWidget):
         scene_item_layout = scene_item_section.content_layout()
         self._scene_item_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         scene_item_layout.addWidget(self._scene_item_list)
-        scene_item_layout.addWidget(self._scene_item_placeholder)
-        scene_item_layout.addWidget(self._scene_item_selection_label)
+        scene_item_layout.addWidget(self._scene_item_status_label)
         self._scene_item_editor_section = CollapsibleSection("SceneItem editor", expanded=False)
         scene_item_editor_layout = self._scene_item_editor_section.content_layout()
         scene_item_editor_layout.addWidget(self._scene_item_editor_placeholder)
@@ -1138,7 +1134,7 @@ class ControlsPanel(QWidget):
         del blocker
         if selected_row < 0:
             self._scene_item_list.setCurrentRow(-1)
-            self._show_scene_item_placeholder()
+            self._show_scene_item_empty_state()
 
     def _current_scene_item_name(self) -> str | None:
         current_item = self._scene_item_list.currentItem()
@@ -1156,11 +1152,8 @@ class ControlsPanel(QWidget):
     def current_scene_item_name(self) -> str | None:
         return self._current_scene_item_name()
 
-    def _show_scene_item_placeholder(self) -> None:
-        self._scene_item_placeholder.setVisible(True)
-        self._scene_item_placeholder.setText("Nothing selected")
-        self._scene_item_selection_label.clear()
-        self._scene_item_selection_label.setVisible(False)
+    def _show_scene_item_empty_state(self) -> None:
+        self._scene_item_status_label.setText("Nothing selected")
         self._show_scene_item_editor_placeholder(self._scene_item_empty_message())
 
     def _show_scene_item_editor_placeholder(self, text: str) -> None:
@@ -1170,6 +1163,11 @@ class ControlsPanel(QWidget):
         self._scene_item_editor_status.setVisible(False)
         self._set_scene_item_editor_enabled(False)
         self._scene_item_name_edit.clear()
+        self._scene_item_alias_edit.clear()
+        self._scene_item_display_text_edit.clear()
+        self._scene_item_legend_text_edit.clear()
+        self._scene_item_expression_edit.clear()
+        self._scene_item_priority_edit.clear()
         if self._scene_item_editor_section is not None:
             self._scene_item_editor_section.set_expanded(False)
 
@@ -1214,7 +1212,7 @@ class ControlsPanel(QWidget):
     ) -> None:
         del previous
         if current is None:
-            self._show_scene_item_placeholder()
+            self._show_scene_item_empty_state()
             return
         data = current.data(Qt.UserRole)
         if (
@@ -1222,16 +1220,13 @@ class ControlsPanel(QWidget):
             or isinstance(data, (str, bytes))
             or len(data) != 3
         ):
-            self._show_scene_item_placeholder()
+            self._show_scene_item_empty_state()
             return
         name = str(data[0])
         relation = str(data[1])
         label = str(data[2])
         item_type = "boundary" if relation == "=" else "region"
-        self._scene_item_placeholder.setText(f"Editing {item_type}: {label}")
-        self._scene_item_placeholder.setVisible(True)
-        self._scene_item_selection_label.setText(f"Editing {item_type}: {label}")
-        self._scene_item_selection_label.setVisible(True)
+        self._scene_item_status_label.setText(f"Editing {item_type}: {label}")
         self.scene_item_selected.emit(name)
 
     def _sync_scene_item_editor_mode(self) -> None:
