@@ -671,7 +671,7 @@ class MainWindow(QMainWindow):
         if trajectory_id != self._selected_trajectory_id:
             self._selected_trajectory_id = trajectory_id
             self._reset_replay_views()
-            self.update_view()
+            self._update_selected_trajectory_view()
 
     def _on_seed_drag_finished(
         self,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
@@ -29,6 +30,9 @@ class WedgePanel(QWidget):
         self._top_margin = 16
         self._bottom_margin = 16
         self._header_spacing = 4
+        self._geometry_bounds_cache: tuple[float, float, float, float] | None = None
+        self._canvas_transform_cache: _CanvasTransform | None = None
+        self._geometry_cache_signature: tuple[object, ...] | None = None
 
         for label in (self._title, self._hint):
             label.setFixedHeight(label.sizeHint().height())
@@ -57,11 +61,19 @@ class WedgePanel(QWidget):
         selected_trajectory_id: int | None,
         active_segment_indices: dict[int, int] | None = None,
     ) -> None:
+        geometry_signature = self._geometry_signature(geometries)
+        if geometry_signature != self._geometry_cache_signature:
+            self._geometry_cache_signature = geometry_signature
+            self._invalidate_geometry_cache()
         self._seeds = seeds
         self._geometries = geometries
         self._selected_trajectory_id = selected_trajectory_id
         self._active_segment_indices = active_segment_indices or {}
         self.update()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._invalidate_canvas_transform_cache()
 
     def _plot_rect(self) -> QRectF:
         available_width = max(self.width() - 2 * self._padding, 1)
@@ -100,26 +112,54 @@ class WedgePanel(QWidget):
                     points.append((sample.x, sample.y))
         return points
 
+    def _invalidate_geometry_cache(self) -> None:
+        self._geometry_bounds_cache = None
+        self._invalidate_canvas_transform_cache()
+
+    def _invalidate_canvas_transform_cache(self) -> None:
+        self._canvas_transform_cache = None
+
+    # IMPORTANT: geometry bounds computation is expensive because it scans all
+    # walls, reflections, segments, and samples. It must never happen inside
+    # _to_canvas() or any per-point transform path. Bounds and derived canvas
+    # transform values must be recomputed only when geometry changes or when the
+    # widget size changes. Breaking this invariant causes severe UI lag during
+    # trajectory selection because every repaint degenerates into repeated
+    # O(N_samples) geometry scans.
+    def _ensure_geometry_cache(self) -> None:
+        if self._geometry_bounds_cache is None:
+            self._geometry_bounds_cache = self._compute_geometry_bounds()
+        if self._canvas_transform_cache is None:
+            self._canvas_transform_cache = self._build_canvas_transform(
+                self._geometry_bounds_cache
+            )
+
+    def _geometry_signature(
+        self,
+        geometries: dict[int, WedgeGeometry],
+    ) -> tuple[object, ...]:
+        return (
+            self._view_config.show_directrix,
+            tuple(
+                (trajectory_id, id(geometry))
+                for trajectory_id, geometry in sorted(geometries.items())
+            ),
+        )
+
     def _to_canvas(self, x_value: float, y_value: float) -> QPointF:
-        plot = self._plot_rect()
-        min_x, max_x, min_y, max_y = self._geometry_bounds()
-        data_width = max(max_x - min_x, 1.0e-6)
-        data_height = max(max_y - min_y, 1.0e-6)
-        inner_margin = 8.0
-        available_width = max(plot.width() - 2.0 * inner_margin, 1.0)
-        available_height = max(plot.height() - 2.0 * inner_margin, 1.0)
-        scale = min(available_width / data_width, available_height / data_height)
-
-        used_width = data_width * scale
-        used_height = data_height * scale
-        offset_x = plot.left() + (plot.width() - used_width) / 2.0
-        offset_y = plot.top() + (plot.height() - used_height) / 2.0
-
-        canvas_x = offset_x + (x_value - min_x) * scale
-        canvas_y = offset_y + (max_y - y_value) * scale
+        self._ensure_geometry_cache()
+        assert self._canvas_transform_cache is not None
+        transform = self._canvas_transform_cache
+        canvas_x = transform.offset_x + (x_value - transform.min_x) * transform.scale
+        canvas_y = transform.offset_y + (transform.max_y - y_value) * transform.scale
         return QPointF(canvas_x, canvas_y)
 
     def _geometry_bounds(self) -> tuple[float, float, float, float]:
+        self._ensure_geometry_cache()
+        assert self._geometry_bounds_cache is not None
+        return self._geometry_bounds_cache
+
+    def _compute_geometry_bounds(self) -> tuple[float, float, float, float]:
         points = self._all_points()
         min_x = min((point[0] for point in points), default=0.0)
         max_x = max((point[0] for point in points), default=1.0)
@@ -132,6 +172,31 @@ class WedgePanel(QWidget):
             max_y = min_y + 1.0
 
         return min_x, max_x, min_y, max_y
+
+    def _build_canvas_transform(
+        self,
+        bounds: tuple[float, float, float, float],
+    ) -> "_CanvasTransform":
+        plot = self._plot_rect()
+        min_x, max_x, min_y, max_y = bounds
+        data_width = max(max_x - min_x, 1.0e-6)
+        data_height = max(max_y - min_y, 1.0e-6)
+        inner_margin = 8.0
+        available_width = max(plot.width() - 2.0 * inner_margin, 1.0)
+        available_height = max(plot.height() - 2.0 * inner_margin, 1.0)
+        scale = min(available_width / data_width, available_height / data_height)
+
+        used_width = data_width * scale
+        used_height = data_height * scale
+        offset_x = plot.left() + (plot.width() - used_width) / 2.0
+        offset_y = plot.top() + (plot.height() - used_height) / 2.0
+        return _CanvasTransform(
+            min_x=min_x,
+            max_y=max_y,
+            offset_x=offset_x,
+            offset_y=offset_y,
+            scale=scale,
+        )
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
@@ -325,3 +390,12 @@ class _TickValues:
 
     def __iter__(self):
         return iter(self.values)
+
+
+@dataclass(frozen=True)
+class _CanvasTransform:
+    min_x: float
+    max_y: float
+    offset_x: float
+    offset_y: float
+    scale: float
