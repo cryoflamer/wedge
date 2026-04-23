@@ -95,15 +95,11 @@ class ControlsPanel(QWidget):
     export_data_requested = Signal()
     trajectory_selected = Signal(int)
     selected_trajectory_color_changed = Signal(str)
-    boundary_selected = Signal(str)
-    selected_boundary_color_changed = Signal(str)
-    selected_boundary_line_width_changed = Signal(float)
-    selected_boundary_line_style_changed = Signal(str)
     save_scene_requested = Signal()
     scene_item_selected = Signal(str)
     apply_scene_item_editor_requested = Signal(object)
     add_scene_item_requested = Signal()
-    delete_region_boundary_requested = Signal()
+    delete_scene_item_requested = Signal()
     selected_seed_apply_requested = Signal(float, float)
     trajectory_visibility_toggled = Signal(int)
     clear_selected_requested = Signal()
@@ -130,10 +126,7 @@ class ControlsPanel(QWidget):
         self._constraint_mode_combo = QComboBox()
         self._constraint_label = QLabel("Constraint")
         self._constraint_combo = QComboBox()
-        self._boundary_selector = QComboBox()
-        self._boundary_line_width_combo = QComboBox()
-        self._boundary_line_style_combo = QComboBox()
-        self._save_boundary_styling_button = QPushButton("Save")
+        self._save_scene_button = QPushButton("Save")
         self._scene_dirty_label = QLabel("Saved")
         self._symmetry_constraint_checkbox = QCheckBox("Symmetry constraint")
         self._show_phase_grid_checkbox = QCheckBox("Show grid")
@@ -152,11 +145,12 @@ class ControlsPanel(QWidget):
         self._heatmap_mode_combo = QComboBox()
         self._heatmap_resolution_combo = QComboBox()
         self._heatmap_normalization_combo = QComboBox()
-        self._region_boundary_list = QListWidget()
-        self._region_boundary_placeholder = QLabel("Nothing selected")
-        self._region_boundary_selection_label = QLabel("")
+        self._scene_item_list = QListWidget()
+        self._scene_item_placeholder = QLabel("Nothing selected")
+        self._scene_item_selection_label = QLabel("")
         self._scene_item_editor_placeholder = QLabel("Select an item to edit.")
         self._scene_item_editor_status = QLabel("")
+        self._scene_item_name_edit = QLineEdit()
         self._scene_item_alias_edit = QLineEdit()
         self._scene_item_display_text_edit = QLineEdit()
         self._scene_item_legend_text_edit = QLineEdit()
@@ -173,7 +167,7 @@ class ControlsPanel(QWidget):
         self._scene_item_fill_row_label = QLabel("Fill")
         self._scene_item_fill_row_widget = self._scene_item_fill_color_selector
         self._add_scene_item_button = QPushButton("Add Item")
-        self._delete_region_boundary_button = QPushButton("Delete")
+        self._delete_scene_item_button = QPushButton("Delete")
         self._angle_units_combo = QComboBox()
         self._export_mode_combo = QComboBox()
         self._export_preset_combo = QComboBox()
@@ -242,17 +236,6 @@ class ControlsPanel(QWidget):
         self._constraint_combo.currentIndexChanged.connect(
             self._on_constraint_changed
         )
-        self._boundary_selector.currentIndexChanged.connect(
-            self._on_boundary_selector_changed
-        )
-        self._boundary_line_width_combo.addItems(["1.0", "1.5", "2.0", "2.5", "3.0"])
-        self._boundary_line_width_combo.currentTextChanged.connect(
-            self._on_boundary_line_width_changed
-        )
-        self._boundary_line_style_combo.addItems(["solid", "dashed"])
-        self._boundary_line_style_combo.currentTextChanged.connect(
-            self.selected_boundary_line_style_changed.emit
-        )
         self._symmetry_constraint_checkbox.toggled.connect(
             self._on_symmetric_mode_toggled
         )
@@ -301,8 +284,8 @@ class ControlsPanel(QWidget):
         self._heatmap_normalization_combo.currentTextChanged.connect(
             self._emit_heatmap_settings
         )
-        self._region_boundary_list.currentItemChanged.connect(
-            self._on_region_boundary_selection_changed
+        self._scene_item_list.currentItemChanged.connect(
+            self._on_scene_item_selection_changed
         )
         self._scene_item_relation_combo.addItems(["=", "<", "<=", ">", ">="])
         self._scene_item_relation_combo.currentTextChanged.connect(
@@ -314,8 +297,8 @@ class ControlsPanel(QWidget):
             self._emit_scene_item_editor_apply
         )
         self._add_scene_item_button.clicked.connect(self.add_scene_item_requested.emit)
-        self._delete_region_boundary_button.clicked.connect(
-            self.delete_region_boundary_requested.emit
+        self._delete_scene_item_button.clicked.connect(
+            self.delete_scene_item_requested.emit
         )
         self._angle_units_combo.addItems(["rad", "deg"])
         self._angle_units_combo.currentTextChanged.connect(
@@ -339,27 +322,22 @@ class ControlsPanel(QWidget):
             self.selected_trajectory_color_changed.emit
         )
         self._trajectory_color_selector.setEnabled(False)
-        self._boundary_color_selector.color_changed.connect(
-            self.selected_boundary_color_changed.emit
-        )
-        self._boundary_color_selector.setEnabled(False)
-        self._boundary_line_width_combo.setEnabled(False)
-        self._boundary_line_style_combo.setEnabled(False)
-        self._save_boundary_styling_button.clicked.connect(
+        self._save_scene_button.clicked.connect(
             self.save_scene_requested.emit
         )
-        self._set_compact_button_policy(self._save_boundary_styling_button)
+        self._set_compact_button_policy(self._save_scene_button)
         self._scene_dirty_label.setStyleSheet("color: #666;")
-        self._save_boundary_styling_button.setEnabled(False)
+        self._save_scene_button.setEnabled(False)
         self._set_compact_button_policy(self._scene_item_editor_apply_button)
         self._set_compact_button_policy(self._add_scene_item_button)
-        self._set_compact_button_policy(self._delete_region_boundary_button)
-        self._region_boundary_placeholder.setStyleSheet("color: #666;")
+        self._set_compact_button_policy(self._delete_scene_item_button)
+        self._scene_item_placeholder.setStyleSheet("color: #666;")
         self._scene_item_editor_placeholder.setStyleSheet("color: #666;")
         self._scene_item_editor_status.setStyleSheet("color: #b00020;")
-        self._region_boundary_selection_label.setWordWrap(True)
-        self._region_boundary_selection_label.setVisible(False)
+        self._scene_item_selection_label.setWordWrap(True)
+        self._scene_item_selection_label.setVisible(False)
         self._scene_item_editor_status.setVisible(False)
+        self._scene_item_name_edit.setReadOnly(True)
         self._sync_export_preset_state()
         self._trajectory_selector.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
@@ -623,26 +601,14 @@ class ControlsPanel(QWidget):
             self._show_region_legend_checkbox,
         ):
             parameter_view_layout.addWidget(checkbox)
-        boundary_styling_section = CollapsibleSection("Boundary styling", expanded=False)
-        boundary_styling_form = QFormLayout()
-        boundary_styling_form.setContentsMargins(0, 0, 0, 0)
-        boundary_styling_form.setHorizontalSpacing(6)
-        boundary_styling_form.setVerticalSpacing(4)
-        boundary_styling_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
-        boundary_styling_form.addRow("Boundary", self._boundary_selector)
-        boundary_styling_form.addRow("Color", self._boundary_color_selector)
-        boundary_styling_form.addRow("Line width", self._boundary_line_width_combo)
-        boundary_styling_form.addRow("Line style", self._boundary_line_style_combo)
-        boundary_styling_section.content_layout().addLayout(boundary_styling_form)
-        parameter_view_layout.addWidget(boundary_styling_section)
         sections.append(parameter_view_section)
 
-        region_boundary_section = CollapsibleSection("SceneItems", expanded=False)
-        region_boundary_layout = region_boundary_section.content_layout()
-        self._region_boundary_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
-        region_boundary_layout.addWidget(self._region_boundary_list)
-        region_boundary_layout.addWidget(self._region_boundary_placeholder)
-        region_boundary_layout.addWidget(self._region_boundary_selection_label)
+        scene_item_section = CollapsibleSection("SceneItems", expanded=False)
+        scene_item_layout = scene_item_section.content_layout()
+        self._scene_item_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        scene_item_layout.addWidget(self._scene_item_list)
+        scene_item_layout.addWidget(self._scene_item_placeholder)
+        scene_item_layout.addWidget(self._scene_item_selection_label)
         self._scene_item_editor_section = CollapsibleSection("SceneItem editor", expanded=False)
         scene_item_editor_layout = self._scene_item_editor_section.content_layout()
         scene_item_editor_layout.addWidget(self._scene_item_editor_placeholder)
@@ -651,6 +617,7 @@ class ControlsPanel(QWidget):
         scene_item_editor_form.setHorizontalSpacing(6)
         scene_item_editor_form.setVerticalSpacing(4)
         scene_item_editor_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        scene_item_editor_form.addRow("Name", self._scene_item_name_edit)
         scene_item_editor_form.addRow("Alias", self._scene_item_alias_edit)
         scene_item_editor_form.addRow("Display text", self._scene_item_display_text_edit)
         scene_item_editor_form.addRow("Legend text", self._scene_item_legend_text_edit)
@@ -665,23 +632,23 @@ class ControlsPanel(QWidget):
         scene_item_editor_layout.addLayout(scene_item_editor_form)
         scene_item_editor_layout.addWidget(self._scene_item_editor_status)
         scene_item_editor_layout.addWidget(self._scene_item_editor_apply_button)
-        region_boundary_layout.addWidget(self._scene_item_editor_section)
-        region_boundary_actions = QGridLayout()
-        region_boundary_actions.setHorizontalSpacing(6)
-        region_boundary_actions.setVerticalSpacing(4)
-        region_boundary_actions.addWidget(self._add_scene_item_button, 0, 0)
-        region_boundary_actions.addWidget(self._delete_region_boundary_button, 0, 1)
-        region_boundary_actions.setColumnStretch(0, 1)
-        region_boundary_actions.setColumnStretch(1, 1)
-        region_boundary_layout.addLayout(region_boundary_actions)
-        region_boundary_save_row = QHBoxLayout()
-        region_boundary_save_row.setContentsMargins(0, 0, 0, 0)
-        region_boundary_save_row.setSpacing(6)
-        region_boundary_save_row.addWidget(self._scene_dirty_label)
-        region_boundary_save_row.addStretch(1)
-        region_boundary_save_row.addWidget(self._save_boundary_styling_button)
-        region_boundary_layout.addLayout(region_boundary_save_row)
-        sections.append(region_boundary_section)
+        scene_item_layout.addWidget(self._scene_item_editor_section)
+        scene_item_actions = QGridLayout()
+        scene_item_actions.setHorizontalSpacing(6)
+        scene_item_actions.setVerticalSpacing(4)
+        scene_item_actions.addWidget(self._add_scene_item_button, 0, 0)
+        scene_item_actions.addWidget(self._delete_scene_item_button, 0, 1)
+        scene_item_actions.setColumnStretch(0, 1)
+        scene_item_actions.setColumnStretch(1, 1)
+        scene_item_layout.addLayout(scene_item_actions)
+        scene_item_save_row = QHBoxLayout()
+        scene_item_save_row.setContentsMargins(0, 0, 0, 0)
+        scene_item_save_row.setSpacing(6)
+        scene_item_save_row.addWidget(self._scene_dirty_label)
+        scene_item_save_row.addStretch(1)
+        scene_item_save_row.addWidget(self._save_scene_button)
+        scene_item_layout.addLayout(scene_item_save_row)
+        sections.append(scene_item_section)
         self._set_scene_item_editor_enabled(False)
 
         lyapunov_section = CollapsibleSection("Lyapunov", expanded=False)
@@ -1088,49 +1055,18 @@ class ControlsPanel(QWidget):
         self._sync_selector_tooltip()
         self.set_selected_trajectory_color(color)
 
-    def set_boundary_items(
-        self,
-        items: list[tuple[str, str, str, float, str]],
-        selected_boundary_name: str | None,
-    ) -> None:
-        blocker = QSignalBlocker(self._boundary_selector)
-        self._boundary_selector.clear()
-        selected_index = -1
-        for index, (name, label, color, line_width, line_style) in enumerate(items):
-            self._boundary_selector.addItem(label, (name, color, line_width, line_style))
-            if name == selected_boundary_name:
-                selected_index = index
-        if selected_index >= 0:
-            self._boundary_selector.setCurrentIndex(selected_index)
-        elif self._boundary_selector.count() > 0:
-            self._boundary_selector.setCurrentIndex(0)
-        del blocker
-
-        boundary_color = None
-        boundary_line_width = None
-        boundary_line_style = None
-        boundary_name = None
-        parsed_data = self._boundary_item_data(self._boundary_selector.currentData())
-        if parsed_data is not None:
-            boundary_name, boundary_color, boundary_line_width, boundary_line_style = parsed_data
-        self.set_selected_boundary_color(boundary_color)
-        self.set_selected_boundary_style(boundary_line_width, boundary_line_style)
-        self._boundary_selector.setEnabled(self._boundary_selector.count() > 0)
-        if boundary_name is not None and boundary_name != selected_boundary_name:
-            self.boundary_selected.emit(boundary_name)
-
     def set_scene_item_items(
         self,
         items: list[tuple[str, str, str]],
         selected_item_name: str | None = None,
     ) -> None:
         self._scene_item_items = list(items)
-        current_name = selected_item_name or self._current_region_boundary_item_name()
+        current_name = selected_item_name or self._current_scene_item_name()
         self._rebuild_scene_item_list(current_name)
 
     def set_scene_item_editor_values(
         self,
-        item: tuple[str, str, str, str, str | None, bool, int, str, str, float, str] | None,
+        item: tuple[str, str, str, str, str, str | None, bool, int, str, str, float, str] | None,
         *,
         sync_sections: bool = True,
     ) -> None:
@@ -1139,6 +1075,7 @@ class ControlsPanel(QWidget):
             return
         (
             name,
+            alias,
             display_text,
             legend_text,
             expression,
@@ -1158,7 +1095,8 @@ class ControlsPanel(QWidget):
             QSignalBlocker(self._scene_item_line_width_combo),
             QSignalBlocker(self._scene_item_line_style_combo),
         ]
-        self._scene_item_alias_edit.setText(name)
+        self._scene_item_name_edit.setText(name)
+        self._scene_item_alias_edit.setText(alias)
         self._scene_item_display_text_edit.setText(display_text)
         self._scene_item_legend_text_edit.setText(legend_text)
         self._scene_item_expression_edit.setText(expression)
@@ -1184,26 +1122,26 @@ class ControlsPanel(QWidget):
 
     def _rebuild_scene_item_list(self, selected_item_name: str | None = None) -> None:
         if selected_item_name is None:
-            selected_item_name = self._current_region_boundary_item_name()
-        blocker = QSignalBlocker(self._region_boundary_list)
-        self._region_boundary_list.clear()
+            selected_item_name = self._current_scene_item_name()
+        blocker = QSignalBlocker(self._scene_item_list)
+        self._scene_item_list.clear()
         selected_row = -1
         for index, (name, label, relation) in enumerate(getattr(self, "_scene_item_items", [])):
             tag = f"[{relation or '?'}]"
             item = QListWidgetItem(f"{tag} {label}")
             item.setData(Qt.UserRole, (name, relation, label))
-            self._region_boundary_list.addItem(item)
+            self._scene_item_list.addItem(item)
             if name == selected_item_name:
                 selected_row = index
         if selected_row >= 0:
-            self._region_boundary_list.setCurrentRow(selected_row)
+            self._scene_item_list.setCurrentRow(selected_row)
         del blocker
         if selected_row < 0:
-            self._region_boundary_list.setCurrentRow(-1)
-            self._show_region_boundary_placeholder()
+            self._scene_item_list.setCurrentRow(-1)
+            self._show_scene_item_placeholder()
 
-    def _current_region_boundary_item_name(self) -> str | None:
-        current_item = self._region_boundary_list.currentItem()
+    def _current_scene_item_name(self) -> str | None:
+        current_item = self._scene_item_list.currentItem()
         if current_item is None:
             return None
         data = current_item.data(Qt.UserRole)
@@ -1215,14 +1153,14 @@ class ControlsPanel(QWidget):
             return None
         return str(data[0])
 
-    def current_region_boundary_item_name(self) -> str | None:
-        return self._current_region_boundary_item_name()
+    def current_scene_item_name(self) -> str | None:
+        return self._current_scene_item_name()
 
-    def _show_region_boundary_placeholder(self) -> None:
-        self._region_boundary_placeholder.setVisible(True)
-        self._region_boundary_placeholder.setText("Nothing selected")
-        self._region_boundary_selection_label.clear()
-        self._region_boundary_selection_label.setVisible(False)
+    def _show_scene_item_placeholder(self) -> None:
+        self._scene_item_placeholder.setVisible(True)
+        self._scene_item_placeholder.setText("Nothing selected")
+        self._scene_item_selection_label.clear()
+        self._scene_item_selection_label.setVisible(False)
         self._show_scene_item_editor_placeholder(self._scene_item_empty_message())
 
     def _show_scene_item_editor_placeholder(self, text: str) -> None:
@@ -1231,6 +1169,7 @@ class ControlsPanel(QWidget):
         self._scene_item_editor_status.clear()
         self._scene_item_editor_status.setVisible(False)
         self._set_scene_item_editor_enabled(False)
+        self._scene_item_name_edit.clear()
         if self._scene_item_editor_section is not None:
             self._scene_item_editor_section.set_expanded(False)
 
@@ -1252,6 +1191,7 @@ class ControlsPanel(QWidget):
 
     def _set_scene_item_editor_enabled(self, enabled: bool) -> None:
         for widget in (
+            self._scene_item_name_edit,
             self._scene_item_alias_edit,
             self._scene_item_display_text_edit,
             self._scene_item_legend_text_edit,
@@ -1267,14 +1207,14 @@ class ControlsPanel(QWidget):
         ):
             widget.setEnabled(enabled)
 
-    def _on_region_boundary_selection_changed(
+    def _on_scene_item_selection_changed(
         self,
         current: QListWidgetItem | None,
         previous: QListWidgetItem | None,
     ) -> None:
         del previous
         if current is None:
-            self._show_region_boundary_placeholder()
+            self._show_scene_item_placeholder()
             return
         data = current.data(Qt.UserRole)
         if (
@@ -1282,16 +1222,16 @@ class ControlsPanel(QWidget):
             or isinstance(data, (str, bytes))
             or len(data) != 3
         ):
-            self._show_region_boundary_placeholder()
+            self._show_scene_item_placeholder()
             return
         name = str(data[0])
         relation = str(data[1])
         label = str(data[2])
         item_type = "boundary" if relation == "=" else "region"
-        self._region_boundary_placeholder.setText(f"Editing {item_type}: {label}")
-        self._region_boundary_placeholder.setVisible(True)
-        self._region_boundary_selection_label.setText(f"Editing {item_type}: {label}")
-        self._region_boundary_selection_label.setVisible(True)
+        self._scene_item_placeholder.setText(f"Editing {item_type}: {label}")
+        self._scene_item_placeholder.setVisible(True)
+        self._scene_item_selection_label.setText(f"Editing {item_type}: {label}")
+        self._scene_item_selection_label.setVisible(True)
         self.scene_item_selected.emit(name)
 
     def _sync_scene_item_editor_mode(self) -> None:
@@ -1332,50 +1272,12 @@ class ControlsPanel(QWidget):
             }
         )
 
-    def set_selected_boundary_color(self, color: str | None) -> None:
-        self._boundary_color_selector.setEnabled(color is not None)
-        if color is None:
-            return
-        blocker = QSignalBlocker(self._boundary_color_selector)
-        self._boundary_color_selector.set_color(color)
-        del blocker
-
-    def set_selected_boundary_style(
-        self,
-        line_width: float | None,
-        line_style: str | None,
-    ) -> None:
-        enabled = line_width is not None and line_style is not None
-        self._boundary_line_width_combo.setEnabled(enabled)
-        self._boundary_line_style_combo.setEnabled(enabled)
-        self._save_boundary_styling_button.setEnabled(enabled)
-        if not enabled:
-            self._boundary_line_width_combo.setCurrentIndex(-1)
-            self._boundary_line_style_combo.setCurrentIndex(-1)
-            return
-        blockers = [
-            QSignalBlocker(self._boundary_line_width_combo),
-            QSignalBlocker(self._boundary_line_style_combo),
-        ]
-        self._set_combo_value(
-            self._boundary_line_width_combo,
-            f"{line_width:.1f}",
-            "1.0",
-        )
-        normalized_style = "dashed" if str(line_style).strip().lower() == "dashed" else "solid"
-        self._set_combo_value(
-            self._boundary_line_style_combo,
-            normalized_style,
-            "solid",
-        )
-        del blockers
-
     def set_scene_dirty(self, dirty: bool) -> None:
         self._scene_dirty_label.setText("Unsaved changes" if dirty else "Saved")
         self._scene_dirty_label.setStyleSheet(
             "color: #b00020;" if dirty else "color: #666;"
         )
-        self._save_boundary_styling_button.setEnabled(dirty)
+        self._save_scene_button.setEnabled(dirty)
 
     def _color_icon(self, color: str, visible: bool) -> QIcon:
         pixmap = QPixmap(12, 12)
@@ -1475,44 +1377,6 @@ class ControlsPanel(QWidget):
             return
         self._sync_selector_tooltip()
         self.trajectory_selected.emit(int(trajectory_id))
-
-    def _on_boundary_selector_changed(self, index: int) -> None:
-        if index < 0:
-            return
-        parsed_data = self._boundary_item_data(self._boundary_selector.itemData(index))
-        if parsed_data is None:
-            return
-        boundary_name, boundary_color, line_width, line_style = parsed_data
-        self.set_selected_boundary_color(boundary_color)
-        self.set_selected_boundary_style(line_width, line_style)
-        self.boundary_selected.emit(boundary_name)
-
-    def _on_boundary_line_width_changed(self, value: str) -> None:
-        try:
-            line_width = float(value)
-        except ValueError:
-            return
-        self.selected_boundary_line_width_changed.emit(line_width)
-
-    def _boundary_item_data(
-        self,
-        value: object,
-    ) -> tuple[str, str, float, str] | None:
-        if (
-            not isinstance(value, Sequence)
-            or isinstance(value, (str, bytes))
-            or len(value) != 4
-        ):
-            return None
-        try:
-            return (
-                str(value[0]),
-                str(value[1]),
-                float(value[2]),
-                str(value[3]),
-            )
-        except (TypeError, ValueError):
-            return None
 
     def _toggle_current_visibility(self) -> None:
         trajectory_id = self._current_trajectory_id()
