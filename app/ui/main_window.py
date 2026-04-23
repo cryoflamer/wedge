@@ -1148,6 +1148,8 @@ class MainWindow(QMainWindow):
     def _refresh_scene_item_views(
         self,
         selected_name: str | None = None,
+        *,
+        sync_sections: bool = False,
     ) -> None:
         if selected_name is not None:
             self._selected_scene_item_name = selected_name
@@ -1164,7 +1166,7 @@ class MainWindow(QMainWindow):
         )
         self.controls_panel.set_scene_item_editor_values(
             self._selected_scene_item_editor_values(),
-            sync_sections=False,
+            sync_sections=sync_sections,
         )
         self.angle_panel.set_regions(self._config.regions)
         self.angle_panel.set_selected_scene_item(self._selected_scene_item_name)
@@ -1207,7 +1209,7 @@ class MainWindow(QMainWindow):
             )
         )
         self._selected_scene_item_name = name
-        self._refresh_scene_item_views(name)
+        self._refresh_scene_item_views(name, sync_sections=True)
         self._mark_scene_dirty()
         logger.info("Scene item created: name=%s alias=%s", name, alias)
 
