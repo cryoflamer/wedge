@@ -231,6 +231,8 @@ class AnglePanel(QWidget):
         alpha: float,
         beta: float,
     ) -> tuple[float, float]:
+        if self._active_constraint is not None and self._active_constraint.kind == "symmetry":
+            return project_point_to_constraint(alpha, beta, self._active_constraint)
         constraints = self._snap_constraint_candidates()
         if constraints:
             return project_point_to_nearest_constraint(alpha, beta, constraints)
