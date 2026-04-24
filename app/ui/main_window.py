@@ -726,12 +726,16 @@ class MainWindow(QMainWindow):
         if seed is None:
             return
 
-        seed.d0 = d_value
-        seed.tau0 = tau_value
+        seed = self._trajectory_service.update_seed_values(
+            trajectory_id,
+            d_value,
+            tau_value,
+        )
+        if seed is None:
+            return
         self._selected_trajectory = trajectory_id
         self._reset_replay_views()
-        self._trajectory_orbits[trajectory_id] = Orbit(trajectory_id=trajectory_id)
-        self._trajectory_geometries[trajectory_id] = WedgeGeometry()
+        self._trajectory_service.reset_pending_result(trajectory_id)
         self.update_view()
         self._start_single_seed_rebuild(
             seed,
@@ -751,11 +755,15 @@ class MainWindow(QMainWindow):
             return
 
         projected_d, projected_tau = self._constrain_seed_to_domain(d_value, tau_value)
-        seed.d0 = projected_d
-        seed.tau0 = projected_tau
+        seed = self._trajectory_service.update_seed_values(
+            seed.id,
+            projected_d,
+            projected_tau,
+        )
+        if seed is None:
+            return
         self._reset_replay_views()
-        self._trajectory_orbits[seed.id] = Orbit(trajectory_id=seed.id)
-        self._trajectory_geometries[seed.id] = WedgeGeometry()
+        self._trajectory_service.reset_pending_result(seed.id)
         self.update_view()
         self._start_single_seed_rebuild(
             seed,
@@ -1371,9 +1379,7 @@ class MainWindow(QMainWindow):
         if self._selected_trajectory is None:
             return
         trajectory_id = self._selected_trajectory
-        self._trajectory_seeds.pop(trajectory_id, None)
-        self._trajectory_orbits.pop(trajectory_id, None)
-        self._trajectory_geometries.pop(trajectory_id, None)
+        self._trajectory_service.remove_trajectory(trajectory_id)
         self._prune_job_payloads_for_existing_trajectories()
         self._selected_trajectory = (
             next(iter(self._trajectory_seeds.keys()))
@@ -1387,9 +1393,7 @@ class MainWindow(QMainWindow):
 
     def _on_clear_all_trajectories(self) -> None:
         self._cancel_current_job()
-        self._trajectory_seeds.clear()
-        self._trajectory_orbits.clear()
-        self._trajectory_geometries.clear()
+        self._trajectory_service.clear()
         self._paused_job_payloads.clear()
         self._active_job_payload = None
         self._selected_trajectory = None
@@ -1606,7 +1610,7 @@ class MainWindow(QMainWindow):
         )
         self.app_state.config.background.fast_build = session.fast_build
 
-        self._trajectory_seeds = {
+        self._trajectory_service.replace_seeds({
             seed.id: TrajectorySeed(
                 id=seed.id,
                 wall_start=seed.wall_start,
@@ -1616,7 +1620,7 @@ class MainWindow(QMainWindow):
                 color=seed.color,
             )
             for seed in session.trajectories
-        }
+        })
         self._selected_trajectory = session.selected_trajectory_id
         self.phase_panel_wall_1.set_fixed_domain_mode(session.phase_fixed_domain)
         self.phase_panel_wall_2.set_fixed_domain_mode(session.phase_fixed_domain)
@@ -1810,14 +1814,7 @@ class MainWindow(QMainWindow):
                 self.app_state.config.autosave.restore_simulation_parameters
             ),
         )
-        self._trajectory_orbits = {
-            trajectory_id: Orbit(trajectory_id=trajectory_id)
-            for trajectory_id in self._trajectory_seeds
-        }
-        self._trajectory_geometries = {
-            trajectory_id: WedgeGeometry()
-            for trajectory_id in self._trajectory_seeds
-        }
+        self._trajectory_service.initialize_pending_for_all()
         self.replay_controller.reset()
         self._reset_replay_views()
         self.update_view()
@@ -1944,11 +1941,7 @@ class MainWindow(QMainWindow):
             tau0=tau_value,
             color=self._palette[(trajectory_id - 1) % len(self._palette)],
         )
-        self._trajectory_seeds[trajectory_id] = seed
-        self._trajectory_orbits[trajectory_id] = self._build_orbit(seed)
-        self._trajectory_geometries[trajectory_id] = self._build_geometry(
-            self._trajectory_orbits[trajectory_id]
-        )
+        self._trajectory_service.add_built_seed(seed)
         if self._selected_trajectory is None:
             self._selected_trajectory = trajectory_id
         self._reset_replay_views()
@@ -1967,9 +1960,7 @@ class MainWindow(QMainWindow):
             tau0=tau_value,
             color=self._palette[(trajectory_id - 1) % len(self._palette)],
         )
-        self._trajectory_seeds[trajectory_id] = seed
-        self._trajectory_orbits[trajectory_id] = Orbit(trajectory_id=trajectory_id)
-        self._trajectory_geometries[trajectory_id] = WedgeGeometry()
+        self._trajectory_service.add_pending_seed(seed)
         if self._selected_trajectory is None:
             self._selected_trajectory = trajectory_id
         self._reset_replay_views()
@@ -2009,8 +2000,7 @@ class MainWindow(QMainWindow):
         )
 
     def _start_rebuild_job(self, job_message: str = "Starting rebuild...") -> None:
-        self._trajectory_orbits = {}
-        self._trajectory_geometries = {}
+        self._trajectory_service.clear_results()
         self.update_view()
         seeds = sorted(self._trajectory_seeds.values(), key=lambda item: item.id)
         self._start_worker(
@@ -2227,9 +2217,12 @@ class MainWindow(QMainWindow):
             self._pending_finished_payload = None
 
     def _apply_partial_payload(self, payload: OrbitPartialResult) -> None:
-        self._trajectory_seeds[payload.trajectory_id] = payload.seed
-        self._trajectory_orbits[payload.trajectory_id] = payload.orbit
-        self._trajectory_geometries[payload.trajectory_id] = payload.geometry
+        self._trajectory_service.apply_partial_result(
+            payload.trajectory_id,
+            payload.seed,
+            payload.orbit,
+            payload.geometry,
+        )
         if self._selected_trajectory is None:
             self._selected_trajectory = payload.trajectory_id
         self._next_trajectory_id = max(

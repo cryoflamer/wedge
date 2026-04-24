@@ -44,3 +44,68 @@ class TrajectoryService:
             trajectory_id: self.build_geometry(orbit)
             for trajectory_id, orbit in self.orbits.items()
         }
+
+    def add_built_seed(self, seed: TrajectorySeed) -> None:
+        self.seeds[seed.id] = seed
+        self.orbits[seed.id] = self.build_orbit(seed)
+        self.geometries[seed.id] = self.build_geometry(self.orbits[seed.id])
+
+    def add_pending_seed(self, seed: TrajectorySeed) -> None:
+        self.seeds[seed.id] = seed
+        self.orbits[seed.id] = Orbit(trajectory_id=seed.id)
+        self.geometries[seed.id] = WedgeGeometry()
+
+    def update_seed_values(
+        self,
+        trajectory_id: int,
+        d_value: float,
+        tau_value: float,
+    ) -> TrajectorySeed | None:
+        seed = self.seeds.get(trajectory_id)
+        if seed is None:
+            return None
+        seed.d0 = d_value
+        seed.tau0 = tau_value
+        return seed
+
+    def reset_pending_result(self, trajectory_id: int) -> None:
+        self.orbits[trajectory_id] = Orbit(trajectory_id=trajectory_id)
+        self.geometries[trajectory_id] = WedgeGeometry()
+
+    def remove_trajectory(self, trajectory_id: int) -> None:
+        self.seeds.pop(trajectory_id, None)
+        self.orbits.pop(trajectory_id, None)
+        self.geometries.pop(trajectory_id, None)
+
+    def clear(self) -> None:
+        self.seeds.clear()
+        self.orbits.clear()
+        self.geometries.clear()
+
+    def replace_seeds(self, seeds: dict[int, TrajectorySeed]) -> None:
+        self.seeds = seeds
+
+    def initialize_pending_for_all(self) -> None:
+        self.orbits = {
+            trajectory_id: Orbit(trajectory_id=trajectory_id)
+            for trajectory_id in self.seeds
+        }
+        self.geometries = {
+            trajectory_id: WedgeGeometry()
+            for trajectory_id in self.seeds
+        }
+
+    def clear_results(self) -> None:
+        self.orbits = {}
+        self.geometries = {}
+
+    def apply_partial_result(
+        self,
+        trajectory_id: int,
+        seed: TrajectorySeed,
+        orbit: Orbit,
+        geometry: WedgeGeometry,
+    ) -> None:
+        self.seeds[trajectory_id] = seed
+        self.orbits[trajectory_id] = orbit
+        self.geometries[trajectory_id] = geometry
