@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 from app.controllers.job_controller import JobController
 from app.controllers.session_controller import SessionController, SessionRuntimeState
 from app.core.point_constraints import ActivePointConstraint
+from app.core.trajectory_engine import is_native_backend_available
 from app.models.config import Config
 from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
@@ -516,6 +517,12 @@ class MainWindow(QMainWindow):
             resolution=self.app_state.config.view.heatmap_resolution,
             normalization=self.app_state.config.view.heatmap_normalization,
         )
+        self.controls_panel.set_native_backend_options(
+            enabled=self.app_state.config.native.enabled,
+            sample_mode=self.app_state.config.native.sample_mode,
+            sample_step=self.app_state.config.native.sample_step,
+            status_text=self._native_backend_status_text(),
+        )
         if self._selected_scene_item_name not in {
             item.name for item in self.app_state.config.regions
         }:
@@ -975,6 +982,24 @@ class MainWindow(QMainWindow):
         self.app_state.config.simulation.beta = beta
         self.app_state.config.simulation.n_phase_default = normalized_n_phase
         self.app_state.config.simulation.n_geom_default = n_geom
+        if self.sender() is self.controls_panel:
+            enabled, sample_mode, sample_step = (
+                self.controls_panel.native_backend_settings()
+            )
+            normalized_mode = sample_mode.strip().lower() or "every_n"
+            normalized_step = max(int(sample_step), 1)
+            self.app_state.config.native.enabled = enabled
+            self.app_state.config.native.sample_mode = normalized_mode
+            self.app_state.config.native.sample_step = normalized_step
+            self.app_state.config.simulation.native_enabled = enabled
+            self.app_state.config.simulation.native_sample_mode = normalized_mode
+            self.app_state.config.simulation.native_sample_step = normalized_step
+            self.controls_panel.set_native_backend_options(
+                enabled=enabled,
+                sample_mode=normalized_mode,
+                sample_step=normalized_step,
+                status_text=self._native_backend_status_text(),
+            )
         self._start_rebuild_job()
         self._reset_replay_views()
         self._autosave_session()
@@ -1380,12 +1405,20 @@ class MainWindow(QMainWindow):
     def _max_frame_for_selected(self) -> int:
         if self._selected_trajectory is None:
             return 0
+        geometry = self._trajectory_geometries.get(self._selected_trajectory)
+        if geometry is not None:
+            return max(len(geometry.reflections) - 1, 0)
         orbit = self._trajectory_orbits.get(self._selected_trajectory)
         if orbit is None:
             return 0
         return max(len(orbit.points) - 1, 0)
 
     def _max_frame_for_all(self) -> int:
+        if self._trajectory_geometries:
+            return max(
+                max(len(geometry.reflections) - 1, 0)
+                for geometry in self._trajectory_geometries.values()
+            )
         if not self._trajectory_orbits:
             return 0
         return max(max(len(orbit.points) - 1, 0) for orbit in self._trajectory_orbits.values())
@@ -1543,6 +1576,13 @@ class MainWindow(QMainWindow):
             item.name == name and item.visible and is_boundary_scene_item(item)
             for item in self.app_state.config.regions
         )
+
+    def _native_backend_status_text(self) -> str:
+        if not self.app_state.config.native.enabled:
+            return "Native disabled"
+        if is_native_backend_available():
+            return "Native available"
+        return "Native unavailable, using Python fallback"
 
     def _resolved_angle_constraint(self) -> ActivePointConstraint | None:
         if self._active_angle_constraint_name is None:

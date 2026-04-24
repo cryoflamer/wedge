@@ -56,10 +56,14 @@ class BackgroundJobsNativeBatchTests(unittest.TestCase):
         with patch("app.services.background_jobs.is_native_available", return_value=True), patch(
             "app.services.background_jobs.native_build_sparse_orbits_batch",
             return_value=[native_result, native_result],
-        ) as batch_mock, patch("app.services.background_jobs.build_wedge_geometry") as geometry_mock:
+        ) as batch_mock, patch(
+            "app.services.background_jobs.build_dense_orbit_for_geometry"
+        ) as dense_mock, patch("app.services.background_jobs.build_wedge_geometry") as geometry_mock:
+            dense_mock.side_effect = lambda seed, config, steps: worker._native_result_to_orbit(seed.id, native_result)
             geometry_mock.return_value = None
             worker._run_seed_batch(seeds, replace_existing=False, progress_label="Scanning")
         batch_mock.assert_called_once()
+        self.assertEqual(dense_mock.call_count, 2)
         worker.partial_result.emit.assert_called()
         worker.progress.emit.assert_called()
 

@@ -12,7 +12,11 @@ from copy import deepcopy
 
 from app.core.geometry_builder import build_wedge_geometry
 from app.core.lyapunov import LyapunovResult, compute_finite_time_lyapunov
-from app.core.native_backend import is_native_available, native_build_sparse_orbit
+from app.core.native_backend import (
+    is_native_available,
+    native_build_dense_orbit,
+    native_build_sparse_orbit,
+)
 from app.core.math_engine import (
     PhaseState,
     StepResult,
@@ -82,6 +86,34 @@ def build_orbit(
     return orbit
 
 
+def build_dense_orbit_for_geometry(
+    seed: TrajectorySeed,
+    config: SimulationConfig,
+    steps: int,
+) -> Orbit:
+    use_native_dense = (
+        getattr(config, "native_enabled", False)
+        and is_native_available()
+        and (
+            int(getattr(config, "native_sample_step", 1)) > 1
+            or str(getattr(config, "native_sample_mode", "every_n")) != "dense"
+        )
+    )
+    if not use_native_dense:
+        return build_orbit(seed=seed, config=config, steps=steps)
+    return _native_orbit_to_python(
+        trajectory_id=seed.id,
+        native_result=native_build_dense_orbit(
+            d0=seed.d0,
+            tau0=seed.tau0,
+            wall0=seed.wall_start,
+            alpha=config.alpha,
+            beta=config.beta,
+            steps=steps,
+        ),
+    )
+
+
 def is_native_backend_available() -> bool:
     return is_native_available()
 
@@ -129,6 +161,7 @@ __all__ = [
     "StepResult",
     "ValidationResult",
     "build_orbit",
+    "build_dense_orbit_for_geometry",
     "build_wedge_geometry",
     "compute_finite_time_lyapunov",
     "is_native_backend_available",

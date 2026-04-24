@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from app.core.trajectory_engine import build_orbit, build_wedge_geometry
+from app.core.trajectory_engine import (
+    build_dense_orbit_for_geometry,
+    build_orbit,
+    build_wedge_geometry,
+)
 from app.models.config import Config
 from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
@@ -41,20 +45,35 @@ class TrajectoryService:
             max_reflections=config.simulation.n_geom_default,
         )
 
+    def build_geometry_orbit(self, seed: TrajectorySeed) -> Orbit:
+        config = self._config_provider()
+        return build_dense_orbit_for_geometry(
+            seed=seed,
+            config=config.simulation,
+            steps=max(
+                config.simulation.n_phase_default,
+                config.simulation.n_geom_default + 1,
+            ),
+        )
+
     def rebuild_orbits(self) -> None:
         self.orbits = {
             trajectory_id: self.build_orbit(seed)
             for trajectory_id, seed in self.seeds.items()
         }
         self.geometries = {
+            trajectory_id: self.build_geometry_orbit(seed)
+            for trajectory_id, seed in self.seeds.items()
+        }
+        self.geometries = {
             trajectory_id: self.build_geometry(orbit)
-            for trajectory_id, orbit in self.orbits.items()
+            for trajectory_id, orbit in self.geometries.items()
         }
 
     def add_built_seed(self, seed: TrajectorySeed) -> None:
         self.seeds[seed.id] = seed
         self.orbits[seed.id] = self.build_orbit(seed)
-        self.geometries[seed.id] = self.build_geometry(self.orbits[seed.id])
+        self.geometries[seed.id] = self.build_geometry(self.build_geometry_orbit(seed))
 
     def add_pending_seed(self, seed: TrajectorySeed) -> None:
         self.seeds[seed.id] = seed

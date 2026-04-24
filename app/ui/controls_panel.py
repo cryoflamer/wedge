@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSpinBox,
     QSizePolicy,
     QToolButton,
     QVBoxLayout,
@@ -142,6 +143,11 @@ class ControlsPanel(QWidget):
         self._show_labels_on_plot_checkbox = QCheckBox("Show labels on plot")
         self._plot_label_mode_combo = QComboBox()
         self._tooltip_label_mode_combo = QComboBox()
+        self._native_enabled_checkbox = QCheckBox("Native backend enabled")
+        self._native_sample_mode_combo = QComboBox()
+        self._native_sample_step_spin = QSpinBox()
+        self._native_status_label = QLabel("Native unavailable, using Python fallback")
+        self._parameter_pending_label = QLabel("")
         self._show_branch_markers_checkbox = QCheckBox("Show branch markers")
         self._show_heatmap_checkbox = QCheckBox("Show heatmap")
         self._heatmap_mode_combo = QComboBox()
@@ -202,6 +208,7 @@ class ControlsPanel(QWidget):
         self._trajectory_lyapunov_summary = QLabel("Lyapunov: -")
         self._angle_units = "rad"
         self._add_section: CollapsibleSection | None = None
+        self._applied_parameter_state: tuple[int, int, bool, str, int] | None = None
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -269,6 +276,18 @@ class ControlsPanel(QWidget):
         self._tooltip_label_mode_combo.addItems(["alias", "legend"])
         self._tooltip_label_mode_combo.currentTextChanged.connect(
             self._emit_plot_labels_changed
+        )
+        self._native_sample_mode_combo.addItems(["dense", "every_n", "final"])
+        self._native_sample_step_spin.setRange(1, 1_000_000)
+        self._native_sample_step_spin.setValue(1)
+        self._native_enabled_checkbox.toggled.connect(
+            self._on_native_backend_controls_changed
+        )
+        self._native_sample_mode_combo.currentTextChanged.connect(
+            self._on_native_backend_controls_changed
+        )
+        self._native_sample_step_spin.valueChanged.connect(
+            self._on_native_backend_controls_changed
         )
         self._show_branch_markers_checkbox.toggled.connect(
             self.branch_markers_changed.emit
@@ -345,11 +364,15 @@ class ControlsPanel(QWidget):
         self._scene_item_editor_status.setVisible(False)
         self._scene_item_name_edit.setReadOnly(True)
         self._sync_export_preset_state()
+        self._parameter_pending_label.setStyleSheet("color: #8a6d3b;")
+        self._parameter_pending_label.setVisible(False)
         self._trajectory_selector.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
         self._trajectory_selector.setMinimumContentsLength(12)
         self._trajectory_selector.setIconSize(QSize(12, 12))
+        self._n_phase_edit.textChanged.connect(self._update_parameter_pending_state)
+        self._n_geom_edit.textChanged.connect(self._update_parameter_pending_state)
         self._apply_tooltips()
 
     def _build_trajectory_box(self) -> QGroupBox:
@@ -451,9 +474,14 @@ class ControlsPanel(QWidget):
         left_layout.addRow("β", self._beta_edit)
         left_layout.addRow("N_phase", self._n_phase_edit)
         left_layout.addRow("N_geom", self._n_geom_edit)
+        left_layout.addRow("", self._native_enabled_checkbox)
+        left_layout.addRow("Native sample mode", self._native_sample_mode_combo)
+        left_layout.addRow("Native sample step", self._native_sample_step_spin)
+        left_layout.addRow("Backend status", self._native_status_label)
 
         outer_layout.addLayout(left_layout)
         outer_layout.addWidget(self._parameter_status)
+        outer_layout.addWidget(self._parameter_pending_label)
 
         apply_button = QPushButton("Apply")
         apply_button.clicked.connect(self._emit_parameters)
@@ -768,6 +796,13 @@ class ControlsPanel(QWidget):
             resolution=config.view.heatmap_resolution,
             normalization=config.view.heatmap_normalization,
         )
+        self.set_native_backend_options(
+            enabled=config.native.enabled,
+            sample_mode=config.native.sample_mode,
+            sample_step=config.native.sample_step,
+            status_text="Native unavailable, using Python fallback",
+        )
+        self._mark_parameters_applied()
 
     def set_angle_units(self, units: str) -> None:
         normalized_units = units.strip().lower() if units.strip() else "rad"
@@ -902,6 +937,37 @@ class ControlsPanel(QWidget):
         self._plot_label_mode_combo.setEnabled(
             self._show_labels_on_plot_checkbox.isChecked()
         )
+
+    def set_native_backend_options(
+        self,
+        *,
+        enabled: bool,
+        sample_mode: str,
+        sample_step: int,
+        status_text: str,
+    ) -> None:
+        blockers = [
+            QSignalBlocker(self._native_enabled_checkbox),
+            QSignalBlocker(self._native_sample_mode_combo),
+            QSignalBlocker(self._native_sample_step_spin),
+        ]
+        self._native_enabled_checkbox.setChecked(enabled)
+        self._set_combo_value(self._native_sample_mode_combo, sample_mode, "every_n")
+        self._native_sample_step_spin.setValue(max(int(sample_step), 1))
+        self._native_status_label.setText(status_text)
+        del blockers
+        self._sync_native_sample_step_enabled()
+        self._update_parameter_pending_state()
+
+    def native_backend_settings(self) -> tuple[bool, str, int]:
+        return (
+            self._native_enabled_checkbox.isChecked(),
+            self._native_sample_mode_combo.currentText().strip().lower() or "every_n",
+            max(self._native_sample_step_spin.value(), 1),
+        )
+
+    def mark_parameters_applied(self) -> None:
+        self._mark_parameters_applied()
 
     def set_phase_grid_options(
         self,
@@ -1397,6 +1463,7 @@ class ControlsPanel(QWidget):
             return
 
         self.parameters_changed.emit(alpha, beta, n_phase, n_geom)
+        self._mark_parameters_applied()
 
     def _on_trajectory_selector_changed(self, index: int) -> None:
         if index < 0:
@@ -1445,6 +1512,35 @@ class ControlsPanel(QWidget):
         self._parameter_status.setStyleSheet("")
         self._alpha_edit.setStyleSheet("")
         self._beta_edit.setStyleSheet("")
+
+    def _parameter_state_snapshot(self) -> tuple[int, int, bool, str, int] | None:
+        try:
+            n_phase = int(self._n_phase_edit.text())
+            n_geom = int(self._n_geom_edit.text())
+        except ValueError:
+            return None
+        enabled, sample_mode, sample_step = self.native_backend_settings()
+        return (n_phase, n_geom, enabled, sample_mode, sample_step)
+
+    def _mark_parameters_applied(self) -> None:
+        self._applied_parameter_state = self._parameter_state_snapshot()
+        self._update_parameter_pending_state()
+
+    def _update_parameter_pending_state(self, *_args: object) -> None:
+        current_state = self._parameter_state_snapshot()
+        is_pending = (
+            current_state is not None
+            and self._applied_parameter_state is not None
+            and current_state != self._applied_parameter_state
+        )
+        self._parameter_pending_label.setText(
+            "Parameters changed — press Apply" if is_pending else ""
+        )
+        self._parameter_pending_label.setVisible(is_pending)
+
+    def _sync_native_sample_step_enabled(self) -> None:
+        sample_mode = self._native_sample_mode_combo.currentText().strip().lower()
+        self._native_sample_step_spin.setEnabled(sample_mode != "dense")
 
     def _set_selected_seed_error(self, message: str) -> None:
         self._selected_seed_status.setText(message)
@@ -1583,6 +1679,10 @@ class ControlsPanel(QWidget):
             self._tooltip_label_mode_combo.currentText().strip().lower() or "legend",
         )
 
+    def _on_native_backend_controls_changed(self, *_args: object) -> None:
+        self._sync_native_sample_step_enabled()
+        self._update_parameter_pending_state()
+
     def _emit_phase_grid_visibility(self) -> None:
         show_grid = self._show_phase_grid_checkbox.isChecked()
         self._show_phase_minor_grid_checkbox.setEnabled(show_grid)
@@ -1686,6 +1786,18 @@ class ControlsPanel(QWidget):
         )
         self._tooltip_label_mode_combo.setToolTip(
             "Choose whether hover tooltip uses SceneItem alias or legend text."
+        )
+        self._native_enabled_checkbox.setToolTip(
+            "Enable the native backend when available; otherwise Python fallback is used."
+        )
+        self._native_sample_mode_combo.setToolTip(
+            "Choose how many phase points the native backend returns."
+        )
+        self._native_sample_step_spin.setToolTip(
+            "Return every N-th sampled point for native sparse modes."
+        )
+        self._native_status_label.setToolTip(
+            "Current native backend availability and fallback status."
         )
         apply_tooltip(self._show_branch_markers_checkbox, "show_branch_markers")
         apply_tooltip(self._show_heatmap_checkbox, "show_heatmap")
