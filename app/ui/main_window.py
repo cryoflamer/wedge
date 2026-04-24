@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections import deque
-from copy import deepcopy
 import math
 import logging
 import re
@@ -35,7 +34,6 @@ from app.core.point_constraints import ActivePointConstraint
 from app.models.config import Config
 from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
-from app.models.region import RegionStyle
 from app.models.scene_item import SceneItemDescription, is_boundary_scene_item
 from app.models.trajectory import TrajectorySeed
 from app.services.config_loader import save_runtime_config
@@ -47,6 +45,7 @@ from app.services.background_jobs import (
 )
 from app.services.data_export_service import export_orbit_data
 from app.services.export_service import export_widget_bundle_png
+from app.services.scene_service import SceneService
 from app.services.trajectory_service import TrajectoryService
 from app.state.app_state import AppState
 from app.ui.angle_panel import AnglePanel
@@ -107,6 +106,7 @@ class MainWindow(QMainWindow):
             symmetric_mode=self._symmetric_mode,
         )
         self._trajectory_service = TrajectoryService(lambda: self.app_state.config)
+        self._scene_service = SceneService(self.app_state.config)
         self._session_controller = SessionController(
             app_state=self.app_state,
             config_path=config_path,
@@ -1117,12 +1117,14 @@ class MainWindow(QMainWindow):
         self.angle_panel.set_selected_scene_item(item_name)
 
     def _mark_scene_dirty(self) -> None:
-        self._scene_dirty = True
-        self.controls_panel.set_scene_dirty(True)
+        self._scene_service.mark_dirty()
+        self._scene_dirty = self._scene_service.is_dirty()
+        self.controls_panel.set_scene_dirty(self._scene_dirty)
 
     def _clear_scene_dirty(self) -> None:
-        self._scene_dirty = False
-        self.controls_panel.set_scene_dirty(False)
+        self._scene_service.clear_dirty()
+        self._scene_dirty = self._scene_service.is_dirty()
+        self.controls_panel.set_scene_dirty(self._scene_dirty)
 
     def _on_save_scene(self) -> None:
         saved_path = save_runtime_config(
@@ -1134,16 +1136,7 @@ class MainWindow(QMainWindow):
         logger.info("Scene saved to config: path=%s", saved_path)
 
     def _selected_scene_item(self) -> SceneItemDescription | None:
-        if self._selected_scene_item_name is None:
-            return None
-        return next(
-            (
-                item
-                for item in self.app_state.config.regions
-                if item.name == self._selected_scene_item_name
-            ),
-            None,
-        )
+        return self._scene_service.selected_item(self._selected_scene_item_name)
 
     def _selected_scene_item_editor_values(
         self,
@@ -1210,29 +1203,10 @@ class MainWindow(QMainWindow):
         if values is None:
             return
         name, alias = values
-        self.app_state.config.regions.append(
-            SceneItemDescription(
-                name=name,
-                alias=alias,
-                display_text=alias,
-                legend_text=alias,
-                expression="0",
-                relation="=",
-                visible=True,
-                priority=0,
-                style=RegionStyle(
-                    fill="#cccccc",
-                    alpha=0.3,
-                    hatch="",
-                    border="#333333",
-                    line_style="solid",
-                    line_width=1.0,
-                ),
-            )
-        )
-        self._selected_scene_item_name = name
+        item = self._scene_service.add_item(name, alias)
+        self._scene_dirty = self._scene_service.is_dirty()
+        self._selected_scene_item_name = item.name
         self._refresh_scene_item_views(name, sync_sections=True)
-        self._mark_scene_dirty()
         logger.info("Scene item created: name=%s alias=%s", name, alias)
 
     def _on_duplicate_scene_item_requested(self) -> None:
@@ -1240,12 +1214,12 @@ class MainWindow(QMainWindow):
         if selected is None:
             return
 
-        duplicate = deepcopy(selected)
-        duplicate.name = self._unique_scene_item_copy_name(selected.name)
-        self.app_state.config.regions.append(duplicate)
+        duplicate = self._scene_service.duplicate_item(selected.name)
+        if duplicate is None:
+            return
+        self._scene_dirty = self._scene_service.is_dirty()
         self._selected_scene_item_name = duplicate.name
         self._refresh_scene_item_views(duplicate.name)
-        self._mark_scene_dirty()
         logger.info(
             "Scene item duplicated: source=%s duplicate=%s",
             selected.name,
@@ -1253,16 +1227,7 @@ class MainWindow(QMainWindow):
         )
 
     def _unique_scene_item_copy_name(self, base_name: str) -> str:
-        existing_names = {item.name for item in self.app_state.config.regions}
-        candidate = f"{base_name}_copy"
-        if candidate not in existing_names:
-            return candidate
-        index = 2
-        while True:
-            candidate = f"{base_name}_copy{index}"
-            if candidate not in existing_names:
-                return candidate
-            index += 1
+        return self._scene_service.unique_copy_name(base_name)
 
     def _on_delete_scene_item_requested(self) -> None:
         selected_name = self.controls_panel.current_scene_item_name()
@@ -1291,19 +1256,15 @@ class MainWindow(QMainWindow):
         if answer != QMessageBox.StandardButton.Yes:
             return
 
-        self.app_state.config.regions.pop(selected_index)
-        remaining_items = sorted(self.app_state.config.regions, key=lambda entry: entry.priority)
-        next_name: str | None = None
-        if remaining_items:
-            next_index = min(selected_index, len(remaining_items) - 1)
-            next_name = remaining_items[next_index].name
-
+        removed, next_name = self._scene_service.delete_item(item.name)
+        if removed is None:
+            return
+        self._scene_dirty = self._scene_service.is_dirty()
         self._selected_scene_item_name = next_name
         self._refresh_scene_item_views(next_name)
         if next_name is None:
             self.controls_panel.set_scene_item_editor_values(None)
-        self._mark_scene_dirty()
-        logger.info("Scene item deleted: name=%s type=%s", item.name, item_type)
+        logger.info("Scene item deleted: name=%s type=%s", removed.name, item_type)
 
     def _on_apply_scene_item_editor(self, payload: object) -> None:
         if not isinstance(payload, dict):
@@ -1313,41 +1274,10 @@ class MainWindow(QMainWindow):
         if item is None:
             return
         previous_name = item.name
-        item.alias = str(payload.get("alias", item.alias)).strip() or item.alias
-        item.display_text = (
-            str(payload.get("display_text", item.display_text)).strip()
-            or item.display_text
-        )
-        item.legend_text = (
-            str(payload.get("legend_text", item.legend_text)).strip()
-            or item.legend_text
-        )
-        item.expression = str(payload.get("expression", item.expression)).strip()
-        item.relation = str(payload.get("relation", item.relation or "=")).strip() or "="
-        item.visible = bool(payload.get("visible", item.visible))
-        try:
-            item.priority = int(payload.get("priority", item.priority))
-        except (TypeError, ValueError):
-            pass
-        item.style.fill = (
-            str(payload.get("fill", item.style.fill)).strip()
-            or item.style.fill
-        )
-        item.style.border = (
-            str(payload.get("border", item.style.border)).strip()
-            or item.style.border
-        )
-        try:
-            item.style.line_width = float(
-                payload.get("line_width", item.style.line_width)
-            )
-        except (TypeError, ValueError):
-            pass
-        item.style.line_style = "dashed" if (
-            str(payload.get("line_style", item.style.line_style)).strip().lower()
-            == "dashed"
-        ) else "solid"
-        item.compatibility_predicate = False
+        item = self._scene_service.apply_editor_payload(item.name, payload)
+        if item is None:
+            return
+        self._scene_dirty = self._scene_service.is_dirty()
         self._selected_scene_item_name = item.name
         self._refresh_scene_item_views(self._selected_scene_item_name)
         self.controls_panel.set_scene_item_editor_values(
@@ -1356,7 +1286,6 @@ class MainWindow(QMainWindow):
         )
         self.controls_panel.set_scene_item_expression_valid()
         self.controls_panel.restore_editor_section_state(section_expanded)
-        self._mark_scene_dirty()
         logger.info(
             "Scene item editor applied: previous_name=%s name=%s relation=%s",
             previous_name,
