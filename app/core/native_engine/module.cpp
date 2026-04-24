@@ -399,6 +399,63 @@ py::dict native_build_sparse_orbit_impl(
     return result;
 }
 
+py::list native_build_sparse_orbits_batch_impl(
+    py::array_t<double, py::array::c_style | py::array::forcecast> d0_list,
+    py::array_t<double, py::array::c_style | py::array::forcecast> tau0_list,
+    py::array_t<int, py::array::c_style | py::array::forcecast> wall0_list,
+    double alpha,
+    double beta,
+    int steps,
+    int sample_step,
+    const std::string& sample_mode
+) {
+    const auto d0_view = d0_list.unchecked<1>();
+    const auto tau0_view = tau0_list.unchecked<1>();
+    const auto wall0_view = wall0_list.unchecked<1>();
+    if (d0_view.shape(0) != tau0_view.shape(0) || d0_view.shape(0) != wall0_view.shape(0)) {
+        throw std::runtime_error("batch input arrays must have matching lengths");
+    }
+
+    py::list batch_results;
+    for (py::ssize_t seed_index = 0; seed_index < d0_view.shape(0); ++seed_index) {
+        const auto orbit_result = build_native_orbit_result(
+            d0_view(seed_index),
+            tau0_view(seed_index),
+            wall0_view(seed_index),
+            alpha,
+            beta,
+            steps,
+            sample_step,
+            sample_mode
+        );
+
+        const auto size = static_cast<py::ssize_t>(orbit_result.step_indices.size());
+        py::array_t<int> step_array(size);
+        py::array_t<double> d_array(size);
+        py::array_t<double> tau_array(size);
+        py::array_t<int> wall_array(size);
+        auto step_view = step_array.mutable_unchecked<1>();
+        auto d_view = d_array.mutable_unchecked<1>();
+        auto tau_view = tau_array.mutable_unchecked<1>();
+        auto wall_view = wall_array.mutable_unchecked<1>();
+        for (py::ssize_t i = 0; i < size; ++i) {
+            step_view(i) = orbit_result.step_indices[static_cast<size_t>(i)];
+            d_view(i) = orbit_result.d_values[static_cast<size_t>(i)];
+            tau_view(i) = orbit_result.tau_values[static_cast<size_t>(i)];
+            wall_view(i) = orbit_result.walls[static_cast<size_t>(i)];
+        }
+
+        py::dict result;
+        result["steps"] = std::move(step_array);
+        result["d"] = std::move(d_array);
+        result["tau"] = std::move(tau_array);
+        result["wall"] = std::move(wall_array);
+        add_orbit_result_metadata(result, orbit_result);
+        batch_results.append(std::move(result));
+    }
+    return batch_results;
+}
+
 }  // namespace
 
 PYBIND11_MODULE(_native_engine, m) {
@@ -421,6 +478,18 @@ PYBIND11_MODULE(_native_engine, m) {
         py::arg("d0"),
         py::arg("tau0"),
         py::arg("wall0"),
+        py::arg("alpha"),
+        py::arg("beta"),
+        py::arg("steps"),
+        py::arg("sample_step"),
+        py::arg("sample_mode")
+    );
+    m.def(
+        "native_build_sparse_orbits_batch",
+        &native_build_sparse_orbits_batch_impl,
+        py::arg("d0_list"),
+        py::arg("tau0_list"),
+        py::arg("wall0_list"),
         py::arg("alpha"),
         py::arg("beta"),
         py::arg("steps"),

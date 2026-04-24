@@ -1,0 +1,70 @@
+app/services/config_loader.py:141:            build_chunk_size=int(background_data.get("build_chunk_size", 16)),
+app/services/config_loader.py:287:    background_payload["build_chunk_size"] = config.background.build_chunk_size
+app/services/background_jobs.py:8:from app.core.native_backend import is_native_available, native_build_sparse_orbits_batch
+app/services/background_jobs.py:80:        chunk_size: int,
+app/services/background_jobs.py:103:        self._chunk_size = max(chunk_size, 1)
+app/services/background_jobs.py:233:            chunk_size=self._chunk_size,
+app/services/background_jobs.py:315:        self._run_seed_batch(
+app/services/background_jobs.py:415:        self._run_seed_batch(
+app/services/background_jobs.py:434:    def _run_seed_batch(
+app/services/background_jobs.py:459:        use_native_batch = (
+app/services/background_jobs.py:468:        if use_native_batch:
+app/services/background_jobs.py:469:            self._run_native_seed_batch(
+app/services/background_jobs.py:553:                    chunk_size=self._chunk_size,
+app/services/background_jobs.py:613:    def _run_native_seed_batch(
+app/services/background_jobs.py:639:                batch_results = native_build_sparse_orbits_batch(
+app/services/background_jobs.py:659:            for chunk_index, (seed, native_result) in enumerate(zip(chunk, batch_results), start=1):
+app/ui/main_window.py:1795:            chunk_size=self.app_state.config.background.build_chunk_size,
+app/ui/main_window.py:1815:            chunk_size=self.app_state.config.background.build_chunk_size,
+app/ui/main_window.py:1837:            chunk_size=self.app_state.config.background.build_chunk_size,
+app/ui/main_window.py:1860:            chunk_size=self.app_state.config.background.build_chunk_size,
+app/ui/main_window.py:2148:                chunk_size=self.app_state.config.background.build_chunk_size,
+app/ui/main_window.py:2163:                chunk_size=self.app_state.config.background.build_chunk_size,
+app/ui/main_window.py:2182:            chunk_size=self.app_state.config.background.build_chunk_size,
+app/controllers/job_controller.py:107:        chunk_size: int,
+app/controllers/job_controller.py:117:                "chunk_size": chunk_size,
+app/controllers/job_controller.py:139:        chunk_size: int,
+app/controllers/job_controller.py:148:                "chunk_size": chunk_size,
+app/controllers/job_controller.py:168:        chunk_size: int,
+app/controllers/job_controller.py:186:                "chunk_size": chunk_size,
+app/controllers/job_controller.py:209:        chunk_size: int,
+app/controllers/job_controller.py:218:                "chunk_size": chunk_size,
+app/controllers/job_controller.py:233:        chunk_size: int,
+app/controllers/job_controller.py:261:                    "chunk_size": chunk_size,
+app/controllers/job_controller.py:277:                    "chunk_size": chunk_size,
+app/models/config.py:37:    build_chunk_size: int = 16
+app/core/orbit_builder.py:98:    chunk_size: int,
+app/core/orbit_builder.py:150:    chunk_limit = max(chunk_size, 1)
+app/core/native_backend.py:72:def native_build_sparse_orbits_batch(
+app/core/native_backend.py:84:    results = _native_module.native_build_sparse_orbits_batch(
+app/core/native_engine/module.cpp:402:py::list native_build_sparse_orbits_batch_impl(
+app/core/native_engine/module.cpp:416:        throw std::runtime_error("batch input arrays must have matching lengths");
+app/core/native_engine/module.cpp:419:    py::list batch_results;
+app/core/native_engine/module.cpp:454:        batch_results.append(std::move(result));
+app/core/native_engine/module.cpp:456:    return batch_results;
+app/core/native_engine/module.cpp:488:        "native_build_sparse_orbits_batch",
+app/core/native_engine/module.cpp:489:        &native_build_sparse_orbits_batch_impl,
+tests/test_background_jobs_native_batch.py:32:            chunk_size=8,
+tests/test_background_jobs_native_batch.py:35:    def test_run_seed_batch_uses_native_batch_for_scan(self) -> None:
+tests/test_background_jobs_native_batch.py:55:            "app.services.background_jobs.native_build_sparse_orbits_batch",
+tests/test_background_jobs_native_batch.py:57:        ) as batch_mock, patch("app.services.background_jobs.build_wedge_geometry") as geometry_mock, patch.object(
+tests/test_background_jobs_native_batch.py:62:            worker._run_seed_batch(seeds, replace_existing=False, progress_label="Scanning")
+tests/test_background_jobs_native_batch.py:63:        batch_mock.assert_called_once()
+tests/test_background_jobs_native_batch.py:65:    def test_run_seed_batch_falls_back_when_native_unavailable(self) -> None:
+tests/test_background_jobs_native_batch.py:69:            "app.services.background_jobs.native_build_sparse_orbits_batch",
+tests/test_background_jobs_native_batch.py:70:        ) as batch_mock, patch("app.services.background_jobs.iter_orbit_chunks", return_value=[]), patch.object(
+tests/test_background_jobs_native_batch.py:74:            worker._run_seed_batch(seeds, replace_existing=False, progress_label="Scanning")
+tests/test_background_jobs_native_batch.py:75:        batch_mock.assert_not_called()
+tests/test_native_backend.py:170:    def test_native_sparse_batch_matches_per_seed_sparse_results(self) -> None:
+tests/test_native_backend.py:179:        batch_results = native_backend.native_build_sparse_orbits_batch(
+tests/test_native_backend.py:189:        self.assertEqual(len(batch_results), len(seeds))
+tests/test_native_backend.py:190:        for batch_result, (seed_d, seed_tau, seed_wall) in zip(batch_results, seeds):
+tests/test_native_backend.py:201:            self._assert_sparse_matches_reference(batch_result, expected)
+tests/test_native_backend.py:544:    def test_native_sparse_batch_raises_when_native_unavailable(self) -> None:
+tests/test_native_backend.py:547:                native_backend.native_build_sparse_orbits_batch(
+scripts/benchmark_native_backend.py:13:from app.core.native_backend import is_native_available, native_build_sparse_orbits_batch
+scripts/benchmark_native_backend.py:122:def benchmark_native_scan_batch(
+scripts/benchmark_native_backend.py:132:        native_build_sparse_orbits_batch(
+scripts/benchmark_native_backend.py:145:        f"{'native-batch':>11} | seeds={len(seeds):>6} | steps={steps:>8} | "
+scripts/benchmark_native_backend.py:336:        native_elapsed = benchmark_native_scan_batch(
+scripts/benchmark_native_backend.py:344:            f"speedup | seeds={seed_count:>6} | native_batch_vs_python={speedup:>8.3f}x"

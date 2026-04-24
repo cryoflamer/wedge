@@ -67,3 +67,28 @@ def native_build_sparse_orbit(
         str(sample_mode),
     )
     return dict(result)
+
+
+def native_build_sparse_orbits_batch(
+    d0_list: list[float],
+    tau0_list: list[float],
+    wall0_list: list[int],
+    alpha: float,
+    beta: float,
+    steps: int,
+    sample_step: int,
+    sample_mode: str,
+) -> list[dict[str, Any]]:
+    if _native_module is None:
+        raise RuntimeError("native backend is not available")
+    results = _native_module.native_build_sparse_orbits_batch(
+        [float(value) for value in d0_list],
+        [float(value) for value in tau0_list],
+        [int(value) for value in wall0_list],
+        float(alpha),
+        float(beta),
+        int(steps),
+        int(sample_step),
+        str(sample_mode),
+    )
+    return [dict(result) for result in results]
