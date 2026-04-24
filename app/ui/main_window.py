@@ -29,7 +29,6 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.point_constraints import ActivePointConstraint
-from app.core.trajectory_engine import build_orbit, build_wedge_geometry
 from app.models.config import Config
 from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
@@ -48,6 +47,7 @@ from app.services.background_jobs import (
 from app.services.data_export_service import export_orbit_data
 from app.services.export_service import export_widget_bundle_png
 from app.services.session_service import load_session, save_session
+from app.services.trajectory_service import TrajectoryService
 from app.state.app_state import AppState
 from app.ui.angle_panel import AnglePanel
 from app.ui.controls_panel import ControlsPanel
@@ -106,9 +106,7 @@ class MainWindow(QMainWindow):
             active_angle_constraint_name=self._active_angle_constraint_name,
             symmetric_mode=self._symmetric_mode,
         )
-        self._trajectory_seeds: dict[int, TrajectorySeed] = {}
-        self._trajectory_orbits: dict[int, Orbit] = {}
-        self._trajectory_geometries: dict[int, WedgeGeometry] = {}
+        self._trajectory_service = TrajectoryService(lambda: self.app_state.config)
         self._active_segment_indices: dict[int, int] = {}
         self._active_phase_frames: dict[int, int] = {}
         self._palette = [
@@ -190,6 +188,30 @@ class MainWindow(QMainWindow):
     @_selected_trajectory.setter
     def _selected_trajectory(self, value: int | None) -> None:
         self.app_state.selected_trajectory_id = value
+
+    @property
+    def _trajectory_seeds(self) -> dict[int, TrajectorySeed]:
+        return self._trajectory_service.seeds
+
+    @_trajectory_seeds.setter
+    def _trajectory_seeds(self, value: dict[int, TrajectorySeed]) -> None:
+        self._trajectory_service.seeds = value
+
+    @property
+    def _trajectory_orbits(self) -> dict[int, Orbit]:
+        return self._trajectory_service.orbits
+
+    @_trajectory_orbits.setter
+    def _trajectory_orbits(self, value: dict[int, Orbit]) -> None:
+        self._trajectory_service.orbits = value
+
+    @property
+    def _trajectory_geometries(self) -> dict[int, WedgeGeometry]:
+        return self._trajectory_service.geometries
+
+    @_trajectory_geometries.setter
+    def _trajectory_geometries(self, value: dict[int, WedgeGeometry]) -> None:
+        self._trajectory_service.geometries = value
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -1019,14 +1041,7 @@ class MainWindow(QMainWindow):
         self._schedule_autosave()
 
     def _rebuild_orbits(self) -> None:
-        self._trajectory_orbits = {
-            trajectory_id: self._build_orbit(seed)
-            for trajectory_id, seed in self._trajectory_seeds.items()
-        }
-        self._trajectory_geometries = {
-            trajectory_id: self._build_geometry(orbit)
-            for trajectory_id, orbit in self._trajectory_orbits.items()
-        }
+        self._trajectory_service.rebuild_orbits()
 
     def _cancel_current_job(self) -> None:
         logger.info(
@@ -1830,21 +1845,10 @@ class MainWindow(QMainWindow):
         return Path(self._config_path).resolve().parent / path
 
     def _build_orbit(self, seed: TrajectorySeed) -> Orbit:
-        return build_orbit(
-            seed=seed,
-            config=self.app_state.config.simulation,
-            steps=self._normalized_phase_steps(
-                self.app_state.config.simulation.n_phase_default,
-                self.app_state.config.simulation.n_geom_default,
-            ),
-        )
+        return self._trajectory_service.build_orbit(seed)
 
     def _build_geometry(self, orbit: Orbit) -> WedgeGeometry:
-        return build_wedge_geometry(
-            orbit=orbit,
-            config=self.app_state.config.simulation,
-            max_reflections=self.app_state.config.simulation.n_geom_default,
-        )
+        return self._trajectory_service.build_geometry(orbit)
 
     def _stationary_phase_point(
         self,
