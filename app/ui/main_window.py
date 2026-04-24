@@ -84,7 +84,6 @@ class SceneItemCreateDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self, config: Config, config_path: str) -> None:
         super().__init__()
-        self.app_state.config = config
         self._config_path = config_path
         self._window_position_restored = False
         self._next_trajectory_id = 1
