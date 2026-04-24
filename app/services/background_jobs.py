@@ -7,6 +7,7 @@ from PySide6.QtCore import QObject, Signal, Slot
 
 from app.core.native_backend import is_native_available, native_build_sparse_orbits_batch
 from app.core.trajectory_engine import (
+    build_dense_orbit_for_geometry,
     build_orbit,
     build_wedge_geometry,
     compute_finite_time_lyapunov,
@@ -189,7 +190,7 @@ class OrbitBuildWorker(QObject):
                 )
                 return
             geometry = build_wedge_geometry(
-                orbit=orbit,
+                orbit=self._build_geometry_orbit(seed, orbit),
                 config=self._simulation_config,
                 max_reflections=self._max_reflections,
             )
@@ -257,7 +258,7 @@ class OrbitBuildWorker(QObject):
                 return
 
             geometry = build_wedge_geometry(
-                orbit=orbit,
+                orbit=self._build_geometry_orbit(seed, orbit),
                 config=self._simulation_config,
                 max_reflections=self._max_reflections,
             )
@@ -511,7 +512,7 @@ class OrbitBuildWorker(QObject):
                         )
                         return
                     geometry = build_wedge_geometry(
-                        orbit=orbit,
+                        orbit=self._build_geometry_orbit(seed, orbit),
                         config=self._simulation_config,
                         max_reflections=self._max_reflections,
                     )
@@ -566,7 +567,7 @@ class OrbitBuildWorker(QObject):
                         return
 
                     geometry = build_wedge_geometry(
-                        orbit=orbit,
+                        orbit=self._build_geometry_orbit(seed, orbit),
                         config=self._simulation_config,
                         max_reflections=self._max_reflections,
                     )
@@ -685,7 +686,7 @@ class OrbitBuildWorker(QObject):
                 )
                 orbit = self._native_result_to_orbit(seed.id, native_result)
                 geometry = build_wedge_geometry(
-                    orbit=orbit,
+                    orbit=self._build_geometry_orbit(seed, orbit),
                     config=self._simulation_config,
                     max_reflections=self._max_reflections,
                 )
@@ -766,6 +767,23 @@ class OrbitBuildWorker(QObject):
         final_step = native_result.get("final_step")
         orbit.completed_steps = int(final_step) + 1 if final_step is not None else len(orbit.points)
         return orbit
+
+    def _build_geometry_orbit(self, seed: TrajectorySeed, orbit: Orbit) -> Orbit:
+        use_dense_geometry = (
+            getattr(self._simulation_config, "native_enabled", False)
+            and is_native_available()
+            and (
+                int(getattr(self._simulation_config, "native_sample_step", 1)) > 1
+                or str(getattr(self._simulation_config, "native_sample_mode", "every_n")) != "dense"
+            )
+        )
+        if not use_dense_geometry:
+            return orbit
+        return build_dense_orbit_for_geometry(
+            seed=seed,
+            config=self._simulation_config,
+            steps=self._phase_steps,
+        )
 
     def _run_lyapunov(self) -> None:
         if self._lyapunov_seed is None or self._lyapunov_config is None:

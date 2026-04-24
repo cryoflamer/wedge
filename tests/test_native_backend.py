@@ -5,7 +5,10 @@ from unittest.mock import patch
 
 from app.core import native_backend
 from app.core.orbit_builder import build_orbit
-from app.core.trajectory_engine import build_orbit as build_orbit_via_engine
+from app.core.trajectory_engine import (
+    build_dense_orbit_for_geometry,
+    build_orbit as build_orbit_via_engine,
+)
 from app.models.config import SimulationConfig
 from app.models.trajectory import TrajectorySeed
 
@@ -356,6 +359,40 @@ class NativeBackendFallbackTests(unittest.TestCase):
 
 
 class NativeTrajectoryEngineIntegrationTests(unittest.TestCase):
+    def test_dense_geometry_orbit_uses_dense_native_when_sparse_sampling_enabled(self) -> None:
+        seed = TrajectorySeed(id=6, wall_start=1, d0=0.72, tau0=0.08)
+        config = SimulationConfig(
+            alpha=0.55,
+            beta=1.05,
+            n_phase_default=32,
+            n_geom_default=16,
+            eps=1.0e-9,
+            native_enabled=True,
+            native_sample_mode="every_n",
+            native_sample_step=10,
+        )
+        dense_result = {
+            "steps": [0, 1, 2, 3],
+            "d": [0.72, 0.7, 0.68, 0.66],
+            "tau": [0.08, 0.05, 0.02, -0.01],
+            "wall": [1, 2, 1, 2],
+            "final_step": 3,
+            "final_d": 0.66,
+            "final_tau": -0.01,
+            "final_wall": 2,
+            "valid": True,
+            "invalid_step": None,
+            "invalid_reason": None,
+        }
+        with patch("app.core.trajectory_engine.is_native_available", return_value=True), patch(
+            "app.core.trajectory_engine.native_build_dense_orbit",
+            return_value=dense_result,
+        ) as dense_mock:
+            orbit = build_dense_orbit_for_geometry(seed=seed, config=config, steps=4)
+        dense_mock.assert_called_once()
+        self.assertEqual([point.step_index for point in orbit.points], [0, 1, 2, 3])
+        self.assertEqual(orbit.completed_steps, 4)
+
     def test_native_enabled_sample_step_one_matches_python_build_orbit(self) -> None:
         seed = TrajectorySeed(id=7, wall_start=1, d0=0.72, tau0=0.08)
         config = SimulationConfig(
