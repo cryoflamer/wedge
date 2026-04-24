@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.core.region_eval import validate_scene_item_expression
+from app.core.trajectory_engine import validate_scene_item_expression
 from app.models.config import Config
 from app.services.parameter_parser import parse_real_expression
 from app.ui.color_selector import ColorSelector

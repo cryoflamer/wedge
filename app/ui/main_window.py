@@ -28,9 +28,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.core.geometry_builder import build_wedge_geometry
-from app.core.orbit_builder import build_orbit
 from app.core.point_constraints import ActivePointConstraint
+from app.core.trajectory_engine import build_orbit, build_wedge_geometry
 from app.models.config import Config
 from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
