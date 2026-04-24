@@ -85,19 +85,18 @@ regions:
     border: '#17becf'
     line_style: solid
     line_width: 1.5
-- name: symmetric_angle
-  type: constraint
-  constraint_type: symmetry
-  display_text: S
-  legend_text: beta = pi - alpha
-  expression: β - (π - α)
-  priority: 10
+- name: n3_boundary_copy
+  type: boundary
+  display_text: N4
+  legend_text: 3*sin(α-2*β) - sin(3*α-2*β) = 0
+  expression: -(3*sin(α-2*β) - sin(3*α-2*β))*(3*sin(2*α-β) - sin(2*α-3*β))/(8*sin(α)*sin(β))
+    - 1
+  priority: 30
   visible: true
-- name: n3_boundary_constraint
-  type: constraint
-  constraint_type: boundary
-  target: n3_boundary
-  display_text: B3
-  legend_text: Move along n3 boundary
-  priority: 40
-  visible: true
+  style:
+    fill: '#ffffff'
+    alpha: 0.0
+    hatch: ''
+    border: '#17becf'
+    line_style: solid
+    line_width: 1.5
