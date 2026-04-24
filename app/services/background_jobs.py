@@ -5,6 +5,7 @@ from threading import Event
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+from app.core.native_backend import is_native_available, native_build_sparse_orbits_batch
 from app.core.trajectory_engine import (
     build_orbit,
     build_wedge_geometry,
@@ -13,9 +14,11 @@ from app.core.trajectory_engine import (
 )
 from app.models.config import LyapunovConfig, SimulationConfig
 from app.models.geometry import WedgeGeometry
-from app.models.orbit import Orbit
+from app.models.orbit import Orbit, OrbitPoint, ReplayFrame
 from app.models.trajectory import TrajectorySeed
 from app.services.scan_sampler import generate_scan_points
+
+NATIVE_SCAN_BATCH_CHUNK_SIZE = 128
 
 
 @dataclass(frozen=True)
@@ -309,160 +312,13 @@ class OrbitBuildWorker(QObject):
         )
 
     def _run_rebuild(self) -> None:
-        total = max(len(self._seeds), 1)
-        steps_per_seed = max(self._phase_steps - 1, 1)
-        total_work = max(len(self._seeds) * steps_per_seed, 1)
-        self.progress.emit(
-            JobProgress(
-                generation_id=self._generation_id,
-                job_kind=self._job_kind,
-                status="running",
-                current=0,
-                total=total_work,
-                message=f"Rebuilding 0 / {total}",
-            )
+        self._run_seed_batch(
+            self._seeds,
+            replace_existing=True,
+            progress_label="Rebuilding",
         )
-        for seed_index, seed in enumerate(self._seeds, start=1):
-            if self._is_cancel_requested():
-                self.finished.emit(
-                    JobFinished(
-                        generation_id=self._generation_id,
-                        job_kind=self._job_kind,
-                        status="cancelled",
-                        message="rebuild cancelled",
-                    )
-                )
-                return
-
-            latest_orbit: Orbit | None = None
-            if self._fast_build:
-                orbit = build_orbit(
-                    seed=seed,
-                    config=self._simulation_config,
-                    steps=self._phase_steps,
-                )
-                if self._is_cancel_requested():
-                    self.finished.emit(
-                        JobFinished(
-                            generation_id=self._generation_id,
-                            job_kind=self._job_kind,
-                            status="cancelled",
-                            message="rebuild cancelled",
-                        )
-                    )
-                    return
-                geometry = build_wedge_geometry(
-                    orbit=orbit,
-                    config=self._simulation_config,
-                    max_reflections=self._max_reflections,
-                )
-                latest_orbit = orbit
-                current = ((seed_index - 1) * steps_per_seed) + max(len(orbit.points) - 1, 0)
-                self.partial_result.emit(
-                    OrbitPartialResult(
-                        generation_id=self._generation_id,
-                        trajectory_id=seed.id,
-                        seed=seed,
-                        orbit=orbit,
-                        geometry=geometry,
-                        replace=True,
-                        current=current,
-                        total=total_work,
-                        message=(
-                            f"Rebuilding {seed_index} / {total}: "
-                            f"trajectory #{seed.id} "
-                            f"({max(len(orbit.points) - 1, 0)} / {steps_per_seed})"
-                        ),
-                    )
-                )
-                self.progress.emit(
-                    JobProgress(
-                        generation_id=self._generation_id,
-                        job_kind=self._job_kind,
-                        status="done" if seed_index == total else "partial",
-                        current=current,
-                        total=total_work,
-                        message=(
-                            f"Rebuilding {seed_index} / {total}: "
-                            f"trajectory #{seed.id} "
-                            f"({max(len(orbit.points) - 1, 0)} / {steps_per_seed})"
-                        ),
-                    )
-                )
-                continue
-            for orbit, done in iter_orbit_chunks(
-                seed=seed,
-                config=self._simulation_config,
-                steps=self._phase_steps,
-                chunk_size=self._chunk_size,
-                cancel_check=self._is_cancel_requested,
-                existing_orbit=self._existing_orbits.get(seed.id),
-            ):
-                if self._is_cancel_requested():
-                    self.finished.emit(
-                        JobFinished(
-                            generation_id=self._generation_id,
-                            job_kind=self._job_kind,
-                            status="cancelled",
-                            message="rebuild cancelled",
-                        )
-                    )
-                    return
-
-                if self._is_cancel_requested():
-                    self.finished.emit(
-                        JobFinished(
-                            generation_id=self._generation_id,
-                            job_kind=self._job_kind,
-                            status="cancelled",
-                            message="rebuild cancelled",
-                        )
-                    )
-                    return
-
-                latest_orbit = orbit
-                geometry = build_wedge_geometry(
-                    orbit=orbit,
-                    config=self._simulation_config,
-                    max_reflections=self._max_reflections,
-                )
-                self.partial_result.emit(
-                    OrbitPartialResult(
-                        generation_id=self._generation_id,
-                        trajectory_id=seed.id,
-                        seed=seed,
-                        orbit=orbit,
-                        geometry=geometry,
-                        replace=True,
-                        current=((seed_index - 1) * steps_per_seed)
-                        + max(len(orbit.points) - 1, 0),
-                        total=total_work,
-                        message=(
-                            f"Rebuilding {seed_index} / {total}: "
-                            f"trajectory #{seed.id} "
-                            f"({max(len(orbit.points) - 1, 0)} / {steps_per_seed})"
-                        ),
-                    )
-                )
-                self.progress.emit(
-                    JobProgress(
-                        generation_id=self._generation_id,
-                        job_kind=self._job_kind,
-                        status="done" if done and seed_index == total else "partial",
-                        current=((seed_index - 1) * steps_per_seed)
-                        + max(len(orbit.points) - 1, 0),
-                        total=total_work,
-                        message=(
-                            f"Rebuilding {seed_index} / {total}: "
-                            f"trajectory #{seed.id} "
-                            f"({max(len(orbit.points) - 1, 0)} / {steps_per_seed})"
-                        ),
-                    )
-                )
-
-            if latest_orbit is None:
-                continue
-
+        if self._is_cancel_requested():
+            return
         self.finished.emit(
             JobFinished(
                 generation_id=self._generation_id,
@@ -506,6 +362,8 @@ class OrbitBuildWorker(QObject):
                 message=f"Scanning 0 / {total}",
             )
         )
+        seeds: list[TrajectorySeed] = []
+        seed_progress_index: dict[int, int] = {}
         added = 0
         for point_index, (d_value, tau_value) in enumerate(generated_points, start=1):
             if self._is_cancel_requested():
@@ -548,131 +406,21 @@ class OrbitBuildWorker(QObject):
                 tau0=tau_value,
                 color=color,
             )
-            if self._fast_build:
-                orbit = build_orbit(
-                    seed=seed,
-                    config=self._simulation_config,
-                    steps=self._phase_steps,
-                )
-                if self._is_cancel_requested():
-                    self.finished.emit(
-                        JobFinished(
-                            generation_id=self._generation_id,
-                            job_kind=self._job_kind,
-                            status="cancelled",
-                            message="scan cancelled",
-                        )
-                    )
-                    return
-                geometry = build_wedge_geometry(
-                    orbit=orbit,
-                    config=self._simulation_config,
-                    max_reflections=self._max_reflections,
-                )
-                current = ((point_index - 1) * steps_per_seed) + max(len(orbit.points) - 1, 0)
-                self.partial_result.emit(
-                    OrbitPartialResult(
-                        generation_id=self._generation_id,
-                        trajectory_id=seed.id,
-                        seed=seed,
-                        orbit=orbit,
-                        geometry=geometry,
-                        replace=False,
-                        current=current,
-                        total=total_work,
-                        message=(
-                            f"Scanning {point_index} / {total}: "
-                            f"trajectory #{seed.id} "
-                            f"({max(len(orbit.points) - 1, 0)} / {steps_per_seed})"
-                        ),
-                    )
-                )
-                self.progress.emit(
-                    JobProgress(
-                        generation_id=self._generation_id,
-                        job_kind=self._job_kind,
-                        status="done" if point_index == total else "partial",
-                        current=current,
-                        total=total_work,
-                        message=(
-                            f"Scanning {point_index} / {total}: "
-                            f"trajectory #{seed.id} "
-                            f"({max(len(orbit.points) - 1, 0)} / {steps_per_seed})"
-                        ),
-                    )
-                )
-                added += 1
-                continue
-
-            for orbit, done in iter_orbit_chunks(
-                seed=seed,
-                config=self._simulation_config,
-                steps=self._phase_steps,
-                chunk_size=self._chunk_size,
-                cancel_check=self._is_cancel_requested,
-            ):
-                if self._is_cancel_requested():
-                    self.finished.emit(
-                        JobFinished(
-                            generation_id=self._generation_id,
-                            job_kind=self._job_kind,
-                            status="cancelled",
-                            message="scan cancelled",
-                        )
-                    )
-                    return
-
-                if self._is_cancel_requested():
-                    self.finished.emit(
-                        JobFinished(
-                            generation_id=self._generation_id,
-                            job_kind=self._job_kind,
-                            status="cancelled",
-                            message="scan cancelled",
-                        )
-                    )
-                    return
-
-                geometry = build_wedge_geometry(
-                    orbit=orbit,
-                    config=self._simulation_config,
-                    max_reflections=self._max_reflections,
-                )
-                self.partial_result.emit(
-                    OrbitPartialResult(
-                        generation_id=self._generation_id,
-                        trajectory_id=seed.id,
-                        seed=seed,
-                        orbit=orbit,
-                        geometry=geometry,
-                        replace=False,
-                        current=((point_index - 1) * steps_per_seed)
-                        + max(len(orbit.points) - 1, 0),
-                        total=total_work,
-                        message=(
-                            f"Scanning {point_index} / {total}: "
-                            f"trajectory #{seed.id} "
-                            f"({max(len(orbit.points) - 1, 0)} / {steps_per_seed})"
-                        ),
-                    )
-                )
-                self.progress.emit(
-                    JobProgress(
-                        generation_id=self._generation_id,
-                        job_kind=self._job_kind,
-                        status="done" if done and point_index == total else "partial",
-                        current=((point_index - 1) * steps_per_seed)
-                        + max(len(orbit.points) - 1, 0),
-                        total=total_work,
-                        message=(
-                            f"Scanning {point_index} / {total}: "
-                            f"trajectory #{seed.id} "
-                            f"({max(len(orbit.points) - 1, 0)} / {steps_per_seed})"
-                        ),
-                    )
-                )
-
+            seeds.append(seed)
+            seed_progress_index[seed.id] = point_index
             added += 1
+
+        self._scan_seed_progress_index = seed_progress_index
+        self._scan_seed_total = total
+        self._run_seed_batch(
+            seeds,
+            replace_existing=False,
+            progress_label="Scanning",
+        )
+        self._scan_seed_progress_index = {}
+        self._scan_seed_total = 0
+        if self._is_cancel_requested():
+            return
 
         self.finished.emit(
             JobFinished(
@@ -682,6 +430,342 @@ class OrbitBuildWorker(QObject):
                 message=f"scan completed: added {added}",
             )
         )
+
+    def _run_seed_batch(
+        self,
+        seeds: list[TrajectorySeed],
+        *,
+        replace_existing: bool,
+        progress_label: str,
+    ) -> None:
+        total = max(
+            getattr(self, "_scan_seed_total", 0) if progress_label == "Scanning" else len(seeds),
+            1,
+        )
+        steps_per_seed = max(self._phase_steps - 1, 1)
+        total_work = max(total * steps_per_seed, 1)
+        if progress_label == "Rebuilding":
+            self.progress.emit(
+                JobProgress(
+                    generation_id=self._generation_id,
+                    job_kind=self._job_kind,
+                    status="running",
+                    current=0,
+                    total=total_work,
+                    message=f"{progress_label} 0 / {total}",
+                )
+            )
+
+        use_native_batch = (
+            progress_label == "Scanning"
+            and not replace_existing
+            and len(seeds) > 1
+            and getattr(self._simulation_config, "native_enabled", False)
+            and is_native_available()
+            and str(getattr(self._simulation_config, "native_sample_mode", "every_n")) != "dense"
+            and int(getattr(self._simulation_config, "native_sample_step", 1)) >= 1
+        )
+        if use_native_batch:
+            self._run_native_seed_batch(
+                seeds,
+                replace_existing=replace_existing,
+                progress_label=progress_label,
+                total=total,
+                steps_per_seed=steps_per_seed,
+                total_work=total_work,
+            )
+            return
+
+        for seed_index, seed in enumerate(seeds, start=1):
+            if self._is_cancel_requested():
+                self.finished.emit(
+                    JobFinished(
+                        generation_id=self._generation_id,
+                        job_kind=self._job_kind,
+                        status="cancelled",
+                        message=f"{progress_label.lower()} cancelled",
+                    )
+                )
+                return
+
+            display_index = (
+                getattr(self, "_scan_seed_progress_index", {}).get(seed.id, seed_index)
+                if progress_label == "Scanning"
+                else seed_index
+            )
+            try:
+                if self._fast_build:
+                    orbit = build_orbit(
+                        seed=seed,
+                        config=self._simulation_config,
+                        steps=self._phase_steps,
+                    )
+                    if self._is_cancel_requested():
+                        self.finished.emit(
+                            JobFinished(
+                                generation_id=self._generation_id,
+                                job_kind=self._job_kind,
+                                status="cancelled",
+                                message=f"{progress_label.lower()} cancelled",
+                            )
+                        )
+                        return
+                    geometry = build_wedge_geometry(
+                        orbit=orbit,
+                        config=self._simulation_config,
+                        max_reflections=self._max_reflections,
+                    )
+                    current = ((display_index - 1) * steps_per_seed) + max(len(orbit.points) - 1, 0)
+                    message = (
+                        f"{progress_label} {display_index} / {total}: "
+                        f"trajectory #{seed.id} "
+                        f"({max(len(orbit.points) - 1, 0)} / {steps_per_seed})"
+                    )
+                    self.partial_result.emit(
+                        OrbitPartialResult(
+                            generation_id=self._generation_id,
+                            trajectory_id=seed.id,
+                            seed=seed,
+                            orbit=orbit,
+                            geometry=geometry,
+                            replace=replace_existing,
+                            current=current,
+                            total=total_work,
+                            message=message,
+                        )
+                    )
+                    self.progress.emit(
+                        JobProgress(
+                            generation_id=self._generation_id,
+                            job_kind=self._job_kind,
+                            status="done" if display_index == total else "partial",
+                            current=current,
+                            total=total_work,
+                            message=message,
+                        )
+                    )
+                    continue
+
+                for orbit, done in iter_orbit_chunks(
+                    seed=seed,
+                    config=self._simulation_config,
+                    steps=self._phase_steps,
+                    chunk_size=self._chunk_size,
+                    cancel_check=self._is_cancel_requested,
+                    existing_orbit=self._existing_orbits.get(seed.id) if replace_existing else None,
+                ):
+                    if self._is_cancel_requested():
+                        self.finished.emit(
+                            JobFinished(
+                                generation_id=self._generation_id,
+                                job_kind=self._job_kind,
+                                status="cancelled",
+                                message=f"{progress_label.lower()} cancelled",
+                            )
+                        )
+                        return
+
+                    geometry = build_wedge_geometry(
+                        orbit=orbit,
+                        config=self._simulation_config,
+                        max_reflections=self._max_reflections,
+                    )
+                    current = ((display_index - 1) * steps_per_seed) + max(len(orbit.points) - 1, 0)
+                    message = (
+                        f"{progress_label} {display_index} / {total}: "
+                        f"trajectory #{seed.id} "
+                        f"({max(len(orbit.points) - 1, 0)} / {steps_per_seed})"
+                    )
+                    self.partial_result.emit(
+                        OrbitPartialResult(
+                            generation_id=self._generation_id,
+                            trajectory_id=seed.id,
+                            seed=seed,
+                            orbit=orbit,
+                            geometry=geometry,
+                            replace=replace_existing,
+                            current=current,
+                            total=total_work,
+                            message=message,
+                        )
+                    )
+                    self.progress.emit(
+                        JobProgress(
+                            generation_id=self._generation_id,
+                            job_kind=self._job_kind,
+                            status="done" if done and display_index == total else "partial",
+                            current=current,
+                            total=total_work,
+                            message=message,
+                        )
+                    )
+            except Exception as exc:
+                self.finished.emit(
+                    JobFinished(
+                        generation_id=self._generation_id,
+                        job_kind=self._job_kind,
+                        status="failed",
+                        message=f"{progress_label.lower()} failed: {exc}",
+                    )
+                )
+                return
+
+    def _run_native_seed_batch(
+        self,
+        seeds: list[TrajectorySeed],
+        *,
+        replace_existing: bool,
+        progress_label: str,
+        total: int,
+        steps_per_seed: int,
+        total_work: int,
+    ) -> None:
+        sample_step = int(getattr(self._simulation_config, "native_sample_step", 1))
+        sample_mode = str(getattr(self._simulation_config, "native_sample_mode", "every_n"))
+        self.progress.emit(
+            JobProgress(
+                generation_id=self._generation_id,
+                job_kind=self._job_kind,
+                status="running",
+                current=0,
+                total=total,
+                message=f"{progress_label} 0 / {total} trajectories",
+            )
+        )
+        completed_trajectories = 0
+        for chunk_start in range(0, len(seeds), NATIVE_SCAN_BATCH_CHUNK_SIZE):
+            if self._is_cancel_requested():
+                self.finished.emit(
+                    JobFinished(
+                        generation_id=self._generation_id,
+                        job_kind=self._job_kind,
+                        status="cancelled",
+                        message=f"{progress_label.lower()} cancelled",
+                    )
+                )
+                return
+
+            chunk = seeds[chunk_start : chunk_start + NATIVE_SCAN_BATCH_CHUNK_SIZE]
+            try:
+                batch_results = native_build_sparse_orbits_batch(
+                    d0_list=[seed.d0 for seed in chunk],
+                    tau0_list=[seed.tau0 for seed in chunk],
+                    wall0_list=[seed.wall_start for seed in chunk],
+                    alpha=self._simulation_config.alpha,
+                    beta=self._simulation_config.beta,
+                    steps=self._phase_steps,
+                    sample_step=sample_step,
+                    sample_mode=sample_mode,
+                )
+            except Exception as exc:
+                self.finished.emit(
+                    JobFinished(
+                        generation_id=self._generation_id,
+                        job_kind=self._job_kind,
+                        status="failed",
+                        message=f"{progress_label.lower()} failed: {exc}",
+                    )
+                )
+                return
+            for chunk_index, (seed, native_result) in enumerate(zip(chunk, batch_results), start=1):
+                if self._is_cancel_requested():
+                    self.finished.emit(
+                        JobFinished(
+                            generation_id=self._generation_id,
+                            job_kind=self._job_kind,
+                            status="cancelled",
+                            message=f"{progress_label.lower()} cancelled",
+                        )
+                    )
+                    return
+
+                display_index = getattr(self, "_scan_seed_progress_index", {}).get(
+                    seed.id,
+                    chunk_start + chunk_index,
+                )
+                orbit = self._native_result_to_orbit(seed.id, native_result)
+                geometry = build_wedge_geometry(
+                    orbit=orbit,
+                    config=self._simulation_config,
+                    max_reflections=self._max_reflections,
+                )
+                current = ((display_index - 1) * steps_per_seed) + max(orbit.completed_steps - 1, 0)
+                message = (
+                    f"{progress_label} {display_index} / {total}: "
+                    f"trajectory #{seed.id} "
+                    f"({max(orbit.completed_steps - 1, 0)} / {steps_per_seed})"
+                )
+                self.partial_result.emit(
+                    OrbitPartialResult(
+                        generation_id=self._generation_id,
+                        trajectory_id=seed.id,
+                        seed=seed,
+                        orbit=orbit,
+                        geometry=geometry,
+                        replace=replace_existing,
+                        current=current,
+                        total=total_work,
+                        message=message,
+                    )
+                )
+                self.progress.emit(
+                    JobProgress(
+                        generation_id=self._generation_id,
+                        job_kind=self._job_kind,
+                        status="done" if display_index == total else "partial",
+                        current=current,
+                        total=total_work,
+                        message=message,
+                    )
+                )
+                completed_trajectories = display_index
+            self.progress.emit(
+                JobProgress(
+                    generation_id=self._generation_id,
+                    job_kind=self._job_kind,
+                    status="done" if completed_trajectories == total else "partial",
+                    current=completed_trajectories,
+                    total=total,
+                    message=f"{progress_label} {completed_trajectories} / {total} trajectories",
+                )
+            )
+
+    def _native_result_to_orbit(self, trajectory_id: int, native_result: dict) -> Orbit:
+        steps = [int(value) for value in native_result["steps"]]
+        d_values = [float(value) for value in native_result["d"]]
+        tau_values = [float(value) for value in native_result["tau"]]
+        walls = [int(value) for value in native_result["wall"]]
+        orbit = Orbit(
+            trajectory_id=trajectory_id,
+            valid=bool(native_result["valid"]),
+            invalid_reason=native_result["invalid_reason"],
+        )
+        for index, (step_index, d_value, tau_value, wall) in enumerate(
+            zip(steps, d_values, tau_values, walls)
+        ):
+            is_last = index == len(steps) - 1
+            point_valid = orbit.valid or not is_last
+            point_reason = orbit.invalid_reason if (is_last and not orbit.valid) else None
+            orbit.points.append(
+                OrbitPoint(
+                    step_index=step_index,
+                    d=d_value,
+                    tau=tau_value,
+                    wall=wall,
+                    valid=point_valid,
+                    invalid_reason=point_reason,
+                    branch=None,
+                )
+            )
+            orbit.replay_frames.append(
+                ReplayFrame(
+                    frame_index=step_index,
+                    orbit_point_index=index,
+                )
+            )
+        final_step = native_result.get("final_step")
+        orbit.completed_steps = int(final_step) + 1 if final_step is not None else len(orbit.points)
+        return orbit
 
     def _run_lyapunov(self) -> None:
         if self._lyapunov_seed is None or self._lyapunov_config is None:

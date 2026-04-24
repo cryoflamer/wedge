@@ -57,7 +57,7 @@ class NativeBackendFallbackTests(unittest.TestCase):
         )
 
         self.assertEqual(len(actual["steps"]), len(expected["steps"]))
-        self.assertEqual(list(actual["wall"]), expected["wall"])
+        self.assertEqual(list(actual["wall"]), list(expected["wall"]))
         for got, want in zip(actual["d"], expected["d"]):
             self.assertAlmostEqual(float(got), want, places=10)
         for got, want in zip(actual["tau"], expected["tau"]):
@@ -167,6 +167,39 @@ class NativeBackendFallbackTests(unittest.TestCase):
         )
         self._assert_sparse_matches_reference(actual, expected)
 
+    def test_native_sparse_batch_matches_per_seed_sparse_results(self) -> None:
+        if not native_backend.is_native_available():
+            self.skipTest("native module is not built")
+        config, d0, tau0, wall0, steps = self._sample_case()
+        seeds = [
+            (d0, tau0, wall0),
+            (0.68, -0.04, 2),
+            (0.59, 0.02, 1),
+        ]
+        batch_results = native_backend.native_build_sparse_orbits_batch(
+            d0_list=[seed_d for seed_d, _, _ in seeds],
+            tau0_list=[seed_tau for _, seed_tau, _ in seeds],
+            wall0_list=[seed_wall for _, _, seed_wall in seeds],
+            alpha=config.alpha,
+            beta=config.beta,
+            steps=steps,
+            sample_step=4,
+            sample_mode="every_n",
+        )
+        self.assertEqual(len(batch_results), len(seeds))
+        for batch_result, (seed_d, seed_tau, seed_wall) in zip(batch_results, seeds):
+            expected = native_backend.native_build_sparse_orbit(
+                d0=seed_d,
+                tau0=seed_tau,
+                wall0=seed_wall,
+                alpha=config.alpha,
+                beta=config.beta,
+                steps=steps,
+                sample_step=4,
+                sample_mode="every_n",
+            )
+            self._assert_sparse_matches_reference(batch_result, expected)
+
     def _build_python_dense_orbit(
         self,
         *,
@@ -243,11 +276,11 @@ class NativeBackendFallbackTests(unittest.TestCase):
         actual: dict[str, object],
         expected: dict[str, object],
     ) -> None:
-        self.assertEqual(list(actual["steps"]), expected["steps"])
-        self.assertEqual(list(actual["wall"]), expected["wall"])
-        for got, want in zip(actual["d"], expected["d"]):
+        self.assertEqual(list(actual["steps"]), list(expected["steps"]))
+        self.assertEqual(list(actual["wall"]), list(expected["wall"]))
+        for got, want in zip(list(actual["d"]), list(expected["d"])):
             self.assertAlmostEqual(float(got), float(want), places=10)
-        for got, want in zip(actual["tau"], expected["tau"]):
+        for got, want in zip(list(actual["tau"]), list(expected["tau"])):
             self.assertAlmostEqual(float(got), float(want), places=10)
         self.assertEqual(int(actual["final_step"]), int(expected["final_step"]))
         self.assertAlmostEqual(float(actual["final_d"]), float(expected["final_d"]), places=10)
@@ -505,6 +538,22 @@ class NativeTrajectoryEngineIntegrationTests(unittest.TestCase):
         self.assertEqual(actual.points[-1].step_index, 17)
         self.assertFalse(actual.points[-1].valid)
         self.assertEqual(actual.points[-1].invalid_reason, "outside_domain")
+
+
+class NativeBackendBatchFallbackTests(unittest.TestCase):
+    def test_native_sparse_batch_raises_when_native_unavailable(self) -> None:
+        with patch("app.core.native_backend._native_module", None):
+            with self.assertRaises(RuntimeError):
+                native_backend.native_build_sparse_orbits_batch(
+                    d0_list=[0.72],
+                    tau0_list=[0.08],
+                    wall0_list=[1],
+                    alpha=0.55,
+                    beta=1.05,
+                    steps=24,
+                    sample_step=4,
+                    sample_mode="every_n",
+                )
 
 
 if __name__ == "__main__":

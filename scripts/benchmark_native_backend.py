@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core.native_backend import is_native_available
+from app.core.native_backend import is_native_available, native_build_sparse_orbits_batch
 from app.core.trajectory_engine import build_orbit
 from app.models.config import SimulationConfig
 from app.models.trajectory import TrajectorySeed
@@ -61,6 +61,20 @@ def make_seed() -> TrajectorySeed:
     )
 
 
+def make_scan_seeds(count: int) -> list[TrajectorySeed]:
+    seeds: list[TrajectorySeed] = []
+    for index in range(count):
+        seeds.append(
+            TrajectorySeed(
+                id=index + 1,
+                wall_start=1 if (index % 2 == 0) else 2,
+                d0=0.72 - (0.0002 * (index % 50)),
+                tau0=0.08 - (0.0005 * (index % 20)),
+            )
+        )
+    return seeds
+
+
 def benchmark_backend(
     *,
     backend_name: str,
@@ -82,6 +96,57 @@ def benchmark_backend(
         f"rate={iterations_per_sec:>12.1f} it/s | points={len(orbit.points):>8}"
     )
     return best_elapsed, orbit
+
+
+def benchmark_python_scan_dense(
+    *,
+    seeds: list[TrajectorySeed],
+    steps: int,
+    repeats: int,
+) -> float:
+    best_elapsed = math.inf
+    config = make_config(native_enabled=False)
+    for _ in range(repeats):
+        started = time.perf_counter()
+        for seed in seeds:
+            build_orbit(seed=seed, config=config, steps=steps)
+        best_elapsed = min(best_elapsed, time.perf_counter() - started)
+    orbits_per_sec = (len(seeds) / best_elapsed) if best_elapsed > 0.0 else math.inf
+    print(
+        f"{'py-scan':>11} | seeds={len(seeds):>6} | steps={steps:>8} | "
+        f"elapsed={best_elapsed:>8.4f}s | rate={orbits_per_sec:>10.1f} orbits/s"
+    )
+    return best_elapsed
+
+
+def benchmark_native_scan_batch(
+    *,
+    seeds: list[TrajectorySeed],
+    steps: int,
+    sample_step: int,
+    repeats: int,
+) -> float:
+    best_elapsed = math.inf
+    for _ in range(repeats):
+        started = time.perf_counter()
+        native_build_sparse_orbits_batch(
+            d0_list=[seed.d0 for seed in seeds],
+            tau0_list=[seed.tau0 for seed in seeds],
+            wall0_list=[seed.wall_start for seed in seeds],
+            alpha=0.55,
+            beta=1.05,
+            steps=steps,
+            sample_step=sample_step,
+            sample_mode="every_n",
+        )
+        best_elapsed = min(best_elapsed, time.perf_counter() - started)
+    orbits_per_sec = (len(seeds) / best_elapsed) if best_elapsed > 0.0 else math.inf
+    print(
+        f"{'native-batch':>11} | seeds={len(seeds):>6} | steps={steps:>8} | "
+        f"elapsed={best_elapsed:>8.4f}s | rate={orbits_per_sec:>10.1f} orbits/s | "
+        f"sample_step={sample_step}"
+    )
+    return best_elapsed
 
 
 def find_first_divergence(
@@ -259,6 +324,25 @@ def main() -> int:
                     f"warning | steps={steps:>8} | {backend_name}",
                     divergence,
                 )
+
+    print("Batch scan benchmark")
+    for seed_count in (100, 1000):
+        seeds = make_scan_seeds(seed_count)
+        python_elapsed = benchmark_python_scan_dense(
+            seeds=seeds,
+            steps=1_000,
+            repeats=args.repeats,
+        )
+        native_elapsed = benchmark_native_scan_batch(
+            seeds=seeds,
+            steps=1_000,
+            sample_step=100,
+            repeats=args.repeats,
+        )
+        speedup = (python_elapsed / native_elapsed) if native_elapsed > 0.0 else math.inf
+        print(
+            f"speedup | seeds={seed_count:>6} | native_batch_vs_python={speedup:>8.3f}x"
+        )
     return 0
 
 

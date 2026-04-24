@@ -1783,6 +1783,7 @@ class MainWindow(QMainWindow):
         seed: TrajectorySeed,
         start_message: str,
     ) -> None:
+        self._clear_status_progress_text()
         self._job_controller.start_single_build(
             seed,
             simulation_config=self.app_state.config.simulation,
@@ -1802,6 +1803,7 @@ class MainWindow(QMainWindow):
     def _start_rebuild_job(self, job_message: str = "Starting rebuild...") -> None:
         self._trajectory_service.clear_results()
         self.update_view()
+        self._clear_status_progress_text()
         seeds = sorted(self._trajectory_seeds.values(), key=lambda item: item.id)
         self._job_controller.start_rebuild(
             seeds,
@@ -1826,6 +1828,7 @@ class MainWindow(QMainWindow):
         tau_min: float,
         tau_max: float,
     ) -> None:
+        self._clear_status_progress_text()
         self._job_controller.start_scan(
             simulation_config=self.app_state.config.simulation,
             fast_build=self.app_state.config.background.fast_build,
@@ -1848,6 +1851,7 @@ class MainWindow(QMainWindow):
         )
 
     def _start_lyapunov_job(self, seed: TrajectorySeed) -> None:
+        self._clear_status_progress_text()
         self._job_controller.start_lyapunov(
             seed,
             simulation_config=self.app_state.config.simulation,
@@ -2006,7 +2010,12 @@ class MainWindow(QMainWindow):
         else:
             self._job_status_message = payload.message
         self._status_label.setText(self._job_status_message)
-        self._clear_status_progress_text()
+        if payload.status == "done":
+            summary = self._build_finished_job_summary(payload)
+            if summary:
+                self._set_status_progress_text(summary)
+        else:
+            self._clear_status_progress_text()
         self._update_status_job_controls()
         self.controls_panel.set_job_status(
             status=self._job_status_state,
@@ -2036,7 +2045,6 @@ class MainWindow(QMainWindow):
             return
         paused_payload = self._job_controller.latest_paused_job()
         if paused_payload is None:
-            self._clear_status_progress_text()
             self._status_job_button.setEnabled(False)
             self._status_job_button.hide()
             self._status_jobs_selector.hide()
@@ -2096,9 +2104,21 @@ class MainWindow(QMainWindow):
         print(f"[perf] {current}/{total} | {steps_per_sec:.1f} it/s | ETA {eta_value:.1f}s")
 
     def _format_job_progress_message(self, progress: JobProgress, percent: int) -> str:
-        if progress.job_kind not in ("single_build", "rebuild", "display"):
+        if progress.job_kind not in ("single_build", "rebuild", "scan", "display"):
             return self._job_status_message
         base_message, timing_suffix = self._split_progress_message(progress.message)
+
+        if progress.job_kind == "scan":
+            parts = [f"Scanning: {self._extract_trajectory_progress(base_message, progress)} | {percent}%"]
+            if timing_suffix:
+                parts.append(timing_suffix.replace("it/s", "orbits/s"))
+            return " | ".join(parts)
+
+        if progress.job_kind == "rebuild":
+            parts = [f"Rebuilding: {self._extract_trajectory_progress(base_message, progress)} | {percent}%"]
+            if timing_suffix:
+                parts.append(timing_suffix.replace("it/s", "orbits/s"))
+            return " | ".join(parts)
 
         parts = [f"Building trajectories: {percent}%"]
 
@@ -2123,6 +2143,26 @@ class MainWindow(QMainWindow):
         if timing_suffix:
             parts.append(timing_suffix)
         return " | ".join(parts)
+
+    def _extract_trajectory_progress(self, base_message: str, progress: JobProgress) -> str:
+        if trajectory_match := re.search(r"(\d+)\s*/\s*(\d+)", base_message):
+            return f"{int(trajectory_match.group(1))} / {int(trajectory_match.group(2))} trajectories"
+        if progress.total > 0:
+            return f"{progress.current} / {progress.total} trajectories"
+        return "0 / 0 trajectories"
+
+    def _build_finished_job_summary(self, payload: JobFinished) -> str:
+        elapsed = self._job_controller.last_job_elapsed_seconds()
+        seconds = f"{elapsed:.2f}s" if elapsed < 10.0 else f"{elapsed:.1f}s"
+        message = payload.message.strip()
+        if payload.job_kind == "scan":
+            match = re.search(r"added\s+(\d+)", message)
+            if match:
+                return f"Scan completed: {int(match.group(1))} trajectories in {seconds}"
+        if payload.job_kind == "rebuild":
+            count = len(self._trajectory_seeds)
+            return f"Rebuild completed: {count} trajectories in {seconds}"
+        return message
 
     def _split_progress_message(self, message: str) -> tuple[str, str]:
         parts = message.split(" || ", 1)
