@@ -84,7 +84,7 @@ class SceneItemCreateDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self, config: Config, config_path: str) -> None:
         super().__init__()
-        self._config = config
+        self.app_state.config = config
         self._config_path = config_path
         self._window_position_restored = False
         self._next_trajectory_id = 1
@@ -97,18 +97,19 @@ class MainWindow(QMainWindow):
             self._active_angle_constraint_name
         )
         self.app_state = AppState(
-            simulation_config=self._config.simulation,
-            view_config=self._config.view,
+            config=config,
+            simulation_config=config.simulation,
+            view_config=config.view,
             selected_trajectory_id=None,
             selected_scene_item_name=self._selected_scene_item_name,
             angle_units=self._angle_units,
             base_angle_constraint_name=self._base_angle_constraint_name,
             active_angle_constraint_name=self._active_angle_constraint_name,
             symmetric_mode=self._symmetric_mode,
-            show_phase_grid=self._config.view.show_phase_grid,
-            show_phase_minor_grid=self._config.view.show_phase_minor_grid,
-            show_directrix=self._config.view.show_directrix,
-            show_regions=self._config.view.show_regions,
+            show_phase_grid=config.view.show_phase_grid,
+            show_phase_minor_grid=config.view.show_phase_minor_grid,
+            show_directrix=config.view.show_directrix,
+            show_regions=config.view.show_regions,
         )
         self._trajectory_seeds: dict[int, TrajectorySeed] = {}
         self._trajectory_orbits: dict[int, Orbit] = {}
@@ -254,13 +255,13 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
         self._cancel_current_job()
-        self._config.window.width = self.width()
-        self._config.window.height = self.height()
-        self._config.window.x = self.x()
-        self._config.window.y = self.y()
+        self.app_state.config.window.width = self.width()
+        self.app_state.config.window.height = self.height()
+        self.app_state.config.window.x = self.x()
+        self.app_state.config.window.y = self.y()
         self._autosave_session()
         save_runtime_config(
-            self._config,
+            self.app_state.config,
             self._config_path,
         )
         super().closeEvent(event)
@@ -327,7 +328,7 @@ class MainWindow(QMainWindow):
         self._status_progress.setMaximumWidth(220)
         self._status_progress.hide()
         self._status_fast_build = QCheckBox("Fast build")
-        self._status_fast_build.setChecked(self._config.background.fast_build)
+        self._status_fast_build.setChecked(self.app_state.config.background.fast_build)
         self._status_fast_build.toggled.connect(self._on_fast_build_changed)
         self.statusBar().addWidget(self._status_label, 1)
         self.statusBar().addPermanentWidget(self._status_jobs_selector)
@@ -472,7 +473,7 @@ class MainWindow(QMainWindow):
         self._update_status_view()
 
     def _update_controls_config_view(self) -> None:
-        self.controls_panel.load_config(self._config)
+        self.controls_panel.load_config(self.app_state.config)
         self.controls_panel.set_angle_units(self._angle_units)
         self.controls_panel.set_constraint_options(
             self._angle_constraint_options(),
@@ -486,24 +487,24 @@ class MainWindow(QMainWindow):
             self.phase_panel_wall_1.is_fixed_domain_mode()
         )
         self.controls_panel.set_region_view_options(
-            show_regions=self._config.view.show_regions,
-            show_labels=self._config.view.show_region_labels,
-            show_legend=self._config.view.show_region_legend,
+            show_regions=self.app_state.config.view.show_regions,
+            show_labels=self.app_state.config.view.show_region_labels,
+            show_legend=self.app_state.config.view.show_region_legend,
         )
         self.controls_panel.set_branch_markers_enabled(
-            self._config.view.show_branch_markers
+            self.app_state.config.view.show_branch_markers
         )
         self.controls_panel.set_heatmap_settings(
-            show_heatmap=self._config.view.show_heatmap,
-            mode=self._config.view.heatmap_mode,
-            resolution=self._config.view.heatmap_resolution,
-            normalization=self._config.view.heatmap_normalization,
+            show_heatmap=self.app_state.config.view.show_heatmap,
+            mode=self.app_state.config.view.heatmap_mode,
+            resolution=self.app_state.config.view.heatmap_resolution,
+            normalization=self.app_state.config.view.heatmap_normalization,
         )
         if self._selected_scene_item_name not in {
-            item.name for item in self._config.regions
+            item.name for item in self.app_state.config.regions
         }:
             self._selected_scene_item_name = (
-                self._config.regions[0].name if self._config.regions else None
+                self.app_state.config.regions[0].name if self.app_state.config.regions else None
             )
         self.controls_panel.set_scene_item_items(
             [
@@ -512,7 +513,7 @@ class MainWindow(QMainWindow):
                     item.display_text,
                     item.relation or "",
                 )
-                for item in sorted(self._config.regions, key=lambda entry: entry.priority)
+                for item in sorted(self.app_state.config.regions, key=lambda entry: entry.priority)
             ],
             self._selected_scene_item_name,
         )
@@ -521,13 +522,13 @@ class MainWindow(QMainWindow):
             sync_sections=False,
         )
         self.angle_panel.set_angle_units(self._angle_units)
-        self.angle_panel.set_regions(self._config.regions)
+        self.angle_panel.set_regions(self.app_state.config.regions)
         self.angle_panel.set_selected_scene_item(self._selected_scene_item_name)
-        self.angle_panel.set_constraints(self._config.constraints)
+        self.angle_panel.set_constraints(self.app_state.config.constraints)
         self.angle_panel.set_active_constraint(self._resolved_angle_constraint())
         self.angle_panel.set_angles(
-            self._config.simulation.alpha,
-            self._config.simulation.beta,
+            self.app_state.config.simulation.alpha,
+            self.app_state.config.simulation.beta,
         )
 
     def _update_trajectory_views(self) -> None:
@@ -636,7 +637,7 @@ class MainWindow(QMainWindow):
 
     def _update_status_view(self) -> None:
         blocker = QSignalBlocker(self._status_fast_build)
-        self._status_fast_build.setChecked(self._config.background.fast_build)
+        self._status_fast_build.setChecked(self.app_state.config.background.fast_build)
         del blocker
         self._sync_status_job_button_tooltip()
         self.controls_panel.set_job_status(
@@ -749,8 +750,8 @@ class MainWindow(QMainWindow):
         self._on_parameters_changed(
             alpha=alpha,
             beta=beta,
-            n_phase=self._config.simulation.n_phase_default,
-            n_geom=self._config.simulation.n_geom_default,
+            n_phase=self.app_state.config.simulation.n_phase_default,
+            n_geom=self.app_state.config.simulation.n_geom_default,
         )
         logger.info("Angle panel clicked: alpha=%.6f beta=%.6f", alpha, beta)
 
@@ -765,18 +766,18 @@ class MainWindow(QMainWindow):
     def _on_angle_constraint_changed(self, name: str) -> None:
         self._base_angle_constraint_name = name
         if self._active_angle_constraint_name is None:
-            self._config.view.active_angle_constraint = None
+            self.app_state.config.view.active_angle_constraint = None
             self.update_view()
             return
         if (
             self._active_angle_constraint_name == name
-            and self._config.view.active_angle_constraint == name
+            and self.app_state.config.view.active_angle_constraint == name
             and self._symmetric_mode == self._constraint_name_is_symmetry(name)
         ):
             self.update_view()
             return
         self._active_angle_constraint_name = name
-        self._config.view.active_angle_constraint = name
+        self.app_state.config.view.active_angle_constraint = name
         self._symmetric_mode = self._constraint_name_is_symmetry(name)
         self._project_angles_to_active_constraint()
         self._start_rebuild_job()
@@ -799,7 +800,7 @@ class MainWindow(QMainWindow):
             self._active_angle_constraint_name = selected_name
         else:
             self._active_angle_constraint_name = None
-        self._config.view.active_angle_constraint = self._active_angle_constraint_name
+        self.app_state.config.view.active_angle_constraint = self._active_angle_constraint_name
         self._symmetric_mode = self._constraint_name_is_symmetry(
             self._active_angle_constraint_name
         )
@@ -821,7 +822,7 @@ class MainWindow(QMainWindow):
         )
 
     def _on_export_mode_changed(self, mode: str) -> None:
-        self._config.export.default_mode = mode
+        self.app_state.config.export.default_mode = mode
 
     def _on_region_visibility_changed(
         self,
@@ -829,9 +830,9 @@ class MainWindow(QMainWindow):
         show_labels: bool,
         show_legend: bool,
     ) -> None:
-        self._config.view.show_regions = show_regions
-        self._config.view.show_region_labels = show_labels
-        self._config.view.show_region_legend = show_legend
+        self.app_state.config.view.show_regions = show_regions
+        self.app_state.config.view.show_region_labels = show_labels
+        self.app_state.config.view.show_region_legend = show_legend
         self.update_view()
 
     def _on_plot_labels_changed(
@@ -840,9 +841,9 @@ class MainWindow(QMainWindow):
         mode: str,
         tooltip_mode: str,
     ) -> None:
-        self._config.view.show_labels_on_plot = enabled
-        self._config.view.plot_label_mode = mode.strip().lower() or "legend"
-        self._config.view.tooltip_label_mode = (
+        self.app_state.config.view.show_labels_on_plot = enabled
+        self.app_state.config.view.plot_label_mode = mode.strip().lower() or "legend"
+        self.app_state.config.view.tooltip_label_mode = (
             tooltip_mode.strip().lower() or "legend"
         )
         self.update_view()
@@ -852,25 +853,25 @@ class MainWindow(QMainWindow):
         show_grid: bool,
         show_minor_grid: bool,
     ) -> None:
-        self._config.view.show_phase_grid = show_grid
-        self._config.view.show_phase_minor_grid = show_minor_grid
-        self._config.view.phase_grid.show_minor = show_minor_grid
+        self.app_state.config.view.show_phase_grid = show_grid
+        self.app_state.config.view.show_phase_minor_grid = show_minor_grid
+        self.app_state.config.view.phase_grid.show_minor = show_minor_grid
         self.update_view()
 
     def _on_seed_markers_visibility_changed(self, enabled: bool) -> None:
-        self._config.view.show_seed_markers = enabled
+        self.app_state.config.view.show_seed_markers = enabled
         self.update_view()
 
     def _on_stationary_point_visibility_changed(self, enabled: bool) -> None:
-        self._config.view.show_stationary_point = enabled
+        self.app_state.config.view.show_stationary_point = enabled
         self.update_view()
 
     def _on_directrix_visibility_changed(self, enabled: bool) -> None:
-        self._config.view.show_directrix = enabled
+        self.app_state.config.view.show_directrix = enabled
         self.update_view()
 
     def _on_branch_markers_changed(self, enabled: bool) -> None:
-        self._config.view.show_branch_markers = enabled
+        self.app_state.config.view.show_branch_markers = enabled
         self.update_view()
 
     def _on_heatmap_settings_changed(
@@ -880,14 +881,14 @@ class MainWindow(QMainWindow):
         resolution: int,
         normalization: str,
     ) -> None:
-        self._config.view.show_heatmap = enabled
-        self._config.view.heatmap_mode = mode
-        self._config.view.heatmap_resolution = resolution
-        self._config.view.heatmap_normalization = normalization
+        self.app_state.config.view.show_heatmap = enabled
+        self.app_state.config.view.heatmap_mode = mode
+        self.app_state.config.view.heatmap_resolution = resolution
+        self.app_state.config.view.heatmap_normalization = normalization
         self.update_view()
 
     def _on_fast_build_changed(self, enabled: bool) -> None:
-        self._config.background.fast_build = enabled
+        self.app_state.config.background.fast_build = enabled
         self._status_fast_build.setChecked(enabled)
         self._autosave_session()
         self.update_view()
@@ -946,10 +947,10 @@ class MainWindow(QMainWindow):
         n_geom: int,
     ) -> None:
         normalized_n_phase = self._normalized_phase_steps(n_phase, n_geom)
-        self._config.simulation.alpha = alpha
-        self._config.simulation.beta = beta
-        self._config.simulation.n_phase_default = normalized_n_phase
-        self._config.simulation.n_geom_default = n_geom
+        self.app_state.config.simulation.alpha = alpha
+        self.app_state.config.simulation.beta = beta
+        self.app_state.config.simulation.n_phase_default = normalized_n_phase
+        self.app_state.config.simulation.n_geom_default = n_geom
         self._start_rebuild_job()
         self._reset_replay_views()
         self._autosave_session()
@@ -1118,7 +1119,7 @@ class MainWindow(QMainWindow):
 
     def _on_save_scene(self) -> None:
         saved_path = save_runtime_config(
-            self._config,
+            self.app_state.config,
             self._config_path,
             persist_scene_items=True,
         )
@@ -1131,7 +1132,7 @@ class MainWindow(QMainWindow):
         return next(
             (
                 item
-                for item in self._config.regions
+                for item in self.app_state.config.regions
                 if item.name == self._selected_scene_item_name
             ),
             None,
@@ -1173,7 +1174,7 @@ class MainWindow(QMainWindow):
                     item.display_text,
                     item.relation or "",
                 )
-                for item in sorted(self._config.regions, key=lambda entry: entry.priority)
+                for item in sorted(self.app_state.config.regions, key=lambda entry: entry.priority)
             ],
             self._selected_scene_item_name,
         )
@@ -1181,7 +1182,7 @@ class MainWindow(QMainWindow):
             self._selected_scene_item_editor_values(),
             sync_sections=sync_sections,
         )
-        self.angle_panel.set_regions(self._config.regions)
+        self.angle_panel.set_regions(self.app_state.config.regions)
         self.angle_panel.set_selected_scene_item(self._selected_scene_item_name)
         self._sync_angle_constraint_controls()
         self.controls_panel.set_scene_dirty(self._scene_dirty)
@@ -1202,7 +1203,7 @@ class MainWindow(QMainWindow):
         if values is None:
             return
         name, alias = values
-        self._config.regions.append(
+        self.app_state.config.regions.append(
             SceneItemDescription(
                 name=name,
                 alias=alias,
@@ -1234,7 +1235,7 @@ class MainWindow(QMainWindow):
 
         duplicate = deepcopy(selected)
         duplicate.name = self._unique_scene_item_copy_name(selected.name)
-        self._config.regions.append(duplicate)
+        self.app_state.config.regions.append(duplicate)
         self._selected_scene_item_name = duplicate.name
         self._refresh_scene_item_views(duplicate.name)
         self._mark_scene_dirty()
@@ -1245,7 +1246,7 @@ class MainWindow(QMainWindow):
         )
 
     def _unique_scene_item_copy_name(self, base_name: str) -> str:
-        existing_names = {item.name for item in self._config.regions}
+        existing_names = {item.name for item in self.app_state.config.regions}
         candidate = f"{base_name}_copy"
         if candidate not in existing_names:
             return candidate
@@ -1263,14 +1264,14 @@ class MainWindow(QMainWindow):
         selected_index = next(
             (
                 index
-                for index, item in enumerate(self._config.regions)
+                for index, item in enumerate(self.app_state.config.regions)
                 if item.name == selected_name
             ),
             -1,
         )
         if selected_index < 0:
             return
-        item = self._config.regions[selected_index]
+        item = self.app_state.config.regions[selected_index]
         item_type = "boundary" if is_boundary_scene_item(item) else "region"
         item_label = item.display_text or item.name
         answer = QMessageBox.question(
@@ -1283,8 +1284,8 @@ class MainWindow(QMainWindow):
         if answer != QMessageBox.StandardButton.Yes:
             return
 
-        self._config.regions.pop(selected_index)
-        remaining_items = sorted(self._config.regions, key=lambda entry: entry.priority)
+        self.app_state.config.regions.pop(selected_index)
+        remaining_items = sorted(self.app_state.config.regions, key=lambda entry: entry.priority)
         next_name: str | None = None
         if remaining_items:
             next_index = min(selected_index, len(remaining_items) - 1)
@@ -1469,7 +1470,7 @@ class MainWindow(QMainWindow):
             return
 
         mode = self.controls_panel.export_mode()
-        self._config.export.default_mode = mode
+        self.app_state.config.export.default_mode = mode
         preset = self.controls_panel.export_preset()
         monochrome = mode == "monochrome"
         exported_paths = export_widget_bundle_png(
@@ -1481,7 +1482,7 @@ class MainWindow(QMainWindow):
                 "angle": self.angle_panel,
             },
             base_path=output_path,
-            dpi=self._config.export.dpi,
+            dpi=self.app_state.config.export.dpi,
             monochrome=monochrome,
         )
         logger.info(
@@ -1522,33 +1523,33 @@ class MainWindow(QMainWindow):
 
     def _build_session(self) -> Session:
         return Session(
-            alpha=self._config.simulation.alpha,
-            beta=self._config.simulation.beta,
-            n_phase=self._config.simulation.n_phase_default,
-            n_geom=self._config.simulation.n_geom_default,
-            replay_delay_ms=self._config.replay.delay_ms,
-            replay_selected_only=self._config.replay.selected_only_by_default,
+            alpha=self.app_state.config.simulation.alpha,
+            beta=self.app_state.config.simulation.beta,
+            n_phase=self.app_state.config.simulation.n_phase_default,
+            n_geom=self.app_state.config.simulation.n_geom_default,
+            replay_delay_ms=self.app_state.config.replay.delay_ms,
+            replay_selected_only=self.app_state.config.replay.selected_only_by_default,
             selected_trajectory_id=self._selected_trajectory,
             trajectories=list(self._trajectory_seeds.values()),
             angle_units=self._angle_units,
             symmetric_mode=self._symmetric_mode,
             export_mode=self.controls_panel.export_mode(),
             phase_fixed_domain=self.phase_panel_wall_1.is_fixed_domain_mode(),
-            show_phase_grid=self._config.view.show_phase_grid,
-            show_phase_minor_grid=self._config.view.show_phase_minor_grid,
-            show_seed_markers=self._config.view.show_seed_markers,
-            show_stationary_point=self._config.view.show_stationary_point,
-            show_directrix=self._config.view.show_directrix,
-            show_regions=self._config.view.show_regions,
-            show_region_labels=self._config.view.show_region_labels,
-            show_region_legend=self._config.view.show_region_legend,
-            show_branch_markers=self._config.view.show_branch_markers,
-            show_heatmap=self._config.view.show_heatmap,
-            heatmap_mode=self._config.view.heatmap_mode,
-            heatmap_resolution=self._config.view.heatmap_resolution,
-            heatmap_normalization=self._config.view.heatmap_normalization,
+            show_phase_grid=self.app_state.config.view.show_phase_grid,
+            show_phase_minor_grid=self.app_state.config.view.show_phase_minor_grid,
+            show_seed_markers=self.app_state.config.view.show_seed_markers,
+            show_stationary_point=self.app_state.config.view.show_stationary_point,
+            show_directrix=self.app_state.config.view.show_directrix,
+            show_regions=self.app_state.config.view.show_regions,
+            show_region_labels=self.app_state.config.view.show_region_labels,
+            show_region_legend=self.app_state.config.view.show_region_legend,
+            show_branch_markers=self.app_state.config.view.show_branch_markers,
+            show_heatmap=self.app_state.config.view.show_heatmap,
+            heatmap_mode=self.app_state.config.view.heatmap_mode,
+            heatmap_resolution=self.app_state.config.view.heatmap_resolution,
+            heatmap_normalization=self.app_state.config.view.heatmap_normalization,
             active_angle_constraint=self._active_angle_constraint_name,
-            fast_build=self._config.background.fast_build,
+            fast_build=self.app_state.config.background.fast_build,
             phase_viewport_wall_1=self.phase_panel_wall_1.viewport(),
             phase_viewport_wall_2=self.phase_panel_wall_2.viewport(),
         )
@@ -1559,41 +1560,41 @@ class MainWindow(QMainWindow):
         restore_simulation_parameters: bool = True,
     ) -> None:
         if restore_simulation_parameters:
-            self._config.simulation.alpha = session.alpha
-            self._config.simulation.beta = session.beta
-        self._config.simulation.n_geom_default = session.n_geom
-        self._config.simulation.n_phase_default = self._normalized_phase_steps(
+            self.app_state.config.simulation.alpha = session.alpha
+            self.app_state.config.simulation.beta = session.beta
+        self.app_state.config.simulation.n_geom_default = session.n_geom
+        self.app_state.config.simulation.n_phase_default = self._normalized_phase_steps(
             session.n_phase,
             session.n_geom,
         )
-        self._config.replay.delay_ms = session.replay_delay_ms
-        self._config.replay.selected_only_by_default = session.replay_selected_only
+        self.app_state.config.replay.delay_ms = session.replay_delay_ms
+        self.app_state.config.replay.selected_only_by_default = session.replay_selected_only
         self._angle_units = session.angle_units
-        self._config.export.default_mode = session.export_mode
-        self._config.view.show_phase_grid = session.show_phase_grid
-        self._config.view.show_phase_minor_grid = session.show_phase_minor_grid
-        self._config.view.phase_grid.show_minor = session.show_phase_minor_grid
-        self._config.view.show_seed_markers = session.show_seed_markers
-        self._config.view.show_stationary_point = session.show_stationary_point
-        self._config.view.show_directrix = session.show_directrix
-        self._config.view.show_regions = session.show_regions
-        self._config.view.show_region_labels = session.show_region_labels
-        self._config.view.show_region_legend = session.show_region_legend
-        self._config.view.show_branch_markers = session.show_branch_markers
-        self._config.view.show_heatmap = session.show_heatmap
-        self._config.view.heatmap_mode = session.heatmap_mode
-        self._config.view.heatmap_resolution = session.heatmap_resolution
-        self._config.view.heatmap_normalization = session.heatmap_normalization
+        self.app_state.config.export.default_mode = session.export_mode
+        self.app_state.config.view.show_phase_grid = session.show_phase_grid
+        self.app_state.config.view.show_phase_minor_grid = session.show_phase_minor_grid
+        self.app_state.config.view.phase_grid.show_minor = session.show_phase_minor_grid
+        self.app_state.config.view.show_seed_markers = session.show_seed_markers
+        self.app_state.config.view.show_stationary_point = session.show_stationary_point
+        self.app_state.config.view.show_directrix = session.show_directrix
+        self.app_state.config.view.show_regions = session.show_regions
+        self.app_state.config.view.show_region_labels = session.show_region_labels
+        self.app_state.config.view.show_region_legend = session.show_region_legend
+        self.app_state.config.view.show_branch_markers = session.show_branch_markers
+        self.app_state.config.view.show_heatmap = session.show_heatmap
+        self.app_state.config.view.heatmap_mode = session.heatmap_mode
+        self.app_state.config.view.heatmap_resolution = session.heatmap_resolution
+        self.app_state.config.view.heatmap_normalization = session.heatmap_normalization
         restored_constraint = session.active_angle_constraint
         if restored_constraint is None and session.symmetric_mode:
             restored_constraint = self._default_symmetry_constraint_name()
         self._base_angle_constraint_name = restored_constraint
         self._active_angle_constraint_name = restored_constraint
-        self._config.view.active_angle_constraint = restored_constraint
+        self.app_state.config.view.active_angle_constraint = restored_constraint
         self._symmetric_mode = self._constraint_name_is_symmetry(
             self._active_angle_constraint_name
         )
-        self._config.background.fast_build = session.fast_build
+        self.app_state.config.background.fast_build = session.fast_build
 
         self._trajectory_seeds = {
             seed.id: TrajectorySeed(
@@ -1623,7 +1624,7 @@ class MainWindow(QMainWindow):
 
     def _default_symmetry_constraint_name(self) -> str | None:
         for constraint in sorted(
-            self._config.constraints,
+            self.app_state.config.constraints,
             key=lambda item: item.priority,
         ):
             if (
@@ -1637,7 +1638,7 @@ class MainWindow(QMainWindow):
         return self._default_symmetry_constraint_name() or next(
             (
                 item.name
-                for item in sorted(self._config.regions, key=lambda entry: entry.priority)
+                for item in sorted(self.app_state.config.regions, key=lambda entry: entry.priority)
                 if item.visible and is_boundary_scene_item(item)
             ),
             None,
@@ -1650,7 +1651,7 @@ class MainWindow(QMainWindow):
                 item.display_text,
                 item.constraint_type,
             )
-            for item in sorted(self._config.constraints, key=lambda entry: entry.priority)
+            for item in sorted(self.app_state.config.constraints, key=lambda entry: entry.priority)
             if item.visible and item.constraint_type.strip().lower() == "symmetry"
         ]
         options.extend(
@@ -1659,7 +1660,7 @@ class MainWindow(QMainWindow):
                 item.display_text,
                 "boundary",
             )
-            for item in sorted(self._config.regions, key=lambda entry: entry.priority)
+            for item in sorted(self.app_state.config.regions, key=lambda entry: entry.priority)
             if item.visible and is_boundary_scene_item(item)
         )
         return options
@@ -1673,7 +1674,7 @@ class MainWindow(QMainWindow):
         ):
             self._active_angle_constraint_name = self._default_angle_constraint_name()
             self._base_angle_constraint_name = self._active_angle_constraint_name
-            self._config.view.active_angle_constraint = self._active_angle_constraint_name
+            self.app_state.config.view.active_angle_constraint = self._active_angle_constraint_name
             self._symmetric_mode = self._constraint_name_is_symmetry(
                 self._active_angle_constraint_name
             )
@@ -1696,7 +1697,7 @@ class MainWindow(QMainWindow):
         if name is None:
             return False
         constraint = next(
-            (item for item in self._config.constraints if item.name == name),
+            (item for item in self.app_state.config.constraints if item.name == name),
             None,
         )
         if constraint is None:
@@ -1708,7 +1709,7 @@ class MainWindow(QMainWindow):
             return False
         return any(
             item.name == name and item.visible and is_boundary_scene_item(item)
-            for item in self._config.regions
+            for item in self.app_state.config.regions
         )
 
     def _resolved_angle_constraint(self) -> ActivePointConstraint | None:
@@ -1718,7 +1719,7 @@ class MainWindow(QMainWindow):
         constraint = next(
             (
                 item
-                for item in self._config.constraints
+                for item in self.app_state.config.constraints
                 if item.name == self._active_angle_constraint_name
                 and item.visible
             ),
@@ -1746,15 +1747,15 @@ class MainWindow(QMainWindow):
         return None
 
     def _project_angles_to_active_constraint(self) -> None:
-        self.angle_panel.set_constraints(self._config.constraints)
-        self.angle_panel.set_regions(self._config.regions)
+        self.angle_panel.set_constraints(self.app_state.config.constraints)
+        self.angle_panel.set_regions(self.app_state.config.regions)
         self.angle_panel.set_active_constraint(self._resolved_angle_constraint())
         alpha, beta = self.angle_panel.project_point_to_snap_constraints(
-            self._config.simulation.alpha,
-            self._config.simulation.beta,
+            self.app_state.config.simulation.alpha,
+            self.app_state.config.simulation.beta,
         )
-        self._config.simulation.alpha = alpha
-        self._config.simulation.beta = beta
+        self.app_state.config.simulation.alpha = alpha
+        self.app_state.config.simulation.beta = beta
 
     def _apply_session(
         self,
@@ -1771,12 +1772,12 @@ class MainWindow(QMainWindow):
         self.update_view()
         logger.info(
             "Session applied: runtime alpha=%.10f beta=%.10f",
-            self._config.simulation.alpha,
-            self._config.simulation.beta,
+            self.app_state.config.simulation.alpha,
+            self.app_state.config.simulation.beta,
         )
 
     def _autosave_session(self) -> None:
-        if not self._config.autosave.enabled:
+        if not self.app_state.config.autosave.enabled:
             return
 
         save_session(
@@ -1785,7 +1786,7 @@ class MainWindow(QMainWindow):
         )
 
     def _restore_autosave_session(self) -> None:
-        if not self._config.autosave.enabled:
+        if not self.app_state.config.autosave.enabled:
             return
 
         autosave_path = self._autosave_path()
@@ -1796,7 +1797,7 @@ class MainWindow(QMainWindow):
         self._apply_session_state(
             session,
             restore_simulation_parameters=(
-                self._config.autosave.restore_simulation_parameters
+                self.app_state.config.autosave.restore_simulation_parameters
             ),
         )
         self._trajectory_orbits = {
@@ -1817,8 +1818,8 @@ class MainWindow(QMainWindow):
         logger.info(
             "Autosave restored: %s runtime alpha=%.10f beta=%.10f",
             autosave_path,
-            self._config.simulation.alpha,
-            self._config.simulation.beta,
+            self.app_state.config.simulation.alpha,
+            self.app_state.config.simulation.beta,
         )
 
     def _schedule_autosave_restore(self) -> None:
@@ -1828,7 +1829,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self._restore_autosave_session)
 
     def _autosave_path(self) -> Path:
-        path = Path(self._config.autosave.path)
+        path = Path(self.app_state.config.autosave.path)
         if path.is_absolute():
             return path
         return Path(self._config_path).resolve().parent / path
@@ -1836,26 +1837,26 @@ class MainWindow(QMainWindow):
     def _build_orbit(self, seed: TrajectorySeed) -> Orbit:
         return build_orbit(
             seed=seed,
-            config=self._config.simulation,
+            config=self.app_state.config.simulation,
             steps=self._normalized_phase_steps(
-                self._config.simulation.n_phase_default,
-                self._config.simulation.n_geom_default,
+                self.app_state.config.simulation.n_phase_default,
+                self.app_state.config.simulation.n_geom_default,
             ),
         )
 
     def _build_geometry(self, orbit: Orbit) -> WedgeGeometry:
         return build_wedge_geometry(
             orbit=orbit,
-            config=self._config.simulation,
-            max_reflections=self._config.simulation.n_geom_default,
+            config=self.app_state.config.simulation,
+            max_reflections=self.app_state.config.simulation.n_geom_default,
         )
 
     def _stationary_phase_point(
         self,
         wall: int,
     ) -> tuple[float, float] | None:
-        alpha = self._config.simulation.alpha
-        beta = self._config.simulation.beta
+        alpha = self.app_state.config.simulation.alpha
+        beta = self.app_state.config.simulation.beta
         own_angle = alpha if wall == 1 else beta
         other_angle = beta if wall == 1 else alpha
         denominator = (
@@ -1863,12 +1864,12 @@ class MainWindow(QMainWindow):
             - 3.0 * (math.cos(2.0 * own_angle) + math.cos(2.0 * other_angle))
             + 5.0
         )
-        if abs(denominator) <= self._config.simulation.eps:
+        if abs(denominator) <= self.app_state.config.simulation.eps:
             return None
 
         d_value = 8.0 * (math.sin(other_angle) ** 2) / denominator
         tau_value = 0.0
-        if not math.isfinite(d_value) or d_value <= self._config.simulation.eps:
+        if not math.isfinite(d_value) or d_value <= self.app_state.config.simulation.eps:
             return None
         if (1.0 - d_value) ** 2 + tau_value**2 >= 1.0:
             return None
@@ -1989,13 +1990,13 @@ class MainWindow(QMainWindow):
             OrbitBuildWorker(
                 generation_id=self._next_generation_id(),
                 job_kind="single_build",
-                simulation_config=self._config.simulation,
-                max_reflections=self._config.simulation.n_geom_default,
+                simulation_config=self.app_state.config.simulation,
+                max_reflections=self.app_state.config.simulation.n_geom_default,
                 phase_steps=self._normalized_phase_steps(
-                    self._config.simulation.n_phase_default,
-                    self._config.simulation.n_geom_default,
+                    self.app_state.config.simulation.n_phase_default,
+                    self.app_state.config.simulation.n_geom_default,
                 ),
-                chunk_size=self._config.background.build_chunk_size,
+                chunk_size=self.app_state.config.background.build_chunk_size,
                 seeds=[seed],
                 existing_orbits={seed.id: self._trajectory_orbits.get(seed.id, Orbit(trajectory_id=seed.id))},
             ),
@@ -2017,13 +2018,13 @@ class MainWindow(QMainWindow):
             OrbitBuildWorker(
                 generation_id=self._next_generation_id(),
                 job_kind="rebuild",
-                simulation_config=self._config.simulation,
-                max_reflections=self._config.simulation.n_geom_default,
+                simulation_config=self.app_state.config.simulation,
+                max_reflections=self.app_state.config.simulation.n_geom_default,
                 phase_steps=self._normalized_phase_steps(
-                    self._config.simulation.n_phase_default,
-                    self._config.simulation.n_geom_default,
+                    self.app_state.config.simulation.n_phase_default,
+                    self.app_state.config.simulation.n_geom_default,
                 ),
-                chunk_size=self._config.background.build_chunk_size,
+                chunk_size=self.app_state.config.background.build_chunk_size,
                 seeds=seeds,
             ),
             start_message=job_message,
@@ -2049,13 +2050,13 @@ class MainWindow(QMainWindow):
             OrbitBuildWorker(
                 generation_id=self._next_generation_id(),
                 job_kind="scan",
-                simulation_config=self._config.simulation,
-                max_reflections=self._config.simulation.n_geom_default,
+                simulation_config=self.app_state.config.simulation,
+                max_reflections=self.app_state.config.simulation.n_geom_default,
                 phase_steps=self._normalized_phase_steps(
-                    self._config.simulation.n_phase_default,
-                    self._config.simulation.n_geom_default,
+                    self.app_state.config.simulation.n_phase_default,
+                    self.app_state.config.simulation.n_geom_default,
                 ),
-                chunk_size=self._config.background.build_chunk_size,
+                chunk_size=self.app_state.config.background.build_chunk_size,
                 scan_mode=mode,
                 scan_count=count,
                 scan_wall=wall,
@@ -2074,15 +2075,15 @@ class MainWindow(QMainWindow):
             OrbitBuildWorker(
                 generation_id=self._next_generation_id(),
                 job_kind="lyapunov",
-                simulation_config=self._config.simulation,
-                max_reflections=self._config.simulation.n_geom_default,
+                simulation_config=self.app_state.config.simulation,
+                max_reflections=self.app_state.config.simulation.n_geom_default,
                 phase_steps=self._normalized_phase_steps(
-                    self._config.simulation.n_phase_default,
-                    self._config.simulation.n_geom_default,
+                    self.app_state.config.simulation.n_phase_default,
+                    self.app_state.config.simulation.n_geom_default,
                 ),
-                chunk_size=self._config.background.build_chunk_size,
+                chunk_size=self.app_state.config.background.build_chunk_size,
                 lyapunov_seed=seed,
-                lyapunov_config=self._config.lyapunov,
+                lyapunov_config=self.app_state.config.lyapunov,
             )
         )
 
@@ -2182,7 +2183,7 @@ class MainWindow(QMainWindow):
             return
         if payload.generation_id != self._job_generation:
             return
-        if self._config.background.fast_build:
+        if self.app_state.config.background.fast_build:
             self._apply_partial_payload(payload)
             self._set_job_progress(
                 JobProgress(
@@ -2259,7 +2260,7 @@ class MainWindow(QMainWindow):
             return
         if payload.generation_id != self._job_generation:
             return
-        if self._config.background.fast_build:
+        if self.app_state.config.background.fast_build:
             self._finalize_finished_job(payload)
             return
         if self._pending_partial_results:
@@ -2416,13 +2417,13 @@ class MainWindow(QMainWindow):
                 OrbitBuildWorker(
                     generation_id=self._next_generation_id(),
                     job_kind="rebuild",
-                    simulation_config=self._config.simulation,
-                    max_reflections=self._config.simulation.n_geom_default,
+                    simulation_config=self.app_state.config.simulation,
+                    max_reflections=self.app_state.config.simulation.n_geom_default,
                     phase_steps=self._normalized_phase_steps(
-                        self._config.simulation.n_phase_default,
-                        self._config.simulation.n_geom_default,
+                        self.app_state.config.simulation.n_phase_default,
+                        self.app_state.config.simulation.n_geom_default,
                     ),
-                    chunk_size=self._config.background.build_chunk_size,
+                    chunk_size=self.app_state.config.background.build_chunk_size,
                     seeds=seeds,
                     existing_orbits=self._trajectory_orbits,
                 ),
@@ -2435,13 +2436,13 @@ class MainWindow(QMainWindow):
                 OrbitBuildWorker(
                     generation_id=self._next_generation_id(),
                     job_kind="single_build",
-                    simulation_config=self._config.simulation,
-                    max_reflections=self._config.simulation.n_geom_default,
+                    simulation_config=self.app_state.config.simulation,
+                    max_reflections=self.app_state.config.simulation.n_geom_default,
                     phase_steps=self._normalized_phase_steps(
-                        self._config.simulation.n_phase_default,
-                        self._config.simulation.n_geom_default,
+                        self.app_state.config.simulation.n_phase_default,
+                        self.app_state.config.simulation.n_geom_default,
                     ),
-                    chunk_size=self._config.background.build_chunk_size,
+                    chunk_size=self.app_state.config.background.build_chunk_size,
                     seeds=seeds,
                     existing_orbits=self._trajectory_orbits,
                 ),
@@ -2450,7 +2451,7 @@ class MainWindow(QMainWindow):
             )
 
     def _schedule_autosave(self) -> None:
-        if not self._config.autosave.enabled:
+        if not self.app_state.config.autosave.enabled:
             return
         self._autosave_timer.start()
 

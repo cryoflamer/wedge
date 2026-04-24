@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.models.config import SimulationConfig, ViewConfig
+from app.models.config import Config, SimulationConfig, ViewConfig
 
 
 @dataclass
 class AppState:
+    config: Config
     simulation_config: SimulationConfig
     view_config: ViewConfig
     selected_trajectory_id: int | None = None
