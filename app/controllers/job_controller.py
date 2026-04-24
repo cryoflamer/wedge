@@ -39,6 +39,7 @@ class JobController(QObject):
         self._last_progress_percent = 0
         self._job_started_at: float | None = None
         self._job_elapsed_before = 0.0
+        self._last_completed_elapsed = 0.0
 
     def _next_generation_id(self) -> int:
         self._job_generation += 1
@@ -77,6 +78,9 @@ class JobController(QObject):
         remaining = max(total - current, 0)
         eta = (remaining / steps_per_sec) if steps_per_sec > 0.0 else None
         return current, total, steps_per_sec, eta
+
+    def last_job_elapsed_seconds(self) -> float:
+        return max(self._last_completed_elapsed, 0.0)
 
     def cancel_current_job(self) -> None:
         worker = self._current_job_worker
@@ -416,6 +420,7 @@ class JobController(QObject):
             return
         if payload.generation_id != self._job_generation:
             return
+        self._last_completed_elapsed = self._progress_elapsed_seconds() or 0.0
         self._active_job_payload = None
         self._current_job_worker = None
         self._current_job_thread = None

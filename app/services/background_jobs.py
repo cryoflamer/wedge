@@ -622,6 +622,17 @@ class OrbitBuildWorker(QObject):
     ) -> None:
         sample_step = int(getattr(self._simulation_config, "native_sample_step", 1))
         sample_mode = str(getattr(self._simulation_config, "native_sample_mode", "every_n"))
+        self.progress.emit(
+            JobProgress(
+                generation_id=self._generation_id,
+                job_kind=self._job_kind,
+                status="running",
+                current=0,
+                total=total,
+                message=f"{progress_label} 0 / {total} trajectories",
+            )
+        )
+        completed_trajectories = 0
         for chunk_start in range(0, len(seeds), NATIVE_SCAN_BATCH_CHUNK_SIZE):
             if self._is_cancel_requested():
                 self.finished.emit(
@@ -707,6 +718,17 @@ class OrbitBuildWorker(QObject):
                         message=message,
                     )
                 )
+                completed_trajectories = display_index
+            self.progress.emit(
+                JobProgress(
+                    generation_id=self._generation_id,
+                    job_kind=self._job_kind,
+                    status="done" if completed_trajectories == total else "partial",
+                    current=completed_trajectories,
+                    total=total,
+                    message=f"{progress_label} {completed_trajectories} / {total} trajectories",
+                )
+            )
 
     def _native_result_to_orbit(self, trajectory_id: int, native_result: dict) -> Orbit:
         steps = [int(value) for value in native_result["steps"]]
