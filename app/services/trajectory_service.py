@@ -16,6 +16,12 @@ class TrajectoryService:
         self.orbits: dict[int, Orbit] = {}
         self.geometries: dict[int, WedgeGeometry] = {}
 
+    def get_seeds(self) -> dict[int, TrajectorySeed]:
+        return self.seeds
+
+    def get_orbits(self) -> dict[int, Orbit]:
+        return self.orbits
+
     def build_orbit(self, seed: TrajectorySeed) -> Orbit:
         config = self._config_provider()
         return build_orbit(
@@ -55,6 +61,12 @@ class TrajectoryService:
         self.orbits[seed.id] = Orbit(trajectory_id=seed.id)
         self.geometries[seed.id] = WedgeGeometry()
 
+    def add_trajectory(self, seed: TrajectorySeed, *, pending: bool = False) -> None:
+        if pending:
+            self.add_pending_seed(seed)
+            return
+        self.add_built_seed(seed)
+
     def update_seed_values(
         self,
         trajectory_id: int,
@@ -77,12 +89,12 @@ class TrajectoryService:
         self.orbits.pop(trajectory_id, None)
         self.geometries.pop(trajectory_id, None)
 
-    def clear(self) -> None:
+    def clear_trajectories(self) -> None:
         self.seeds.clear()
         self.orbits.clear()
         self.geometries.clear()
 
-    def replace_seeds(self, seeds: dict[int, TrajectorySeed]) -> None:
+    def load_trajectories(self, seeds: dict[int, TrajectorySeed]) -> None:
         self.seeds = seeds
 
     def initialize_pending_for_all(self) -> None:

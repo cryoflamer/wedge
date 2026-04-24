@@ -191,19 +191,11 @@ class MainWindow(QMainWindow):
 
     @property
     def _trajectory_seeds(self) -> dict[int, TrajectorySeed]:
-        return self._trajectory_service.seeds
-
-    @_trajectory_seeds.setter
-    def _trajectory_seeds(self, value: dict[int, TrajectorySeed]) -> None:
-        self._trajectory_service.seeds = value
+        return self._trajectory_service.get_seeds()
 
     @property
     def _trajectory_orbits(self) -> dict[int, Orbit]:
-        return self._trajectory_service.orbits
-
-    @_trajectory_orbits.setter
-    def _trajectory_orbits(self, value: dict[int, Orbit]) -> None:
-        self._trajectory_service.orbits = value
+        return self._trajectory_service.get_orbits()
 
     @property
     def _trajectory_geometries(self) -> dict[int, WedgeGeometry]:
@@ -1393,7 +1385,7 @@ class MainWindow(QMainWindow):
 
     def _on_clear_all_trajectories(self) -> None:
         self._cancel_current_job()
-        self._trajectory_service.clear()
+        self._trajectory_service.clear_trajectories()
         self._paused_job_payloads.clear()
         self._active_job_payload = None
         self._selected_trajectory = None
@@ -1610,7 +1602,7 @@ class MainWindow(QMainWindow):
         )
         self.app_state.config.background.fast_build = session.fast_build
 
-        self._trajectory_service.replace_seeds({
+        self._trajectory_service.load_trajectories({
             seed.id: TrajectorySeed(
                 id=seed.id,
                 wall_start=seed.wall_start,
@@ -1941,7 +1933,7 @@ class MainWindow(QMainWindow):
             tau0=tau_value,
             color=self._palette[(trajectory_id - 1) % len(self._palette)],
         )
-        self._trajectory_service.add_built_seed(seed)
+        self._trajectory_service.add_trajectory(seed)
         if self._selected_trajectory is None:
             self._selected_trajectory = trajectory_id
         self._reset_replay_views()
@@ -1960,7 +1952,7 @@ class MainWindow(QMainWindow):
             tau0=tau_value,
             color=self._palette[(trajectory_id - 1) % len(self._palette)],
         )
-        self._trajectory_service.add_pending_seed(seed)
+        self._trajectory_service.add_trajectory(seed, pending=True)
         if self._selected_trajectory is None:
             self._selected_trajectory = trajectory_id
         self._reset_replay_views()
