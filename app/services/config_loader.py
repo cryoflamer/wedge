@@ -9,6 +9,7 @@ from app.models.config import (
     AutosaveConfig,
     BackgroundConfig,
     Config,
+    DebugConfig,
     ExportConfig,
     LyapunovConfig,
     PhaseGridConfig,
@@ -32,6 +33,7 @@ def load_config(path: str | Path) -> Config:
     simulation_data = data.get("simulation", {})
     replay_data = data.get("replay", {})
     background_data = data.get("background", {})
+    debug_data = data.get("debug", {})
     lyapunov_data = data.get("lyapunov", {})
     export_data = data.get("export", {})
     view_data = data.get("view", {})
@@ -122,6 +124,7 @@ def load_config(path: str | Path) -> Config:
             n_phase_default=int(simulation_data["n_phase_default"]),
             n_geom_default=int(simulation_data["n_geom_default"]),
             eps=float(simulation_data.get("eps", 1.0e-9)),
+            performance_trace=bool(debug_data.get("performance_trace", False)),
         ),
         replay=ReplayConfig(
             delay_ms=int(replay_data.get("delay_ms", 120)),
@@ -132,6 +135,9 @@ def load_config(path: str | Path) -> Config:
         background=BackgroundConfig(
             build_chunk_size=int(background_data.get("build_chunk_size", 16)),
             fast_build=bool(background_data.get("fast_build", False)),
+        ),
+        debug=DebugConfig(
+            performance_trace=bool(debug_data.get("performance_trace", False)),
         ),
         lyapunov=LyapunovConfig(
             delta0=float(lyapunov_data.get("delta0", 1.0e-6)),

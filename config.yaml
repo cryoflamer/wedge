@@ -14,6 +14,8 @@ replay:
 background:
   build_chunk_size: 16
   fast_build: true
+debug:
+  performance_trace: true
 lyapunov:
   delta0: 1.0e-06
   transient_steps: 10

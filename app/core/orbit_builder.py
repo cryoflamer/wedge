@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import copy
+import time
 
 from app.core.math_engine import PhaseState, next_state, validate_state
 from app.models.config import SimulationConfig
 from app.models.orbit import Orbit, OrbitPoint, ReplayFrame
 from app.models.trajectory import TrajectorySeed
+
+PhaseSample = tuple[int, float, float, int, bool, str | None, str | None]
 
 
 def build_orbit(
@@ -43,41 +46,47 @@ def build_orbit(
         return orbit
 
     current_state = initial_state
+    perf_enabled = config.performance_trace
+    t0 = time.perf_counter()
+    ns_time = 0.0
+    phase_samples: list[PhaseSample] = []
     for step_index in range(1, steps):
+        t_ns0 = time.perf_counter()
         step_result = next_state(current_state, config)
+        ns_time += time.perf_counter() - t_ns0
         if step_result.state is None:
             orbit.valid = False
             orbit.invalid_reason = step_result.reason
+            _append_phase_samples(orbit, phase_samples)
             orbit.completed_steps = len(orbit.points)
+            _print_loop_profile(perf_enabled, t0, ns_time)
             return orbit
 
-        orbit.points.append(
-            OrbitPoint(
-                step_index=step_index,
-                d=step_result.state.d,
-                tau=step_result.state.tau,
-                wall=step_result.state.wall,
-                valid=step_result.valid,
-                invalid_reason=step_result.reason,
-                branch=step_result.branch,
-            )
-        )
-        orbit.replay_frames.append(
-            ReplayFrame(
-                frame_index=step_index,
-                orbit_point_index=step_index,
+        phase_samples.append(
+            (
+                step_index,
+                step_result.state.d,
+                step_result.state.tau,
+                step_result.state.wall,
+                step_result.valid,
+                step_result.reason,
+                step_result.branch,
             )
         )
 
         if not step_result.valid:
             orbit.valid = False
             orbit.invalid_reason = step_result.reason
+            _append_phase_samples(orbit, phase_samples)
             orbit.completed_steps = len(orbit.points)
+            _print_loop_profile(perf_enabled, t0, ns_time)
             return orbit
 
         current_state = step_result.state
 
+    _append_phase_samples(orbit, phase_samples)
     orbit.completed_steps = len(orbit.points)
+    _print_loop_profile(perf_enabled, t0, ns_time)
     return orbit
 
 
@@ -138,50 +147,88 @@ def iter_orbit_chunks(
         step_index = 1
 
     chunk_limit = max(chunk_size, 1)
+    perf_enabled = config.performance_trace
+    t0 = time.perf_counter()
+    ns_time = 0.0
     while step_index < steps:
         if cancel_check is not None and cancel_check():
             orbit.completed_steps = len(orbit.points)
+            _print_loop_profile(perf_enabled, t0, ns_time)
             return
         chunk_end = min(step_index + chunk_limit, steps)
+        chunk_samples: list[PhaseSample] = []
         for current_step in range(step_index, chunk_end):
             if cancel_check is not None and cancel_check():
                 orbit.completed_steps = len(orbit.points)
+                _print_loop_profile(perf_enabled, t0, ns_time)
                 return
+            t_ns0 = time.perf_counter()
             step_result = next_state(current_state, config)
+            ns_time += time.perf_counter() - t_ns0
             if step_result.state is None:
                 orbit.valid = False
                 orbit.invalid_reason = step_result.reason
+                _append_phase_samples(orbit, chunk_samples)
                 orbit.completed_steps = len(orbit.points)
+                _print_loop_profile(perf_enabled, t0, ns_time)
                 yield copy.deepcopy(orbit), True
                 return
 
-            orbit.points.append(
-                OrbitPoint(
-                    step_index=current_step,
-                    d=step_result.state.d,
-                    tau=step_result.state.tau,
-                    wall=step_result.state.wall,
-                    valid=step_result.valid,
-                    invalid_reason=step_result.reason,
-                    branch=step_result.branch,
-                )
-            )
-            orbit.replay_frames.append(
-                ReplayFrame(
-                    frame_index=current_step,
-                    orbit_point_index=current_step,
+            chunk_samples.append(
+                (
+                    current_step,
+                    step_result.state.d,
+                    step_result.state.tau,
+                    step_result.state.wall,
+                    step_result.valid,
+                    step_result.reason,
+                    step_result.branch,
                 )
             )
 
             if not step_result.valid:
                 orbit.valid = False
                 orbit.invalid_reason = step_result.reason
+                _append_phase_samples(orbit, chunk_samples)
                 orbit.completed_steps = len(orbit.points)
+                _print_loop_profile(perf_enabled, t0, ns_time)
                 yield copy.deepcopy(orbit), True
                 return
 
             current_state = step_result.state
 
+        _append_phase_samples(orbit, chunk_samples)
         orbit.completed_steps = len(orbit.points)
         step_index = chunk_end
         yield copy.deepcopy(orbit), step_index >= steps
+    _print_loop_profile(perf_enabled, t0, ns_time)
+
+
+def _print_loop_profile(perf_enabled: bool, t0: float, ns_time: float) -> None:
+    if not perf_enabled:
+        return
+    total = time.perf_counter() - t0
+    print(f"[loop] total: {total:.3f}s")
+    print(f"[loop] next_state: {ns_time:.3f}s")
+    print(f"[loop] overhead: {total - ns_time:.3f}s")
+
+
+def _append_phase_samples(orbit: Orbit, samples: list[PhaseSample]) -> None:
+    for step_index, d_value, tau_value, wall, valid, reason, branch in samples:
+        orbit.points.append(
+            OrbitPoint(
+                step_index=step_index,
+                d=d_value,
+                tau=tau_value,
+                wall=wall,
+                valid=valid,
+                invalid_reason=reason,
+                branch=branch,
+            )
+        )
+        orbit.replay_frames.append(
+            ReplayFrame(
+                frame_index=step_index,
+                orbit_point_index=step_index,
+            )
+        )

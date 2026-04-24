@@ -20,6 +20,7 @@ class SimulationConfig:
     n_phase_default: int
     n_geom_default: int
     eps: float = 1.0e-9
+    performance_trace: bool = False
 
 
 @dataclass
@@ -32,6 +33,11 @@ class ReplayConfig:
 class BackgroundConfig:
     build_chunk_size: int = 16
     fast_build: bool = False
+
+
+@dataclass
+class DebugConfig:
+    performance_trace: bool = False
 
 
 @dataclass
@@ -118,6 +124,7 @@ class Config:
     export: ExportConfig
     view: ViewConfig
     background: BackgroundConfig = field(default_factory=BackgroundConfig)
+    debug: DebugConfig = field(default_factory=DebugConfig)
     window: WindowConfig = field(default_factory=WindowConfig)
     autosave: AutosaveConfig = field(default_factory=AutosaveConfig)
     regions: list[SceneItemDescription] = field(default_factory=list)
