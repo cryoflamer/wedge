@@ -6,6 +6,7 @@ from threading import Event
 from PySide6.QtCore import QObject, Signal, Slot
 
 from app.core.trajectory_engine import (
+    build_orbit,
     build_wedge_geometry,
     compute_finite_time_lyapunov,
     iter_orbit_chunks,
@@ -88,6 +89,7 @@ class OrbitBuildWorker(QObject):
         lyapunov_seed: TrajectorySeed | None = None,
         lyapunov_config: LyapunovConfig | None = None,
         existing_orbits: dict[int, Orbit] | None = None,
+        fast_build: bool = False,
     ) -> None:
         super().__init__()
         self._generation_id = generation_id
@@ -110,6 +112,7 @@ class OrbitBuildWorker(QObject):
         self._lyapunov_seed = lyapunov_seed
         self._lyapunov_config = lyapunov_config
         self._existing_orbits = dict(existing_orbits or {})
+        self._fast_build = fast_build
         self._cancel_event = Event()
 
     def cancel(self) -> None:
@@ -166,6 +169,60 @@ class OrbitBuildWorker(QObject):
                 message=f"Building trajectory #{seed.id}",
             )
         )
+        if self._fast_build:
+            orbit = build_orbit(
+                seed=seed,
+                config=self._simulation_config,
+                steps=self._phase_steps,
+            )
+            if self._is_cancel_requested():
+                self.finished.emit(
+                    JobFinished(
+                        generation_id=self._generation_id,
+                        job_kind=self._job_kind,
+                        status="cancelled",
+                        message="build cancelled",
+                    )
+                )
+                return
+            geometry = build_wedge_geometry(
+                orbit=orbit,
+                config=self._simulation_config,
+                max_reflections=self._max_reflections,
+            )
+            current = max(len(orbit.points) - 1, 0)
+            self.partial_result.emit(
+                OrbitPartialResult(
+                    generation_id=self._generation_id,
+                    trajectory_id=seed.id,
+                    seed=seed,
+                    orbit=orbit,
+                    geometry=geometry,
+                    replace=True,
+                    current=current,
+                    total=total_steps,
+                    message=f"Building trajectory #{seed.id}: {current} / {total_steps}",
+                )
+            )
+            self.progress.emit(
+                JobProgress(
+                    generation_id=self._generation_id,
+                    job_kind=self._job_kind,
+                    status="done",
+                    current=current,
+                    total=total_steps,
+                    message=f"Building trajectory #{seed.id}: {current} / {total_steps}",
+                )
+            )
+            self.finished.emit(
+                JobFinished(
+                    generation_id=self._generation_id,
+                    job_kind=self._job_kind,
+                    status="done",
+                    message=f"trajectory #{seed.id} built",
+                )
+            )
+            return
         for orbit, done in iter_orbit_chunks(
             seed=seed,
             config=self._simulation_config,
@@ -278,6 +335,61 @@ class OrbitBuildWorker(QObject):
                 return
 
             latest_orbit: Orbit | None = None
+            if self._fast_build:
+                orbit = build_orbit(
+                    seed=seed,
+                    config=self._simulation_config,
+                    steps=self._phase_steps,
+                )
+                if self._is_cancel_requested():
+                    self.finished.emit(
+                        JobFinished(
+                            generation_id=self._generation_id,
+                            job_kind=self._job_kind,
+                            status="cancelled",
+                            message="rebuild cancelled",
+                        )
+                    )
+                    return
+                geometry = build_wedge_geometry(
+                    orbit=orbit,
+                    config=self._simulation_config,
+                    max_reflections=self._max_reflections,
+                )
+                latest_orbit = orbit
+                current = ((seed_index - 1) * steps_per_seed) + max(len(orbit.points) - 1, 0)
+                self.partial_result.emit(
+                    OrbitPartialResult(
+                        generation_id=self._generation_id,
+                        trajectory_id=seed.id,
+                        seed=seed,
+                        orbit=orbit,
+                        geometry=geometry,
+                        replace=True,
+                        current=current,
+                        total=total_work,
+                        message=(
+                            f"Rebuilding {seed_index} / {total}: "
+                            f"trajectory #{seed.id} "
+                            f"({max(len(orbit.points) - 1, 0)} / {steps_per_seed})"
+                        ),
+                    )
+                )
+                self.progress.emit(
+                    JobProgress(
+                        generation_id=self._generation_id,
+                        job_kind=self._job_kind,
+                        status="done" if seed_index == total else "partial",
+                        current=current,
+                        total=total_work,
+                        message=(
+                            f"Rebuilding {seed_index} / {total}: "
+                            f"trajectory #{seed.id} "
+                            f"({max(len(orbit.points) - 1, 0)} / {steps_per_seed})"
+                        ),
+                    )
+                )
+                continue
             for orbit, done in iter_orbit_chunks(
                 seed=seed,
                 config=self._simulation_config,
@@ -436,6 +548,61 @@ class OrbitBuildWorker(QObject):
                 tau0=tau_value,
                 color=color,
             )
+            if self._fast_build:
+                orbit = build_orbit(
+                    seed=seed,
+                    config=self._simulation_config,
+                    steps=self._phase_steps,
+                )
+                if self._is_cancel_requested():
+                    self.finished.emit(
+                        JobFinished(
+                            generation_id=self._generation_id,
+                            job_kind=self._job_kind,
+                            status="cancelled",
+                            message="scan cancelled",
+                        )
+                    )
+                    return
+                geometry = build_wedge_geometry(
+                    orbit=orbit,
+                    config=self._simulation_config,
+                    max_reflections=self._max_reflections,
+                )
+                current = ((point_index - 1) * steps_per_seed) + max(len(orbit.points) - 1, 0)
+                self.partial_result.emit(
+                    OrbitPartialResult(
+                        generation_id=self._generation_id,
+                        trajectory_id=seed.id,
+                        seed=seed,
+                        orbit=orbit,
+                        geometry=geometry,
+                        replace=False,
+                        current=current,
+                        total=total_work,
+                        message=(
+                            f"Scanning {point_index} / {total}: "
+                            f"trajectory #{seed.id} "
+                            f"({max(len(orbit.points) - 1, 0)} / {steps_per_seed})"
+                        ),
+                    )
+                )
+                self.progress.emit(
+                    JobProgress(
+                        generation_id=self._generation_id,
+                        job_kind=self._job_kind,
+                        status="done" if point_index == total else "partial",
+                        current=current,
+                        total=total_work,
+                        message=(
+                            f"Scanning {point_index} / {total}: "
+                            f"trajectory #{seed.id} "
+                            f"({max(len(orbit.points) - 1, 0)} / {steps_per_seed})"
+                        ),
+                    )
+                )
+                added += 1
+                continue
 
             for orbit, done in iter_orbit_chunks(
                 seed=seed,

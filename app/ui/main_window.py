@@ -1786,6 +1786,7 @@ class MainWindow(QMainWindow):
         self._job_controller.start_single_build(
             seed,
             simulation_config=self.app_state.config.simulation,
+            fast_build=self.app_state.config.background.fast_build,
             max_reflections=self.app_state.config.simulation.n_geom_default,
             phase_steps=self._normalized_phase_steps(
                 self.app_state.config.simulation.n_phase_default,
@@ -1805,6 +1806,7 @@ class MainWindow(QMainWindow):
         self._job_controller.start_rebuild(
             seeds,
             simulation_config=self.app_state.config.simulation,
+            fast_build=self.app_state.config.background.fast_build,
             max_reflections=self.app_state.config.simulation.n_geom_default,
             phase_steps=self._normalized_phase_steps(
                 self.app_state.config.simulation.n_phase_default,
@@ -1826,6 +1828,7 @@ class MainWindow(QMainWindow):
     ) -> None:
         self._job_controller.start_scan(
             simulation_config=self.app_state.config.simulation,
+            fast_build=self.app_state.config.background.fast_build,
             max_reflections=self.app_state.config.simulation.n_geom_default,
             phase_steps=self._normalized_phase_steps(
                 self.app_state.config.simulation.n_phase_default,
@@ -1848,6 +1851,7 @@ class MainWindow(QMainWindow):
         self._job_controller.start_lyapunov(
             seed,
             simulation_config=self.app_state.config.simulation,
+            fast_build=self.app_state.config.background.fast_build,
             max_reflections=self.app_state.config.simulation.n_geom_default,
             phase_steps=self._normalized_phase_steps(
                 self.app_state.config.simulation.n_phase_default,
@@ -2135,6 +2139,7 @@ class MainWindow(QMainWindow):
             self._job_controller.resume_job(
                 int(paused_payloads[0].get("job_id", -1)),
                 simulation_config=self.app_state.config.simulation,
+                fast_build=self.app_state.config.background.fast_build,
                 max_reflections=self.app_state.config.simulation.n_geom_default,
                 phase_steps=self._normalized_phase_steps(
                     self.app_state.config.simulation.n_phase_default,
@@ -2149,6 +2154,7 @@ class MainWindow(QMainWindow):
             self._job_controller.resume_job(
                 int(selected_job_id),
                 simulation_config=self.app_state.config.simulation,
+                fast_build=self.app_state.config.background.fast_build,
                 max_reflections=self.app_state.config.simulation.n_geom_default,
                 phase_steps=self._normalized_phase_steps(
                     self.app_state.config.simulation.n_phase_default,
@@ -2167,6 +2173,7 @@ class MainWindow(QMainWindow):
         self._job_controller.resume_job(
             int(latest.get("job_id", -1)),
             simulation_config=self.app_state.config.simulation,
+            fast_build=self.app_state.config.background.fast_build,
             max_reflections=self.app_state.config.simulation.n_geom_default,
             phase_steps=self._normalized_phase_steps(
                 self.app_state.config.simulation.n_phase_default,
