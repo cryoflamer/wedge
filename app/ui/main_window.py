@@ -30,12 +30,12 @@ from PySide6.QtWidgets import (
 )
 
 from app.controllers.job_controller import JobController
+from app.controllers.session_controller import SessionController, SessionRuntimeState
 from app.core.point_constraints import ActivePointConstraint
 from app.models.config import Config
 from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
 from app.models.region import RegionStyle
-from app.models.session import Session
 from app.models.scene_item import SceneItemDescription, is_boundary_scene_item
 from app.models.trajectory import TrajectorySeed
 from app.services.config_loader import save_runtime_config
@@ -47,7 +47,6 @@ from app.services.background_jobs import (
 )
 from app.services.data_export_service import export_orbit_data
 from app.services.export_service import export_widget_bundle_png
-from app.services.session_service import load_session, save_session
 from app.services.trajectory_service import TrajectoryService
 from app.state.app_state import AppState
 from app.ui.angle_panel import AnglePanel
@@ -108,6 +107,15 @@ class MainWindow(QMainWindow):
             symmetric_mode=self._symmetric_mode,
         )
         self._trajectory_service = TrajectoryService(lambda: self.app_state.config)
+        self._session_controller = SessionController(
+            app_state=self.app_state,
+            config_path=config_path,
+            trajectory_service=self._trajectory_service,
+            normalized_phase_steps=self._normalized_phase_steps,
+            default_symmetry_constraint_name=self._default_symmetry_constraint_name,
+            read_runtime_state=self._read_session_runtime_state,
+            apply_runtime_state=self._apply_session_runtime_state,
+        )
         self._active_segment_indices: dict[int, int] = {}
         self._active_phase_frames: dict[int, int] = {}
         self._palette = [
@@ -132,7 +140,7 @@ class MainWindow(QMainWindow):
         self._autosave_timer = QTimer(self)
         self._autosave_timer.setSingleShot(True)
         self._autosave_timer.setInterval(50)
-        self._autosave_timer.timeout.connect(self._autosave_session)
+        self._autosave_timer.timeout.connect(self._session_controller.autosave_session)
 
         self.setWindowTitle(config.app.title)
         self.resize(config.window.width, config.window.height)
@@ -1495,8 +1503,7 @@ class MainWindow(QMainWindow):
         if not output_path:
             return
 
-        session = self._build_session()
-        saved_path = save_session(session, output_path)
+        saved_path = self._session_controller.save_session_to(output_path)
         logger.info("Session saved: %s", saved_path)
 
     def _load_session(self) -> None:
@@ -1509,111 +1516,13 @@ class MainWindow(QMainWindow):
         if not input_path:
             return
 
-        session = load_session(input_path)
-        self._apply_session(session)
+        self._session_controller.load_session_from(input_path)
+        self._rebuild_orbits()
+        self.replay_controller.reset()
+        self._reset_replay_views()
+        self.update_view()
         self._autosave_session()
         logger.info("Session loaded: %s", input_path)
-
-    def _build_session(self) -> Session:
-        return Session(
-            alpha=self.app_state.config.simulation.alpha,
-            beta=self.app_state.config.simulation.beta,
-            n_phase=self.app_state.config.simulation.n_phase_default,
-            n_geom=self.app_state.config.simulation.n_geom_default,
-            replay_delay_ms=self.app_state.config.replay.delay_ms,
-            replay_selected_only=self.app_state.config.replay.selected_only_by_default,
-            selected_trajectory_id=self._selected_trajectory,
-            trajectories=list(self._trajectory_seeds.values()),
-            angle_units=self._angle_units,
-            symmetric_mode=self._symmetric_mode,
-            export_mode=self.controls_panel.export_mode(),
-            phase_fixed_domain=self.phase_panel_wall_1.is_fixed_domain_mode(),
-            show_phase_grid=self.app_state.config.view.show_phase_grid,
-            show_phase_minor_grid=self.app_state.config.view.show_phase_minor_grid,
-            show_seed_markers=self.app_state.config.view.show_seed_markers,
-            show_stationary_point=self.app_state.config.view.show_stationary_point,
-            show_directrix=self.app_state.config.view.show_directrix,
-            show_regions=self.app_state.config.view.show_regions,
-            show_region_labels=self.app_state.config.view.show_region_labels,
-            show_region_legend=self.app_state.config.view.show_region_legend,
-            show_branch_markers=self.app_state.config.view.show_branch_markers,
-            show_heatmap=self.app_state.config.view.show_heatmap,
-            heatmap_mode=self.app_state.config.view.heatmap_mode,
-            heatmap_resolution=self.app_state.config.view.heatmap_resolution,
-            heatmap_normalization=self.app_state.config.view.heatmap_normalization,
-            active_angle_constraint=self._active_angle_constraint_name,
-            fast_build=self.app_state.config.background.fast_build,
-            phase_viewport_wall_1=self.phase_panel_wall_1.viewport(),
-            phase_viewport_wall_2=self.phase_panel_wall_2.viewport(),
-        )
-
-    def _apply_session_state(
-        self,
-        session: Session,
-        restore_simulation_parameters: bool = True,
-    ) -> None:
-        if restore_simulation_parameters:
-            self.app_state.config.simulation.alpha = session.alpha
-            self.app_state.config.simulation.beta = session.beta
-        self.app_state.config.simulation.n_geom_default = session.n_geom
-        self.app_state.config.simulation.n_phase_default = self._normalized_phase_steps(
-            session.n_phase,
-            session.n_geom,
-        )
-        self.app_state.config.replay.delay_ms = session.replay_delay_ms
-        self.app_state.config.replay.selected_only_by_default = session.replay_selected_only
-        self._angle_units = session.angle_units
-        self.app_state.config.export.default_mode = session.export_mode
-        self.app_state.config.view.show_phase_grid = session.show_phase_grid
-        self.app_state.config.view.show_phase_minor_grid = session.show_phase_minor_grid
-        self.app_state.config.view.phase_grid.show_minor = session.show_phase_minor_grid
-        self.app_state.config.view.show_seed_markers = session.show_seed_markers
-        self.app_state.config.view.show_stationary_point = session.show_stationary_point
-        self.app_state.config.view.show_directrix = session.show_directrix
-        self.app_state.config.view.show_regions = session.show_regions
-        self.app_state.config.view.show_region_labels = session.show_region_labels
-        self.app_state.config.view.show_region_legend = session.show_region_legend
-        self.app_state.config.view.show_branch_markers = session.show_branch_markers
-        self.app_state.config.view.show_heatmap = session.show_heatmap
-        self.app_state.config.view.heatmap_mode = session.heatmap_mode
-        self.app_state.config.view.heatmap_resolution = session.heatmap_resolution
-        self.app_state.config.view.heatmap_normalization = session.heatmap_normalization
-        restored_constraint = session.active_angle_constraint
-        if restored_constraint is None and session.symmetric_mode:
-            restored_constraint = self._default_symmetry_constraint_name()
-        self._base_angle_constraint_name = restored_constraint
-        self._active_angle_constraint_name = restored_constraint
-        self.app_state.config.view.active_angle_constraint = restored_constraint
-        self._symmetric_mode = self._constraint_name_is_symmetry(
-            self._active_angle_constraint_name
-        )
-        self.app_state.config.background.fast_build = session.fast_build
-
-        self._trajectory_service.load_trajectories({
-            seed.id: TrajectorySeed(
-                id=seed.id,
-                wall_start=seed.wall_start,
-                d0=seed.d0,
-                tau0=seed.tau0,
-                visible=seed.visible,
-                color=seed.color,
-            )
-            for seed in session.trajectories
-        })
-        self._selected_trajectory = session.selected_trajectory_id
-        self.phase_panel_wall_1.set_fixed_domain_mode(session.phase_fixed_domain)
-        self.phase_panel_wall_2.set_fixed_domain_mode(session.phase_fixed_domain)
-        self.phase_panel_wall_1.set_viewport(session.phase_viewport_wall_1)
-        self.phase_panel_wall_2.set_viewport(session.phase_viewport_wall_2)
-        if self._selected_trajectory not in self._trajectory_seeds:
-            self._selected_trajectory = next(
-                iter(self._trajectory_seeds.keys()),
-                None,
-            )
-
-        self._next_trajectory_id = (
-            max(self._trajectory_seeds.keys(), default=0) + 1
-        )
 
     def _default_symmetry_constraint_name(self) -> str | None:
         for constraint in sorted(
@@ -1750,49 +1659,13 @@ class MainWindow(QMainWindow):
         self.app_state.config.simulation.alpha = alpha
         self.app_state.config.simulation.beta = beta
 
-    def _apply_session(
-        self,
-        session: Session,
-        restore_simulation_parameters: bool = True,
-    ) -> None:
-        self._apply_session_state(
-            session,
-            restore_simulation_parameters=restore_simulation_parameters,
-        )
-        self._rebuild_orbits()
-        self.replay_controller.reset()
-        self._reset_replay_views()
-        self.update_view()
-        logger.info(
-            "Session applied: runtime alpha=%.10f beta=%.10f",
-            self.app_state.config.simulation.alpha,
-            self.app_state.config.simulation.beta,
-        )
-
     def _autosave_session(self) -> None:
-        if not self.app_state.config.autosave.enabled:
-            return
-
-        save_session(
-            self._build_session(),
-            self._autosave_path(),
-        )
+        self._session_controller.autosave_session()
 
     def _restore_autosave_session(self) -> None:
-        if not self.app_state.config.autosave.enabled:
+        session = self._session_controller.restore_autosave_session()
+        if session is None:
             return
-
-        autosave_path = self._autosave_path()
-        if not autosave_path.exists():
-            return
-
-        session = load_session(autosave_path)
-        self._apply_session_state(
-            session,
-            restore_simulation_parameters=(
-                self.app_state.config.autosave.restore_simulation_parameters
-            ),
-        )
         self._trajectory_service.initialize_pending_for_all()
         self.replay_controller.reset()
         self._reset_replay_views()
@@ -1803,7 +1676,7 @@ class MainWindow(QMainWindow):
             )
         logger.info(
             "Autosave restored: %s runtime alpha=%.10f beta=%.10f",
-            autosave_path,
+            self._session_controller.autosave_path(),
             self.app_state.config.simulation.alpha,
             self.app_state.config.simulation.beta,
         )
@@ -1815,10 +1688,35 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self._restore_autosave_session)
 
     def _autosave_path(self) -> Path:
-        path = Path(self.app_state.config.autosave.path)
-        if path.is_absolute():
-            return path
-        return Path(self._config_path).resolve().parent / path
+        return self._session_controller.autosave_path()
+
+    def _read_session_runtime_state(self) -> SessionRuntimeState:
+        return SessionRuntimeState(
+            selected_trajectory_id=self._selected_trajectory,
+            angle_units=self._angle_units,
+            symmetric_mode=self._symmetric_mode,
+            export_mode=self.controls_panel.export_mode(),
+            phase_fixed_domain=self.phase_panel_wall_1.is_fixed_domain_mode(),
+            active_angle_constraint=self._active_angle_constraint_name,
+            phase_viewport_wall_1=self.phase_panel_wall_1.viewport(),
+            phase_viewport_wall_2=self.phase_panel_wall_2.viewport(),
+        )
+
+    def _apply_session_runtime_state(self, state: SessionRuntimeState) -> None:
+        self._angle_units = state.angle_units
+        self._base_angle_constraint_name = state.active_angle_constraint
+        self._active_angle_constraint_name = state.active_angle_constraint
+        self._symmetric_mode = self._constraint_name_is_symmetry(
+            self._active_angle_constraint_name
+        )
+        self._selected_trajectory = state.selected_trajectory_id
+        self.phase_panel_wall_1.set_fixed_domain_mode(state.phase_fixed_domain)
+        self.phase_panel_wall_2.set_fixed_domain_mode(state.phase_fixed_domain)
+        self.phase_panel_wall_1.set_viewport(state.phase_viewport_wall_1)
+        self.phase_panel_wall_2.set_viewport(state.phase_viewport_wall_2)
+        if self._selected_trajectory not in self._trajectory_seeds:
+            self._selected_trajectory = next(iter(self._trajectory_seeds.keys()), None)
+        self._next_trajectory_id = max(self._trajectory_seeds.keys(), default=0) + 1
 
     def _build_orbit(self, seed: TrajectorySeed) -> Orbit:
         return self._trajectory_service.build_orbit(seed)
