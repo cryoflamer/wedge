@@ -43,7 +43,6 @@ from app.services.background_jobs import (
     JobFinished,
     JobProgress,
     LyapunovResultPayload,
-    OrbitBuildWorker,
     OrbitPartialResult,
 )
 from app.services.data_export_service import export_orbit_data
@@ -1951,53 +1950,35 @@ class MainWindow(QMainWindow):
         seed: TrajectorySeed,
         start_message: str,
     ) -> None:
-        self._start_worker(
-            OrbitBuildWorker(
-                generation_id=self._next_generation_id(),
-                job_kind="single_build",
-                simulation_config=self.app_state.config.simulation,
-                max_reflections=self.app_state.config.simulation.n_geom_default,
-                phase_steps=self._normalized_phase_steps(
-                    self.app_state.config.simulation.n_phase_default,
-                    self.app_state.config.simulation.n_geom_default,
-                ),
-                chunk_size=self.app_state.config.background.build_chunk_size,
-                seeds=[seed],
-                existing_orbits={seed.id: self._trajectory_orbits.get(seed.id, Orbit(trajectory_id=seed.id))},
+        self._job_controller.start_single_build(
+            seed,
+            simulation_config=self.app_state.config.simulation,
+            max_reflections=self.app_state.config.simulation.n_geom_default,
+            phase_steps=self._normalized_phase_steps(
+                self.app_state.config.simulation.n_phase_default,
+                self.app_state.config.simulation.n_geom_default,
             ),
-            start_message=start_message,
-            resumable_payload={
-                "job_kind": "single_build",
-                "seeds": [seed],
-                "start_message": start_message,
-                "title": f"Trajectory #{seed.id}",
+            chunk_size=self.app_state.config.background.build_chunk_size,
+            existing_orbits={
+                seed.id: self._trajectory_orbits.get(seed.id, Orbit(trajectory_id=seed.id))
             },
+            start_message=start_message,
         )
 
     def _start_rebuild_job(self, job_message: str = "Starting rebuild...") -> None:
         self._trajectory_service.clear_results()
         self.update_view()
         seeds = sorted(self._trajectory_seeds.values(), key=lambda item: item.id)
-        self._start_worker(
-            OrbitBuildWorker(
-                generation_id=self._next_generation_id(),
-                job_kind="rebuild",
-                simulation_config=self.app_state.config.simulation,
-                max_reflections=self.app_state.config.simulation.n_geom_default,
-                phase_steps=self._normalized_phase_steps(
-                    self.app_state.config.simulation.n_phase_default,
-                    self.app_state.config.simulation.n_geom_default,
-                ),
-                chunk_size=self.app_state.config.background.build_chunk_size,
-                seeds=seeds,
+        self._job_controller.start_rebuild(
+            seeds,
+            simulation_config=self.app_state.config.simulation,
+            max_reflections=self.app_state.config.simulation.n_geom_default,
+            phase_steps=self._normalized_phase_steps(
+                self.app_state.config.simulation.n_phase_default,
+                self.app_state.config.simulation.n_geom_default,
             ),
+            chunk_size=self.app_state.config.background.build_chunk_size,
             start_message=job_message,
-            resumable_payload={
-                "job_kind": "rebuild",
-                "seeds": list(seeds),
-                "start_message": job_message,
-                "title": job_message,
-            },
         )
 
     def _start_scan_job(
@@ -2010,65 +1991,45 @@ class MainWindow(QMainWindow):
         tau_min: float,
         tau_max: float,
     ) -> None:
-        self._start_worker(
-            OrbitBuildWorker(
-                generation_id=self._next_generation_id(),
-                job_kind="scan",
-                simulation_config=self.app_state.config.simulation,
-                max_reflections=self.app_state.config.simulation.n_geom_default,
-                phase_steps=self._normalized_phase_steps(
-                    self.app_state.config.simulation.n_phase_default,
-                    self.app_state.config.simulation.n_geom_default,
-                ),
-                chunk_size=self.app_state.config.background.build_chunk_size,
-                scan_mode=mode,
-                scan_count=count,
-                scan_wall=wall,
-                scan_d_min=d_min,
-                scan_d_max=d_max,
-                scan_tau_min=tau_min,
-                scan_tau_max=tau_max,
-                next_trajectory_id=self._next_trajectory_id,
-                palette=self._palette,
-                max_trajectory_count=max(self._max_trajectory_count - len(self._trajectory_seeds), 0),
-            )
+        self._job_controller.start_scan(
+            simulation_config=self.app_state.config.simulation,
+            max_reflections=self.app_state.config.simulation.n_geom_default,
+            phase_steps=self._normalized_phase_steps(
+                self.app_state.config.simulation.n_phase_default,
+                self.app_state.config.simulation.n_geom_default,
+            ),
+            chunk_size=self.app_state.config.background.build_chunk_size,
+            mode=mode,
+            count=count,
+            wall=wall,
+            d_min=d_min,
+            d_max=d_max,
+            tau_min=tau_min,
+            tau_max=tau_max,
+            next_trajectory_id=self._next_trajectory_id,
+            palette=self._palette,
+            max_trajectory_count=max(self._max_trajectory_count - len(self._trajectory_seeds), 0),
         )
 
     def _start_lyapunov_job(self, seed: TrajectorySeed) -> None:
-        self._start_worker(
-            OrbitBuildWorker(
-                generation_id=self._next_generation_id(),
-                job_kind="lyapunov",
-                simulation_config=self.app_state.config.simulation,
-                max_reflections=self.app_state.config.simulation.n_geom_default,
-                phase_steps=self._normalized_phase_steps(
-                    self.app_state.config.simulation.n_phase_default,
-                    self.app_state.config.simulation.n_geom_default,
-                ),
-                chunk_size=self.app_state.config.background.build_chunk_size,
-                lyapunov_seed=seed,
-                lyapunov_config=self.app_state.config.lyapunov,
-            )
-        )
-
-    def _next_generation_id(self) -> int:
-        return self._job_controller.next_generation_id()
-
-    def _start_worker(
-        self,
-        worker: OrbitBuildWorker,
-        start_message: str = "Starting background job...",
-        resumable_payload: dict[str, object] | None = None,
-    ) -> None:
-        self._job_controller.start_worker(
-            worker,
-            start_message=start_message,
-            resumable_payload=resumable_payload,
+        self._job_controller.start_lyapunov(
+            seed,
+            simulation_config=self.app_state.config.simulation,
+            max_reflections=self.app_state.config.simulation.n_geom_default,
+            phase_steps=self._normalized_phase_steps(
+                self.app_state.config.simulation.n_phase_default,
+                self.app_state.config.simulation.n_geom_default,
+            ),
+            chunk_size=self.app_state.config.background.build_chunk_size,
+            lyapunov_config=self.app_state.config.lyapunov,
         )
 
     def _on_job_progress(self, progress: object) -> None:
         if not isinstance(progress, JobProgress):
             return
+        percent = self._job_controller.progress_percent(progress)
+        if progress.status in ("running", "partial"):
+            self._job_last_percent = percent
         if progress.job_kind in ("single_build", "rebuild", "scan"):
             if progress.status in ("running", "partial"):
                 self._job_status_state = progress.status
@@ -2076,9 +2037,10 @@ class MainWindow(QMainWindow):
                     f"{progress.message} | Press Esc to cancel"
                 )
                 self._set_status_progress_text(
-                    self._format_job_progress_message(progress, self._job_last_percent),
+                    self._format_job_progress_message(progress, percent),
                     throttle=True,
                 )
+                self._update_status_job_controls()
                 self.controls_panel.set_job_status(
                     status=self._job_status_state,
                     message=self._job_status_message,
@@ -2086,15 +2048,7 @@ class MainWindow(QMainWindow):
                     resumable=bool(self._job_controller.paused_payloads()) and not self._job_controller.is_running(),
                 )
             return
-        self._set_job_progress(progress)
-
-    def _set_job_progress(self, progress: JobProgress) -> None:
-        total = max(progress.total, 0)
-        current = min(max(progress.current, 0), total) if total > 0 else 0
-        percent = int((current / total) * 100.0) if total > 0 else 0
         self._job_status_state = progress.status
-        if progress.status in ("running", "partial"):
-            self._job_last_percent = percent
         if progress.status in ("running", "partial"):
             self._job_status_message = f"{progress.message} | Press Esc to cancel"
         else:
@@ -2116,7 +2070,7 @@ class MainWindow(QMainWindow):
             return
         if self.app_state.config.background.fast_build:
             self._apply_partial_payload(payload)
-            self._set_job_progress(
+            self._on_job_progress(
                 JobProgress(
                     generation_id=payload.generation_id,
                     job_kind="display",
@@ -2139,7 +2093,7 @@ class MainWindow(QMainWindow):
             return
         payload = self._pending_partial_results.popleft()
         self._apply_partial_payload(payload)
-        self._set_job_progress(
+        self._on_job_progress(
             JobProgress(
                 generation_id=payload.generation_id,
                 job_kind="display",
@@ -2309,14 +2263,31 @@ class MainWindow(QMainWindow):
             return
         paused_payloads = self._job_controller.paused_payloads()
         if len(paused_payloads) == 1:
-            self._resume_job(paused_payloads[0])
+            self._job_controller.resume_job(
+                int(paused_payloads[0].get("job_id", -1)),
+                simulation_config=self.app_state.config.simulation,
+                max_reflections=self.app_state.config.simulation.n_geom_default,
+                phase_steps=self._normalized_phase_steps(
+                    self.app_state.config.simulation.n_phase_default,
+                    self.app_state.config.simulation.n_geom_default,
+                ),
+                chunk_size=self.app_state.config.background.build_chunk_size,
+                existing_orbits=self._trajectory_orbits,
+            )
             return
         if len(paused_payloads) > 1:
             selected_job_id = self._status_jobs_selector.currentData()
-            for payload in paused_payloads:
-                if int(payload.get("job_id", -1)) == int(selected_job_id):
-                    self._resume_job(payload)
-                    return
+            self._job_controller.resume_job(
+                int(selected_job_id),
+                simulation_config=self.app_state.config.simulation,
+                max_reflections=self.app_state.config.simulation.n_geom_default,
+                phase_steps=self._normalized_phase_steps(
+                    self.app_state.config.simulation.n_phase_default,
+                    self.app_state.config.simulation.n_geom_default,
+                ),
+                chunk_size=self.app_state.config.background.build_chunk_size,
+                existing_orbits=self._trajectory_orbits,
+            )
 
     def _resume_last_job(self) -> None:
         if self._job_controller.is_running():
@@ -2324,57 +2295,17 @@ class MainWindow(QMainWindow):
         latest = self._job_controller.latest_paused_job()
         if latest is None:
             return
-        self._resume_job(latest)
-
-    def _resume_job(self, payload: dict[str, object]) -> None:
-        if self._job_controller.is_running():
-            return
-        job_kind = str(payload.get("job_kind", "")).strip()
-        start_message = str(
-            payload.get("start_message", "Resuming job...")
+        self._job_controller.resume_job(
+            int(latest.get("job_id", -1)),
+            simulation_config=self.app_state.config.simulation,
+            max_reflections=self.app_state.config.simulation.n_geom_default,
+            phase_steps=self._normalized_phase_steps(
+                self.app_state.config.simulation.n_phase_default,
+                self.app_state.config.simulation.n_geom_default,
+            ),
+            chunk_size=self.app_state.config.background.build_chunk_size,
+            existing_orbits=self._trajectory_orbits,
         )
-        seeds = payload.get("seeds")
-        if not isinstance(seeds, list):
-            return
-        job_id = int(payload.get("job_id", -1))
-        self._job_controller.remove_paused_job(job_id)
-        if job_kind == "rebuild":
-            self._start_worker(
-                OrbitBuildWorker(
-                    generation_id=self._next_generation_id(),
-                    job_kind="rebuild",
-                    simulation_config=self.app_state.config.simulation,
-                    max_reflections=self.app_state.config.simulation.n_geom_default,
-                    phase_steps=self._normalized_phase_steps(
-                        self.app_state.config.simulation.n_phase_default,
-                        self.app_state.config.simulation.n_geom_default,
-                    ),
-                    chunk_size=self.app_state.config.background.build_chunk_size,
-                    seeds=seeds,
-                    existing_orbits=self._trajectory_orbits,
-                ),
-                start_message=start_message.replace("Starting", "Resuming"),
-                resumable_payload=payload,
-            )
-            return
-        if job_kind == "single_build":
-            self._start_worker(
-                OrbitBuildWorker(
-                    generation_id=self._next_generation_id(),
-                    job_kind="single_build",
-                    simulation_config=self.app_state.config.simulation,
-                    max_reflections=self.app_state.config.simulation.n_geom_default,
-                    phase_steps=self._normalized_phase_steps(
-                        self.app_state.config.simulation.n_phase_default,
-                        self.app_state.config.simulation.n_geom_default,
-                    ),
-                    chunk_size=self.app_state.config.background.build_chunk_size,
-                    seeds=seeds,
-                    existing_orbits=self._trajectory_orbits,
-                ),
-                start_message=start_message.replace("Building", "Resuming"),
-                resumable_payload=payload,
-            )
 
     def _schedule_autosave(self) -> None:
         if not self.app_state.config.autosave.enabled:
