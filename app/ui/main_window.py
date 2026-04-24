@@ -48,6 +48,7 @@ from app.services.background_jobs import (
 from app.services.data_export_service import export_orbit_data
 from app.services.export_service import export_widget_bundle_png
 from app.services.session_service import load_session, save_session
+from app.state.app_state import AppState
 from app.ui.angle_panel import AnglePanel
 from app.ui.controls_panel import ControlsPanel
 from app.ui.phase_panel import PhasePanel
@@ -95,6 +96,20 @@ class MainWindow(QMainWindow):
         self._active_angle_constraint_name = config.view.active_angle_constraint
         self._symmetric_mode = self._constraint_name_is_symmetry(
             self._active_angle_constraint_name
+        )
+        self.app_state = AppState(
+            simulation_config=self._config.simulation,
+            view_config=self._config.view,
+            selected_trajectory_id=self._selected_trajectory_id,
+            selected_scene_item_name=self._selected_scene_item_name,
+            angle_units=self._angle_units,
+            base_angle_constraint_name=self._base_angle_constraint_name,
+            active_angle_constraint_name=self._active_angle_constraint_name,
+            symmetric_mode=self._symmetric_mode,
+            show_phase_grid=self._config.view.show_phase_grid,
+            show_phase_minor_grid=self._config.view.show_phase_minor_grid,
+            show_directrix=self._config.view.show_directrix,
+            show_regions=self._config.view.show_regions,
         )
         self._trajectory_seeds: dict[int, TrajectorySeed] = {}
         self._trajectory_orbits: dict[int, Orbit] = {}
