@@ -4,7 +4,9 @@ from collections import deque
 from copy import deepcopy
 import math
 import logging
+import re
 import sys
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QSignalBlocker, QThread, QTimer, Qt
@@ -22,14 +24,11 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
-    QProgressBar,
     QPushButton,
     QScrollArea,
     QWidget,
 )
 
-from app.core.geometry_builder import build_wedge_geometry
-from app.core.orbit_builder import build_orbit
 from app.core.point_constraints import ActivePointConstraint
 from app.models.config import Config
 from app.models.geometry import WedgeGeometry
@@ -49,6 +48,8 @@ from app.services.background_jobs import (
 from app.services.data_export_service import export_orbit_data
 from app.services.export_service import export_widget_bundle_png
 from app.services.session_service import load_session, save_session
+from app.services.trajectory_service import TrajectoryService
+from app.state.app_state import AppState
 from app.ui.angle_panel import AnglePanel
 from app.ui.controls_panel import ControlsPanel
 from app.ui.phase_panel import PhasePanel
@@ -84,11 +85,9 @@ class SceneItemCreateDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self, config: Config, config_path: str) -> None:
         super().__init__()
-        self._config = config
         self._config_path = config_path
         self._window_position_restored = False
         self._next_trajectory_id = 1
-        self._selected_trajectory_id: int | None = None
         self._selected_scene_item_name: str | None = None
         self._scene_dirty = False
         self._angle_units = "rad"
@@ -97,9 +96,18 @@ class MainWindow(QMainWindow):
         self._symmetric_mode = self._constraint_name_is_symmetry(
             self._active_angle_constraint_name
         )
-        self._trajectory_seeds: dict[int, TrajectorySeed] = {}
-        self._trajectory_orbits: dict[int, Orbit] = {}
-        self._trajectory_geometries: dict[int, WedgeGeometry] = {}
+        self.app_state = AppState(
+            config=config,
+            simulation_config=config.simulation,
+            view_config=config.view,
+            selected_trajectory_id=None,
+            selected_scene_item_name=self._selected_scene_item_name,
+            angle_units=self._angle_units,
+            base_angle_constraint_name=self._base_angle_constraint_name,
+            active_angle_constraint_name=self._active_angle_constraint_name,
+            symmetric_mode=self._symmetric_mode,
+        )
+        self._trajectory_service = TrajectoryService(lambda: self.app_state.config)
         self._active_segment_indices: dict[int, int] = {}
         self._active_phase_frames: dict[int, int] = {}
         self._palette = [
@@ -119,6 +127,7 @@ class MainWindow(QMainWindow):
         self._job_status_state = "idle"
         self._job_status_message = "Idle"
         self._job_last_percent = 0
+        self._last_status_progress_update = 0.0
         self._pending_partial_results: deque[OrbitPartialResult] = deque()
         self._pending_finished_payload: JobFinished | None = None
         self._active_job_payload: dict[str, object] | None = None
@@ -173,6 +182,30 @@ class MainWindow(QMainWindow):
         QApplication.instance().installEventFilter(self)
         self._connect_signals()
         self.update_view()
+
+    @property
+    def _selected_trajectory(self) -> int | None:
+        return self.app_state.selected_trajectory_id
+
+    @_selected_trajectory.setter
+    def _selected_trajectory(self, value: int | None) -> None:
+        self.app_state.selected_trajectory_id = value
+
+    @property
+    def _trajectory_seeds(self) -> dict[int, TrajectorySeed]:
+        return self._trajectory_service.get_seeds()
+
+    @property
+    def _trajectory_orbits(self) -> dict[int, Orbit]:
+        return self._trajectory_service.get_orbits()
+
+    @property
+    def _trajectory_geometries(self) -> dict[int, WedgeGeometry]:
+        return self._trajectory_service.geometries
+
+    @_trajectory_geometries.setter
+    def _trajectory_geometries(self, value: dict[int, WedgeGeometry]) -> None:
+        self._trajectory_service.geometries = value
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -233,13 +266,13 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
         self._cancel_current_job()
-        self._config.window.width = self.width()
-        self._config.window.height = self.height()
-        self._config.window.x = self.x()
-        self._config.window.y = self.y()
+        self.app_state.config.window.width = self.width()
+        self.app_state.config.window.height = self.height()
+        self.app_state.config.window.x = self.x()
+        self.app_state.config.window.y = self.y()
         self._autosave_session()
         save_runtime_config(
-            self._config,
+            self.app_state.config,
             self._config_path,
         )
         super().closeEvent(event)
@@ -299,19 +332,12 @@ class MainWindow(QMainWindow):
         self._status_jobs_selector = QComboBox()
         self._status_jobs_selector.setMinimumWidth(180)
         self._status_jobs_selector.hide()
-        self._status_progress = QProgressBar()
-        self._status_progress.setRange(0, 100)
-        self._status_progress.setValue(0)
-        self._status_progress.setTextVisible(True)
-        self._status_progress.setMaximumWidth(220)
-        self._status_progress.hide()
         self._status_fast_build = QCheckBox("Fast build")
-        self._status_fast_build.setChecked(self._config.background.fast_build)
+        self._status_fast_build.setChecked(self.app_state.config.background.fast_build)
         self._status_fast_build.toggled.connect(self._on_fast_build_changed)
         self.statusBar().addWidget(self._status_label, 1)
         self.statusBar().addPermanentWidget(self._status_jobs_selector)
         self.statusBar().addPermanentWidget(self._status_job_button)
-        self.statusBar().addPermanentWidget(self._status_progress)
         self.statusBar().addPermanentWidget(self._status_fast_build)
 
     def _apply_tooltips(self) -> None:
@@ -322,7 +348,6 @@ class MainWindow(QMainWindow):
         self.angle_panel.setStatusTip("")
         apply_tooltip(self._status_label, "status_label")
         apply_tooltip(self._status_jobs_selector, "status_jobs_selector")
-        apply_tooltip(self._status_progress, "status_progress")
         apply_tooltip(self._status_fast_build, "status_fast_build")
         self._sync_status_job_button_tooltip()
 
@@ -438,12 +463,12 @@ class MainWindow(QMainWindow):
         # dropdown and seed-based trajectory selection. Only selected-trajectory
         # controls plus selection-dependent panels should be refreshed.
         selected_seed = (
-            self._trajectory_seeds.get(self._selected_trajectory_id)
-            if self._selected_trajectory_id is not None
+            self._trajectory_seeds.get(self._selected_trajectory)
+            if self._selected_trajectory is not None
             else None
         )
         self.controls_panel.set_selected_trajectory_id(
-            self._selected_trajectory_id,
+            self._selected_trajectory,
             selected_seed.color if selected_seed is not None else None,
         )
         self._update_selected_trajectory_controls()
@@ -451,7 +476,7 @@ class MainWindow(QMainWindow):
         self._update_status_view()
 
     def _update_controls_config_view(self) -> None:
-        self.controls_panel.load_config(self._config)
+        self.controls_panel.load_config(self.app_state.config)
         self.controls_panel.set_angle_units(self._angle_units)
         self.controls_panel.set_constraint_options(
             self._angle_constraint_options(),
@@ -465,24 +490,24 @@ class MainWindow(QMainWindow):
             self.phase_panel_wall_1.is_fixed_domain_mode()
         )
         self.controls_panel.set_region_view_options(
-            show_regions=self._config.view.show_regions,
-            show_labels=self._config.view.show_region_labels,
-            show_legend=self._config.view.show_region_legend,
+            show_regions=self.app_state.config.view.show_regions,
+            show_labels=self.app_state.config.view.show_region_labels,
+            show_legend=self.app_state.config.view.show_region_legend,
         )
         self.controls_panel.set_branch_markers_enabled(
-            self._config.view.show_branch_markers
+            self.app_state.config.view.show_branch_markers
         )
         self.controls_panel.set_heatmap_settings(
-            show_heatmap=self._config.view.show_heatmap,
-            mode=self._config.view.heatmap_mode,
-            resolution=self._config.view.heatmap_resolution,
-            normalization=self._config.view.heatmap_normalization,
+            show_heatmap=self.app_state.config.view.show_heatmap,
+            mode=self.app_state.config.view.heatmap_mode,
+            resolution=self.app_state.config.view.heatmap_resolution,
+            normalization=self.app_state.config.view.heatmap_normalization,
         )
         if self._selected_scene_item_name not in {
-            item.name for item in self._config.regions
+            item.name for item in self.app_state.config.regions
         }:
             self._selected_scene_item_name = (
-                self._config.regions[0].name if self._config.regions else None
+                self.app_state.config.regions[0].name if self.app_state.config.regions else None
             )
         self.controls_panel.set_scene_item_items(
             [
@@ -491,7 +516,7 @@ class MainWindow(QMainWindow):
                     item.display_text,
                     item.relation or "",
                 )
-                for item in sorted(self._config.regions, key=lambda entry: entry.priority)
+                for item in sorted(self.app_state.config.regions, key=lambda entry: entry.priority)
             ],
             self._selected_scene_item_name,
         )
@@ -500,13 +525,13 @@ class MainWindow(QMainWindow):
             sync_sections=False,
         )
         self.angle_panel.set_angle_units(self._angle_units)
-        self.angle_panel.set_regions(self._config.regions)
+        self.angle_panel.set_regions(self.app_state.config.regions)
         self.angle_panel.set_selected_scene_item(self._selected_scene_item_name)
-        self.angle_panel.set_constraints(self._config.constraints)
+        self.angle_panel.set_constraints(self.app_state.config.constraints)
         self.angle_panel.set_active_constraint(self._resolved_angle_constraint())
         self.angle_panel.set_angles(
-            self._config.simulation.alpha,
-            self._config.simulation.beta,
+            self.app_state.config.simulation.alpha,
+            self.app_state.config.simulation.beta,
         )
 
     def _update_trajectory_views(self) -> None:
@@ -528,19 +553,19 @@ class MainWindow(QMainWindow):
         ]
         self.controls_panel.set_trajectory_items(
             trajectory_items,
-            self._selected_trajectory_id,
+            self._selected_trajectory,
         )
         self._update_selected_trajectory_controls()
 
     def _update_selected_trajectory_controls(self) -> None:
         selected_orbit = (
-            self._trajectory_orbits.get(self._selected_trajectory_id)
-            if self._selected_trajectory_id is not None
+            self._trajectory_orbits.get(self._selected_trajectory)
+            if self._selected_trajectory is not None
             else None
         )
         selected_seed = (
-            self._trajectory_seeds.get(self._selected_trajectory_id)
-            if self._selected_trajectory_id is not None
+            self._trajectory_seeds.get(self._selected_trajectory)
+            if self._selected_trajectory is not None
             else None
         )
         if selected_orbit is None:
@@ -591,7 +616,7 @@ class MainWindow(QMainWindow):
         self.phase_panel_wall_1.set_trajectories(
             self._trajectory_seeds,
             self._trajectory_orbits,
-            self._selected_trajectory_id,
+            self._selected_trajectory,
             self._active_phase_frames,
         )
         self.phase_panel_wall_1.set_stationary_point(
@@ -600,7 +625,7 @@ class MainWindow(QMainWindow):
         self.phase_panel_wall_2.set_trajectories(
             self._trajectory_seeds,
             self._trajectory_orbits,
-            self._selected_trajectory_id,
+            self._selected_trajectory,
             self._active_phase_frames,
         )
         self.phase_panel_wall_2.set_stationary_point(
@@ -609,13 +634,13 @@ class MainWindow(QMainWindow):
         self.wedge_panel.set_geometries(
             self._trajectory_seeds,
             self._trajectory_geometries,
-            self._selected_trajectory_id,
+            self._selected_trajectory,
             self._active_segment_indices,
         )
 
     def _update_status_view(self) -> None:
         blocker = QSignalBlocker(self._status_fast_build)
-        self._status_fast_build.setChecked(self._config.background.fast_build)
+        self._status_fast_build.setChecked(self.app_state.config.background.fast_build)
         del blocker
         self._sync_status_job_button_tooltip()
         self.controls_panel.set_job_status(
@@ -672,8 +697,8 @@ class MainWindow(QMainWindow):
         # Drag-start selection uses the same lightweight path as dropdown/seed
         # click selection. Calling update_view() here makes seed dragging and
         # selection laggy because unrelated controls/config are rebuilt.
-        if trajectory_id != self._selected_trajectory_id:
-            self._selected_trajectory_id = trajectory_id
+        if trajectory_id != self._selected_trajectory:
+            self._selected_trajectory = trajectory_id
             self._reset_replay_views()
             self._update_selected_trajectory_view()
 
@@ -687,12 +712,16 @@ class MainWindow(QMainWindow):
         if seed is None:
             return
 
-        seed.d0 = d_value
-        seed.tau0 = tau_value
-        self._selected_trajectory_id = trajectory_id
+        seed = self._trajectory_service.update_seed_values(
+            trajectory_id,
+            d_value,
+            tau_value,
+        )
+        if seed is None:
+            return
+        self._selected_trajectory = trajectory_id
         self._reset_replay_views()
-        self._trajectory_orbits[trajectory_id] = Orbit(trajectory_id=trajectory_id)
-        self._trajectory_geometries[trajectory_id] = WedgeGeometry()
+        self._trajectory_service.reset_pending_result(trajectory_id)
         self.update_view()
         self._start_single_seed_rebuild(
             seed,
@@ -705,18 +734,22 @@ class MainWindow(QMainWindow):
         d_value: float,
         tau_value: float,
     ) -> None:
-        if self._selected_trajectory_id is None:
+        if self._selected_trajectory is None:
             return
-        seed = self._trajectory_seeds.get(self._selected_trajectory_id)
+        seed = self._trajectory_seeds.get(self._selected_trajectory)
         if seed is None:
             return
 
         projected_d, projected_tau = self._constrain_seed_to_domain(d_value, tau_value)
-        seed.d0 = projected_d
-        seed.tau0 = projected_tau
+        seed = self._trajectory_service.update_seed_values(
+            seed.id,
+            projected_d,
+            projected_tau,
+        )
+        if seed is None:
+            return
         self._reset_replay_views()
-        self._trajectory_orbits[seed.id] = Orbit(trajectory_id=seed.id)
-        self._trajectory_geometries[seed.id] = WedgeGeometry()
+        self._trajectory_service.reset_pending_result(seed.id)
         self.update_view()
         self._start_single_seed_rebuild(
             seed,
@@ -728,8 +761,8 @@ class MainWindow(QMainWindow):
         self._on_parameters_changed(
             alpha=alpha,
             beta=beta,
-            n_phase=self._config.simulation.n_phase_default,
-            n_geom=self._config.simulation.n_geom_default,
+            n_phase=self.app_state.config.simulation.n_phase_default,
+            n_geom=self.app_state.config.simulation.n_geom_default,
         )
         logger.info("Angle panel clicked: alpha=%.6f beta=%.6f", alpha, beta)
 
@@ -744,18 +777,18 @@ class MainWindow(QMainWindow):
     def _on_angle_constraint_changed(self, name: str) -> None:
         self._base_angle_constraint_name = name
         if self._active_angle_constraint_name is None:
-            self._config.view.active_angle_constraint = None
+            self.app_state.config.view.active_angle_constraint = None
             self.update_view()
             return
         if (
             self._active_angle_constraint_name == name
-            and self._config.view.active_angle_constraint == name
+            and self.app_state.config.view.active_angle_constraint == name
             and self._symmetric_mode == self._constraint_name_is_symmetry(name)
         ):
             self.update_view()
             return
         self._active_angle_constraint_name = name
-        self._config.view.active_angle_constraint = name
+        self.app_state.config.view.active_angle_constraint = name
         self._symmetric_mode = self._constraint_name_is_symmetry(name)
         self._project_angles_to_active_constraint()
         self._start_rebuild_job()
@@ -778,7 +811,7 @@ class MainWindow(QMainWindow):
             self._active_angle_constraint_name = selected_name
         else:
             self._active_angle_constraint_name = None
-        self._config.view.active_angle_constraint = self._active_angle_constraint_name
+        self.app_state.config.view.active_angle_constraint = self._active_angle_constraint_name
         self._symmetric_mode = self._constraint_name_is_symmetry(
             self._active_angle_constraint_name
         )
@@ -800,7 +833,7 @@ class MainWindow(QMainWindow):
         )
 
     def _on_export_mode_changed(self, mode: str) -> None:
-        self._config.export.default_mode = mode
+        self.app_state.config.export.default_mode = mode
 
     def _on_region_visibility_changed(
         self,
@@ -808,9 +841,9 @@ class MainWindow(QMainWindow):
         show_labels: bool,
         show_legend: bool,
     ) -> None:
-        self._config.view.show_regions = show_regions
-        self._config.view.show_region_labels = show_labels
-        self._config.view.show_region_legend = show_legend
+        self.app_state.config.view.show_regions = show_regions
+        self.app_state.config.view.show_region_labels = show_labels
+        self.app_state.config.view.show_region_legend = show_legend
         self.update_view()
 
     def _on_plot_labels_changed(
@@ -819,9 +852,9 @@ class MainWindow(QMainWindow):
         mode: str,
         tooltip_mode: str,
     ) -> None:
-        self._config.view.show_labels_on_plot = enabled
-        self._config.view.plot_label_mode = mode.strip().lower() or "legend"
-        self._config.view.tooltip_label_mode = (
+        self.app_state.config.view.show_labels_on_plot = enabled
+        self.app_state.config.view.plot_label_mode = mode.strip().lower() or "legend"
+        self.app_state.config.view.tooltip_label_mode = (
             tooltip_mode.strip().lower() or "legend"
         )
         self.update_view()
@@ -831,25 +864,25 @@ class MainWindow(QMainWindow):
         show_grid: bool,
         show_minor_grid: bool,
     ) -> None:
-        self._config.view.show_phase_grid = show_grid
-        self._config.view.show_phase_minor_grid = show_minor_grid
-        self._config.view.phase_grid.show_minor = show_minor_grid
+        self.app_state.config.view.show_phase_grid = show_grid
+        self.app_state.config.view.show_phase_minor_grid = show_minor_grid
+        self.app_state.config.view.phase_grid.show_minor = show_minor_grid
         self.update_view()
 
     def _on_seed_markers_visibility_changed(self, enabled: bool) -> None:
-        self._config.view.show_seed_markers = enabled
+        self.app_state.config.view.show_seed_markers = enabled
         self.update_view()
 
     def _on_stationary_point_visibility_changed(self, enabled: bool) -> None:
-        self._config.view.show_stationary_point = enabled
+        self.app_state.config.view.show_stationary_point = enabled
         self.update_view()
 
     def _on_directrix_visibility_changed(self, enabled: bool) -> None:
-        self._config.view.show_directrix = enabled
+        self.app_state.config.view.show_directrix = enabled
         self.update_view()
 
     def _on_branch_markers_changed(self, enabled: bool) -> None:
-        self._config.view.show_branch_markers = enabled
+        self.app_state.config.view.show_branch_markers = enabled
         self.update_view()
 
     def _on_heatmap_settings_changed(
@@ -859,25 +892,25 @@ class MainWindow(QMainWindow):
         resolution: int,
         normalization: str,
     ) -> None:
-        self._config.view.show_heatmap = enabled
-        self._config.view.heatmap_mode = mode
-        self._config.view.heatmap_resolution = resolution
-        self._config.view.heatmap_normalization = normalization
+        self.app_state.config.view.show_heatmap = enabled
+        self.app_state.config.view.heatmap_mode = mode
+        self.app_state.config.view.heatmap_resolution = resolution
+        self.app_state.config.view.heatmap_normalization = normalization
         self.update_view()
 
     def _on_fast_build_changed(self, enabled: bool) -> None:
-        self._config.background.fast_build = enabled
+        self.app_state.config.background.fast_build = enabled
         self._status_fast_build.setChecked(enabled)
         self._autosave_session()
         self.update_view()
 
     def _on_compute_lyapunov(self) -> None:
-        if self._selected_trajectory_id is None:
+        if self._selected_trajectory is None:
             self.controls_panel.set_lyapunov_status("failed", 0, None, "no_selection")
             return
 
-        seed = self._trajectory_seeds.get(self._selected_trajectory_id)
-        orbit = self._trajectory_orbits.get(self._selected_trajectory_id)
+        seed = self._trajectory_seeds.get(self._selected_trajectory)
+        orbit = self._trajectory_orbits.get(self._selected_trajectory)
         if seed is None or orbit is None:
             self.controls_panel.set_lyapunov_status("failed", 0, None, "missing_orbit")
             return
@@ -885,17 +918,17 @@ class MainWindow(QMainWindow):
         self._start_lyapunov_job(seed)
 
     def _on_export_data(self) -> None:
-        if self._selected_trajectory_id is None:
+        if self._selected_trajectory is None:
             logger.info("Data export skipped: no selected trajectory")
             return
 
-        orbit = self._trajectory_orbits.get(self._selected_trajectory_id)
+        orbit = self._trajectory_orbits.get(self._selected_trajectory)
         if orbit is None:
             logger.info("Data export skipped: selected orbit is missing")
             return
 
         export_format = self.controls_panel.data_export_format()
-        suggested_name = f"wedge_trajectory_{self._selected_trajectory_id}.{export_format}"
+        suggested_name = f"wedge_trajectory_{self._selected_trajectory}.{export_format}"
         output_path, _ = QFileDialog.getSaveFileName(
             self,
             "Export Data",
@@ -912,7 +945,7 @@ class MainWindow(QMainWindow):
         )
         logger.info(
             "Trajectory data exported: id=%s format=%s path=%s",
-            self._selected_trajectory_id,
+            self._selected_trajectory,
             export_format,
             exported_path,
         )
@@ -925,10 +958,10 @@ class MainWindow(QMainWindow):
         n_geom: int,
     ) -> None:
         normalized_n_phase = self._normalized_phase_steps(n_phase, n_geom)
-        self._config.simulation.alpha = alpha
-        self._config.simulation.beta = beta
-        self._config.simulation.n_phase_default = normalized_n_phase
-        self._config.simulation.n_geom_default = n_geom
+        self.app_state.config.simulation.alpha = alpha
+        self.app_state.config.simulation.beta = beta
+        self.app_state.config.simulation.n_phase_default = normalized_n_phase
+        self.app_state.config.simulation.n_geom_default = n_geom
         self._start_rebuild_job()
         self._reset_replay_views()
         self._autosave_session()
@@ -980,9 +1013,9 @@ class MainWindow(QMainWindow):
         # Selection hot path: route through _update_selected_trajectory_view(),
         # never the full update_view() cycle. Full refresh is for structural
         # changes, not simple selected-id switches.
-        if trajectory_id == self._selected_trajectory_id:
+        if trajectory_id == self._selected_trajectory:
             return
-        self._selected_trajectory_id = trajectory_id
+        self._selected_trajectory = trajectory_id
         self._reset_replay_views()
         self._update_selected_trajectory_view()
 
@@ -1002,14 +1035,7 @@ class MainWindow(QMainWindow):
         self._schedule_autosave()
 
     def _rebuild_orbits(self) -> None:
-        self._trajectory_orbits = {
-            trajectory_id: self._build_orbit(seed)
-            for trajectory_id, seed in self._trajectory_seeds.items()
-        }
-        self._trajectory_geometries = {
-            trajectory_id: self._build_geometry(orbit)
-            for trajectory_id, orbit in self._trajectory_orbits.items()
-        }
+        self._trajectory_service.rebuild_orbits()
 
     def _cancel_current_job(self) -> None:
         logger.info(
@@ -1066,9 +1092,9 @@ class MainWindow(QMainWindow):
         )
 
     def _on_selected_trajectory_color_changed(self, color: str) -> None:
-        if self._selected_trajectory_id is None:
+        if self._selected_trajectory is None:
             return
-        seed = self._trajectory_seeds.get(self._selected_trajectory_id)
+        seed = self._trajectory_seeds.get(self._selected_trajectory)
         if seed is None or seed.color == color:
             return
         seed.color = color
@@ -1076,7 +1102,7 @@ class MainWindow(QMainWindow):
         self.update_view()
         logger.info(
             "Trajectory color changed: id=%s color=%s",
-            self._selected_trajectory_id,
+            self._selected_trajectory,
             color,
         )
 
@@ -1097,7 +1123,7 @@ class MainWindow(QMainWindow):
 
     def _on_save_scene(self) -> None:
         saved_path = save_runtime_config(
-            self._config,
+            self.app_state.config,
             self._config_path,
             persist_scene_items=True,
         )
@@ -1110,7 +1136,7 @@ class MainWindow(QMainWindow):
         return next(
             (
                 item
-                for item in self._config.regions
+                for item in self.app_state.config.regions
                 if item.name == self._selected_scene_item_name
             ),
             None,
@@ -1152,7 +1178,7 @@ class MainWindow(QMainWindow):
                     item.display_text,
                     item.relation or "",
                 )
-                for item in sorted(self._config.regions, key=lambda entry: entry.priority)
+                for item in sorted(self.app_state.config.regions, key=lambda entry: entry.priority)
             ],
             self._selected_scene_item_name,
         )
@@ -1160,7 +1186,7 @@ class MainWindow(QMainWindow):
             self._selected_scene_item_editor_values(),
             sync_sections=sync_sections,
         )
-        self.angle_panel.set_regions(self._config.regions)
+        self.angle_panel.set_regions(self.app_state.config.regions)
         self.angle_panel.set_selected_scene_item(self._selected_scene_item_name)
         self._sync_angle_constraint_controls()
         self.controls_panel.set_scene_dirty(self._scene_dirty)
@@ -1181,7 +1207,7 @@ class MainWindow(QMainWindow):
         if values is None:
             return
         name, alias = values
-        self._config.regions.append(
+        self.app_state.config.regions.append(
             SceneItemDescription(
                 name=name,
                 alias=alias,
@@ -1213,7 +1239,7 @@ class MainWindow(QMainWindow):
 
         duplicate = deepcopy(selected)
         duplicate.name = self._unique_scene_item_copy_name(selected.name)
-        self._config.regions.append(duplicate)
+        self.app_state.config.regions.append(duplicate)
         self._selected_scene_item_name = duplicate.name
         self._refresh_scene_item_views(duplicate.name)
         self._mark_scene_dirty()
@@ -1224,7 +1250,7 @@ class MainWindow(QMainWindow):
         )
 
     def _unique_scene_item_copy_name(self, base_name: str) -> str:
-        existing_names = {item.name for item in self._config.regions}
+        existing_names = {item.name for item in self.app_state.config.regions}
         candidate = f"{base_name}_copy"
         if candidate not in existing_names:
             return candidate
@@ -1242,14 +1268,14 @@ class MainWindow(QMainWindow):
         selected_index = next(
             (
                 index
-                for index, item in enumerate(self._config.regions)
+                for index, item in enumerate(self.app_state.config.regions)
                 if item.name == selected_name
             ),
             -1,
         )
         if selected_index < 0:
             return
-        item = self._config.regions[selected_index]
+        item = self.app_state.config.regions[selected_index]
         item_type = "boundary" if is_boundary_scene_item(item) else "region"
         item_label = item.display_text or item.name
         answer = QMessageBox.question(
@@ -1262,8 +1288,8 @@ class MainWindow(QMainWindow):
         if answer != QMessageBox.StandardButton.Yes:
             return
 
-        self._config.regions.pop(selected_index)
-        remaining_items = sorted(self._config.regions, key=lambda entry: entry.priority)
+        self.app_state.config.regions.pop(selected_index)
+        remaining_items = sorted(self.app_state.config.regions, key=lambda entry: entry.priority)
         next_name: str | None = None
         if remaining_items:
             next_index = min(selected_index, len(remaining_items) - 1)
@@ -1336,14 +1362,12 @@ class MainWindow(QMainWindow):
         )
 
     def _on_clear_selected_trajectory(self) -> None:
-        if self._selected_trajectory_id is None:
+        if self._selected_trajectory is None:
             return
-        trajectory_id = self._selected_trajectory_id
-        self._trajectory_seeds.pop(trajectory_id, None)
-        self._trajectory_orbits.pop(trajectory_id, None)
-        self._trajectory_geometries.pop(trajectory_id, None)
+        trajectory_id = self._selected_trajectory
+        self._trajectory_service.remove_trajectory(trajectory_id)
         self._prune_job_payloads_for_existing_trajectories()
-        self._selected_trajectory_id = (
+        self._selected_trajectory = (
             next(iter(self._trajectory_seeds.keys()))
             if self._trajectory_seeds
             else None
@@ -1355,12 +1379,10 @@ class MainWindow(QMainWindow):
 
     def _on_clear_all_trajectories(self) -> None:
         self._cancel_current_job()
-        self._trajectory_seeds.clear()
-        self._trajectory_orbits.clear()
-        self._trajectory_geometries.clear()
+        self._trajectory_service.clear_trajectories()
         self._paused_job_payloads.clear()
         self._active_job_payload = None
-        self._selected_trajectory_id = None
+        self._selected_trajectory = None
         self._reset_replay_views()
         self._schedule_autosave()
         self.update_view()
@@ -1404,10 +1426,10 @@ class MainWindow(QMainWindow):
             self.update_view()
             return
 
-        if mode == "selected" and self._selected_trajectory_id is not None:
-            self._active_phase_frames = {self._selected_trajectory_id: active_frame}
+        if mode == "selected" and self._selected_trajectory is not None:
+            self._active_phase_frames = {self._selected_trajectory: active_frame}
             self._active_segment_indices = {
-                self._selected_trajectory_id: active_frame - 1
+                self._selected_trajectory: active_frame - 1
             }
         elif mode == "all":
             self._active_phase_frames = {
@@ -1425,9 +1447,9 @@ class MainWindow(QMainWindow):
         self._active_segment_indices = {}
 
     def _max_frame_for_selected(self) -> int:
-        if self._selected_trajectory_id is None:
+        if self._selected_trajectory is None:
             return 0
-        orbit = self._trajectory_orbits.get(self._selected_trajectory_id)
+        orbit = self._trajectory_orbits.get(self._selected_trajectory)
         if orbit is None:
             return 0
         return max(len(orbit.points) - 1, 0)
@@ -1448,7 +1470,7 @@ class MainWindow(QMainWindow):
             return
 
         mode = self.controls_panel.export_mode()
-        self._config.export.default_mode = mode
+        self.app_state.config.export.default_mode = mode
         preset = self.controls_panel.export_preset()
         monochrome = mode == "monochrome"
         exported_paths = export_widget_bundle_png(
@@ -1460,7 +1482,7 @@ class MainWindow(QMainWindow):
                 "angle": self.angle_panel,
             },
             base_path=output_path,
-            dpi=self._config.export.dpi,
+            dpi=self.app_state.config.export.dpi,
             monochrome=monochrome,
         )
         logger.info(
@@ -1501,33 +1523,33 @@ class MainWindow(QMainWindow):
 
     def _build_session(self) -> Session:
         return Session(
-            alpha=self._config.simulation.alpha,
-            beta=self._config.simulation.beta,
-            n_phase=self._config.simulation.n_phase_default,
-            n_geom=self._config.simulation.n_geom_default,
-            replay_delay_ms=self._config.replay.delay_ms,
-            replay_selected_only=self._config.replay.selected_only_by_default,
-            selected_trajectory_id=self._selected_trajectory_id,
+            alpha=self.app_state.config.simulation.alpha,
+            beta=self.app_state.config.simulation.beta,
+            n_phase=self.app_state.config.simulation.n_phase_default,
+            n_geom=self.app_state.config.simulation.n_geom_default,
+            replay_delay_ms=self.app_state.config.replay.delay_ms,
+            replay_selected_only=self.app_state.config.replay.selected_only_by_default,
+            selected_trajectory_id=self._selected_trajectory,
             trajectories=list(self._trajectory_seeds.values()),
             angle_units=self._angle_units,
             symmetric_mode=self._symmetric_mode,
             export_mode=self.controls_panel.export_mode(),
             phase_fixed_domain=self.phase_panel_wall_1.is_fixed_domain_mode(),
-            show_phase_grid=self._config.view.show_phase_grid,
-            show_phase_minor_grid=self._config.view.show_phase_minor_grid,
-            show_seed_markers=self._config.view.show_seed_markers,
-            show_stationary_point=self._config.view.show_stationary_point,
-            show_directrix=self._config.view.show_directrix,
-            show_regions=self._config.view.show_regions,
-            show_region_labels=self._config.view.show_region_labels,
-            show_region_legend=self._config.view.show_region_legend,
-            show_branch_markers=self._config.view.show_branch_markers,
-            show_heatmap=self._config.view.show_heatmap,
-            heatmap_mode=self._config.view.heatmap_mode,
-            heatmap_resolution=self._config.view.heatmap_resolution,
-            heatmap_normalization=self._config.view.heatmap_normalization,
+            show_phase_grid=self.app_state.config.view.show_phase_grid,
+            show_phase_minor_grid=self.app_state.config.view.show_phase_minor_grid,
+            show_seed_markers=self.app_state.config.view.show_seed_markers,
+            show_stationary_point=self.app_state.config.view.show_stationary_point,
+            show_directrix=self.app_state.config.view.show_directrix,
+            show_regions=self.app_state.config.view.show_regions,
+            show_region_labels=self.app_state.config.view.show_region_labels,
+            show_region_legend=self.app_state.config.view.show_region_legend,
+            show_branch_markers=self.app_state.config.view.show_branch_markers,
+            show_heatmap=self.app_state.config.view.show_heatmap,
+            heatmap_mode=self.app_state.config.view.heatmap_mode,
+            heatmap_resolution=self.app_state.config.view.heatmap_resolution,
+            heatmap_normalization=self.app_state.config.view.heatmap_normalization,
             active_angle_constraint=self._active_angle_constraint_name,
-            fast_build=self._config.background.fast_build,
+            fast_build=self.app_state.config.background.fast_build,
             phase_viewport_wall_1=self.phase_panel_wall_1.viewport(),
             phase_viewport_wall_2=self.phase_panel_wall_2.viewport(),
         )
@@ -1538,43 +1560,43 @@ class MainWindow(QMainWindow):
         restore_simulation_parameters: bool = True,
     ) -> None:
         if restore_simulation_parameters:
-            self._config.simulation.alpha = session.alpha
-            self._config.simulation.beta = session.beta
-        self._config.simulation.n_geom_default = session.n_geom
-        self._config.simulation.n_phase_default = self._normalized_phase_steps(
+            self.app_state.config.simulation.alpha = session.alpha
+            self.app_state.config.simulation.beta = session.beta
+        self.app_state.config.simulation.n_geom_default = session.n_geom
+        self.app_state.config.simulation.n_phase_default = self._normalized_phase_steps(
             session.n_phase,
             session.n_geom,
         )
-        self._config.replay.delay_ms = session.replay_delay_ms
-        self._config.replay.selected_only_by_default = session.replay_selected_only
+        self.app_state.config.replay.delay_ms = session.replay_delay_ms
+        self.app_state.config.replay.selected_only_by_default = session.replay_selected_only
         self._angle_units = session.angle_units
-        self._config.export.default_mode = session.export_mode
-        self._config.view.show_phase_grid = session.show_phase_grid
-        self._config.view.show_phase_minor_grid = session.show_phase_minor_grid
-        self._config.view.phase_grid.show_minor = session.show_phase_minor_grid
-        self._config.view.show_seed_markers = session.show_seed_markers
-        self._config.view.show_stationary_point = session.show_stationary_point
-        self._config.view.show_directrix = session.show_directrix
-        self._config.view.show_regions = session.show_regions
-        self._config.view.show_region_labels = session.show_region_labels
-        self._config.view.show_region_legend = session.show_region_legend
-        self._config.view.show_branch_markers = session.show_branch_markers
-        self._config.view.show_heatmap = session.show_heatmap
-        self._config.view.heatmap_mode = session.heatmap_mode
-        self._config.view.heatmap_resolution = session.heatmap_resolution
-        self._config.view.heatmap_normalization = session.heatmap_normalization
+        self.app_state.config.export.default_mode = session.export_mode
+        self.app_state.config.view.show_phase_grid = session.show_phase_grid
+        self.app_state.config.view.show_phase_minor_grid = session.show_phase_minor_grid
+        self.app_state.config.view.phase_grid.show_minor = session.show_phase_minor_grid
+        self.app_state.config.view.show_seed_markers = session.show_seed_markers
+        self.app_state.config.view.show_stationary_point = session.show_stationary_point
+        self.app_state.config.view.show_directrix = session.show_directrix
+        self.app_state.config.view.show_regions = session.show_regions
+        self.app_state.config.view.show_region_labels = session.show_region_labels
+        self.app_state.config.view.show_region_legend = session.show_region_legend
+        self.app_state.config.view.show_branch_markers = session.show_branch_markers
+        self.app_state.config.view.show_heatmap = session.show_heatmap
+        self.app_state.config.view.heatmap_mode = session.heatmap_mode
+        self.app_state.config.view.heatmap_resolution = session.heatmap_resolution
+        self.app_state.config.view.heatmap_normalization = session.heatmap_normalization
         restored_constraint = session.active_angle_constraint
         if restored_constraint is None and session.symmetric_mode:
             restored_constraint = self._default_symmetry_constraint_name()
         self._base_angle_constraint_name = restored_constraint
         self._active_angle_constraint_name = restored_constraint
-        self._config.view.active_angle_constraint = restored_constraint
+        self.app_state.config.view.active_angle_constraint = restored_constraint
         self._symmetric_mode = self._constraint_name_is_symmetry(
             self._active_angle_constraint_name
         )
-        self._config.background.fast_build = session.fast_build
+        self.app_state.config.background.fast_build = session.fast_build
 
-        self._trajectory_seeds = {
+        self._trajectory_service.load_trajectories({
             seed.id: TrajectorySeed(
                 id=seed.id,
                 wall_start=seed.wall_start,
@@ -1584,14 +1606,14 @@ class MainWindow(QMainWindow):
                 color=seed.color,
             )
             for seed in session.trajectories
-        }
-        self._selected_trajectory_id = session.selected_trajectory_id
+        })
+        self._selected_trajectory = session.selected_trajectory_id
         self.phase_panel_wall_1.set_fixed_domain_mode(session.phase_fixed_domain)
         self.phase_panel_wall_2.set_fixed_domain_mode(session.phase_fixed_domain)
         self.phase_panel_wall_1.set_viewport(session.phase_viewport_wall_1)
         self.phase_panel_wall_2.set_viewport(session.phase_viewport_wall_2)
-        if self._selected_trajectory_id not in self._trajectory_seeds:
-            self._selected_trajectory_id = next(
+        if self._selected_trajectory not in self._trajectory_seeds:
+            self._selected_trajectory = next(
                 iter(self._trajectory_seeds.keys()),
                 None,
             )
@@ -1602,7 +1624,7 @@ class MainWindow(QMainWindow):
 
     def _default_symmetry_constraint_name(self) -> str | None:
         for constraint in sorted(
-            self._config.constraints,
+            self.app_state.config.constraints,
             key=lambda item: item.priority,
         ):
             if (
@@ -1616,7 +1638,7 @@ class MainWindow(QMainWindow):
         return self._default_symmetry_constraint_name() or next(
             (
                 item.name
-                for item in sorted(self._config.regions, key=lambda entry: entry.priority)
+                for item in sorted(self.app_state.config.regions, key=lambda entry: entry.priority)
                 if item.visible and is_boundary_scene_item(item)
             ),
             None,
@@ -1629,7 +1651,7 @@ class MainWindow(QMainWindow):
                 item.display_text,
                 item.constraint_type,
             )
-            for item in sorted(self._config.constraints, key=lambda entry: entry.priority)
+            for item in sorted(self.app_state.config.constraints, key=lambda entry: entry.priority)
             if item.visible and item.constraint_type.strip().lower() == "symmetry"
         ]
         options.extend(
@@ -1638,7 +1660,7 @@ class MainWindow(QMainWindow):
                 item.display_text,
                 "boundary",
             )
-            for item in sorted(self._config.regions, key=lambda entry: entry.priority)
+            for item in sorted(self.app_state.config.regions, key=lambda entry: entry.priority)
             if item.visible and is_boundary_scene_item(item)
         )
         return options
@@ -1652,7 +1674,7 @@ class MainWindow(QMainWindow):
         ):
             self._active_angle_constraint_name = self._default_angle_constraint_name()
             self._base_angle_constraint_name = self._active_angle_constraint_name
-            self._config.view.active_angle_constraint = self._active_angle_constraint_name
+            self.app_state.config.view.active_angle_constraint = self._active_angle_constraint_name
             self._symmetric_mode = self._constraint_name_is_symmetry(
                 self._active_angle_constraint_name
             )
@@ -1675,7 +1697,7 @@ class MainWindow(QMainWindow):
         if name is None:
             return False
         constraint = next(
-            (item for item in self._config.constraints if item.name == name),
+            (item for item in self.app_state.config.constraints if item.name == name),
             None,
         )
         if constraint is None:
@@ -1687,7 +1709,7 @@ class MainWindow(QMainWindow):
             return False
         return any(
             item.name == name and item.visible and is_boundary_scene_item(item)
-            for item in self._config.regions
+            for item in self.app_state.config.regions
         )
 
     def _resolved_angle_constraint(self) -> ActivePointConstraint | None:
@@ -1697,7 +1719,7 @@ class MainWindow(QMainWindow):
         constraint = next(
             (
                 item
-                for item in self._config.constraints
+                for item in self.app_state.config.constraints
                 if item.name == self._active_angle_constraint_name
                 and item.visible
             ),
@@ -1725,15 +1747,15 @@ class MainWindow(QMainWindow):
         return None
 
     def _project_angles_to_active_constraint(self) -> None:
-        self.angle_panel.set_constraints(self._config.constraints)
-        self.angle_panel.set_regions(self._config.regions)
+        self.angle_panel.set_constraints(self.app_state.config.constraints)
+        self.angle_panel.set_regions(self.app_state.config.regions)
         self.angle_panel.set_active_constraint(self._resolved_angle_constraint())
         alpha, beta = self.angle_panel.project_point_to_snap_constraints(
-            self._config.simulation.alpha,
-            self._config.simulation.beta,
+            self.app_state.config.simulation.alpha,
+            self.app_state.config.simulation.beta,
         )
-        self._config.simulation.alpha = alpha
-        self._config.simulation.beta = beta
+        self.app_state.config.simulation.alpha = alpha
+        self.app_state.config.simulation.beta = beta
 
     def _apply_session(
         self,
@@ -1750,12 +1772,12 @@ class MainWindow(QMainWindow):
         self.update_view()
         logger.info(
             "Session applied: runtime alpha=%.10f beta=%.10f",
-            self._config.simulation.alpha,
-            self._config.simulation.beta,
+            self.app_state.config.simulation.alpha,
+            self.app_state.config.simulation.beta,
         )
 
     def _autosave_session(self) -> None:
-        if not self._config.autosave.enabled:
+        if not self.app_state.config.autosave.enabled:
             return
 
         save_session(
@@ -1764,7 +1786,7 @@ class MainWindow(QMainWindow):
         )
 
     def _restore_autosave_session(self) -> None:
-        if not self._config.autosave.enabled:
+        if not self.app_state.config.autosave.enabled:
             return
 
         autosave_path = self._autosave_path()
@@ -1775,17 +1797,10 @@ class MainWindow(QMainWindow):
         self._apply_session_state(
             session,
             restore_simulation_parameters=(
-                self._config.autosave.restore_simulation_parameters
+                self.app_state.config.autosave.restore_simulation_parameters
             ),
         )
-        self._trajectory_orbits = {
-            trajectory_id: Orbit(trajectory_id=trajectory_id)
-            for trajectory_id in self._trajectory_seeds
-        }
-        self._trajectory_geometries = {
-            trajectory_id: WedgeGeometry()
-            for trajectory_id in self._trajectory_seeds
-        }
+        self._trajectory_service.initialize_pending_for_all()
         self.replay_controller.reset()
         self._reset_replay_views()
         self.update_view()
@@ -1796,8 +1811,8 @@ class MainWindow(QMainWindow):
         logger.info(
             "Autosave restored: %s runtime alpha=%.10f beta=%.10f",
             autosave_path,
-            self._config.simulation.alpha,
-            self._config.simulation.beta,
+            self.app_state.config.simulation.alpha,
+            self.app_state.config.simulation.beta,
         )
 
     def _schedule_autosave_restore(self) -> None:
@@ -1807,34 +1822,23 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self._restore_autosave_session)
 
     def _autosave_path(self) -> Path:
-        path = Path(self._config.autosave.path)
+        path = Path(self.app_state.config.autosave.path)
         if path.is_absolute():
             return path
         return Path(self._config_path).resolve().parent / path
 
     def _build_orbit(self, seed: TrajectorySeed) -> Orbit:
-        return build_orbit(
-            seed=seed,
-            config=self._config.simulation,
-            steps=self._normalized_phase_steps(
-                self._config.simulation.n_phase_default,
-                self._config.simulation.n_geom_default,
-            ),
-        )
+        return self._trajectory_service.build_orbit(seed)
 
     def _build_geometry(self, orbit: Orbit) -> WedgeGeometry:
-        return build_wedge_geometry(
-            orbit=orbit,
-            config=self._config.simulation,
-            max_reflections=self._config.simulation.n_geom_default,
-        )
+        return self._trajectory_service.build_geometry(orbit)
 
     def _stationary_phase_point(
         self,
         wall: int,
     ) -> tuple[float, float] | None:
-        alpha = self._config.simulation.alpha
-        beta = self._config.simulation.beta
+        alpha = self.app_state.config.simulation.alpha
+        beta = self.app_state.config.simulation.beta
         own_angle = alpha if wall == 1 else beta
         other_angle = beta if wall == 1 else alpha
         denominator = (
@@ -1842,12 +1846,12 @@ class MainWindow(QMainWindow):
             - 3.0 * (math.cos(2.0 * own_angle) + math.cos(2.0 * other_angle))
             + 5.0
         )
-        if abs(denominator) <= self._config.simulation.eps:
+        if abs(denominator) <= self.app_state.config.simulation.eps:
             return None
 
         d_value = 8.0 * (math.sin(other_angle) ** 2) / denominator
         tau_value = 0.0
-        if not math.isfinite(d_value) or d_value <= self._config.simulation.eps:
+        if not math.isfinite(d_value) or d_value <= self.app_state.config.simulation.eps:
             return None
         if (1.0 - d_value) ** 2 + tau_value**2 >= 1.0:
             return None
@@ -1923,13 +1927,9 @@ class MainWindow(QMainWindow):
             tau0=tau_value,
             color=self._palette[(trajectory_id - 1) % len(self._palette)],
         )
-        self._trajectory_seeds[trajectory_id] = seed
-        self._trajectory_orbits[trajectory_id] = self._build_orbit(seed)
-        self._trajectory_geometries[trajectory_id] = self._build_geometry(
-            self._trajectory_orbits[trajectory_id]
-        )
-        if self._selected_trajectory_id is None:
-            self._selected_trajectory_id = trajectory_id
+        self._trajectory_service.add_trajectory(seed)
+        if self._selected_trajectory is None:
+            self._selected_trajectory = trajectory_id
         self._reset_replay_views()
         return trajectory_id
 
@@ -1946,11 +1946,9 @@ class MainWindow(QMainWindow):
             tau0=tau_value,
             color=self._palette[(trajectory_id - 1) % len(self._palette)],
         )
-        self._trajectory_seeds[trajectory_id] = seed
-        self._trajectory_orbits[trajectory_id] = Orbit(trajectory_id=trajectory_id)
-        self._trajectory_geometries[trajectory_id] = WedgeGeometry()
-        if self._selected_trajectory_id is None:
-            self._selected_trajectory_id = trajectory_id
+        self._trajectory_service.add_trajectory(seed, pending=True)
+        if self._selected_trajectory is None:
+            self._selected_trajectory = trajectory_id
         self._reset_replay_views()
         self.update_view()
         self._start_single_seed_rebuild(
@@ -1968,13 +1966,13 @@ class MainWindow(QMainWindow):
             OrbitBuildWorker(
                 generation_id=self._next_generation_id(),
                 job_kind="single_build",
-                simulation_config=self._config.simulation,
-                max_reflections=self._config.simulation.n_geom_default,
+                simulation_config=self.app_state.config.simulation,
+                max_reflections=self.app_state.config.simulation.n_geom_default,
                 phase_steps=self._normalized_phase_steps(
-                    self._config.simulation.n_phase_default,
-                    self._config.simulation.n_geom_default,
+                    self.app_state.config.simulation.n_phase_default,
+                    self.app_state.config.simulation.n_geom_default,
                 ),
-                chunk_size=self._config.background.build_chunk_size,
+                chunk_size=self.app_state.config.background.build_chunk_size,
                 seeds=[seed],
                 existing_orbits={seed.id: self._trajectory_orbits.get(seed.id, Orbit(trajectory_id=seed.id))},
             ),
@@ -1988,21 +1986,20 @@ class MainWindow(QMainWindow):
         )
 
     def _start_rebuild_job(self, job_message: str = "Starting rebuild...") -> None:
-        self._trajectory_orbits = {}
-        self._trajectory_geometries = {}
+        self._trajectory_service.clear_results()
         self.update_view()
         seeds = sorted(self._trajectory_seeds.values(), key=lambda item: item.id)
         self._start_worker(
             OrbitBuildWorker(
                 generation_id=self._next_generation_id(),
                 job_kind="rebuild",
-                simulation_config=self._config.simulation,
-                max_reflections=self._config.simulation.n_geom_default,
+                simulation_config=self.app_state.config.simulation,
+                max_reflections=self.app_state.config.simulation.n_geom_default,
                 phase_steps=self._normalized_phase_steps(
-                    self._config.simulation.n_phase_default,
-                    self._config.simulation.n_geom_default,
+                    self.app_state.config.simulation.n_phase_default,
+                    self.app_state.config.simulation.n_geom_default,
                 ),
-                chunk_size=self._config.background.build_chunk_size,
+                chunk_size=self.app_state.config.background.build_chunk_size,
                 seeds=seeds,
             ),
             start_message=job_message,
@@ -2028,13 +2025,13 @@ class MainWindow(QMainWindow):
             OrbitBuildWorker(
                 generation_id=self._next_generation_id(),
                 job_kind="scan",
-                simulation_config=self._config.simulation,
-                max_reflections=self._config.simulation.n_geom_default,
+                simulation_config=self.app_state.config.simulation,
+                max_reflections=self.app_state.config.simulation.n_geom_default,
                 phase_steps=self._normalized_phase_steps(
-                    self._config.simulation.n_phase_default,
-                    self._config.simulation.n_geom_default,
+                    self.app_state.config.simulation.n_phase_default,
+                    self.app_state.config.simulation.n_geom_default,
                 ),
-                chunk_size=self._config.background.build_chunk_size,
+                chunk_size=self.app_state.config.background.build_chunk_size,
                 scan_mode=mode,
                 scan_count=count,
                 scan_wall=wall,
@@ -2053,15 +2050,15 @@ class MainWindow(QMainWindow):
             OrbitBuildWorker(
                 generation_id=self._next_generation_id(),
                 job_kind="lyapunov",
-                simulation_config=self._config.simulation,
-                max_reflections=self._config.simulation.n_geom_default,
+                simulation_config=self.app_state.config.simulation,
+                max_reflections=self.app_state.config.simulation.n_geom_default,
                 phase_steps=self._normalized_phase_steps(
-                    self._config.simulation.n_phase_default,
-                    self._config.simulation.n_geom_default,
+                    self.app_state.config.simulation.n_phase_default,
+                    self.app_state.config.simulation.n_geom_default,
                 ),
-                chunk_size=self._config.background.build_chunk_size,
+                chunk_size=self.app_state.config.background.build_chunk_size,
                 lyapunov_seed=seed,
-                lyapunov_config=self._config.lyapunov,
+                lyapunov_config=self.app_state.config.lyapunov,
             )
         )
 
@@ -2121,8 +2118,10 @@ class MainWindow(QMainWindow):
                 self._job_status_message = (
                     f"{progress.message} | Press Esc to cancel"
                 )
-                self._status_label.setText(self._job_status_message)
-                self._status_progress.setVisible(True)
+                self._set_status_progress_text(
+                    self._format_job_progress_message(progress, self._job_last_percent),
+                    throttle=True,
+                )
                 self.controls_panel.set_job_status(
                     status=self._job_status_state,
                     message=self._job_status_message,
@@ -2146,8 +2145,10 @@ class MainWindow(QMainWindow):
             self._job_status_message = f"{progress.message} | Press Esc to cancel"
         else:
             self._job_status_message = progress.message
-        self._status_label.setText(self._job_status_message)
-        self._status_progress.setValue(percent)
+        self._set_status_progress_text(
+            self._format_job_progress_message(progress, percent),
+            throttle=progress.status in ("running", "partial"),
+        )
         self._update_status_job_controls()
         self.controls_panel.set_job_status(
             status=self._job_status_state,
@@ -2161,7 +2162,7 @@ class MainWindow(QMainWindow):
             return
         if payload.generation_id != self._job_generation:
             return
-        if self._config.background.fast_build:
+        if self.app_state.config.background.fast_build:
             self._apply_partial_payload(payload)
             self._set_job_progress(
                 JobProgress(
@@ -2206,11 +2207,14 @@ class MainWindow(QMainWindow):
             self._pending_finished_payload = None
 
     def _apply_partial_payload(self, payload: OrbitPartialResult) -> None:
-        self._trajectory_seeds[payload.trajectory_id] = payload.seed
-        self._trajectory_orbits[payload.trajectory_id] = payload.orbit
-        self._trajectory_geometries[payload.trajectory_id] = payload.geometry
-        if self._selected_trajectory_id is None:
-            self._selected_trajectory_id = payload.trajectory_id
+        self._trajectory_service.apply_partial_result(
+            payload.trajectory_id,
+            payload.seed,
+            payload.orbit,
+            payload.geometry,
+        )
+        if self._selected_trajectory is None:
+            self._selected_trajectory = payload.trajectory_id
         self._next_trajectory_id = max(
             self._next_trajectory_id,
             payload.trajectory_id + 1,
@@ -2238,7 +2242,7 @@ class MainWindow(QMainWindow):
             return
         if payload.generation_id != self._job_generation:
             return
-        if self._config.background.fast_build:
+        if self.app_state.config.background.fast_build:
             self._finalize_finished_job(payload)
             return
         if self._pending_partial_results:
@@ -2257,7 +2261,6 @@ class MainWindow(QMainWindow):
         else:
             self._job_status_message = payload.message
         self._status_label.setText(self._job_status_message)
-        self._status_progress.setValue(100 if payload.status == "done" else 0)
         self._active_job_payload = None
         self._current_job_worker = None
         self._current_job_thread = None
@@ -2310,19 +2313,15 @@ class MainWindow(QMainWindow):
         if running:
             self._status_job_button.show()
             self._status_job_button.setText("Cancel")
-            self._status_progress.setVisible(True)
             self._status_jobs_selector.hide()
             return
         paused_payload = self._latest_paused_job()
         if paused_payload is None:
             self._status_job_button.hide()
-            self._status_progress.setVisible(False)
             self._status_jobs_selector.hide()
             return
         self._status_job_button.show()
         percent = int(paused_payload.get("progress_percent", 0))
-        self._status_progress.setVisible(True)
-        self._status_progress.setValue(percent)
         title = str(paused_payload.get("title", "Paused job"))
         self._job_status_state = "paused"
         self._job_status_message = (
@@ -2352,6 +2351,37 @@ class MainWindow(QMainWindow):
             self._status_jobs_selector.show()
         else:
             self._status_jobs_selector.hide()
+
+    def _set_status_progress_text(self, text: str, *, throttle: bool = False) -> None:
+        now = time.monotonic()
+        if throttle and (now - self._last_status_progress_update) < 0.075:
+            return
+        self._last_status_progress_update = now
+        self._status_label.setText(text)
+
+    def _format_job_progress_message(self, progress: JobProgress, percent: int) -> str:
+        if progress.job_kind not in ("single_build", "rebuild", "display"):
+            return self._job_status_message
+
+        parts = [f"Building trajectories: {percent}%"]
+
+        if progress.job_kind == "single_build":
+            parts.append("trajectory 1 / 1")
+            if progress.total > 0:
+                parts.append(f"chunk {progress.current} / {progress.total}")
+            return " | ".join(parts)
+
+        if trajectory_match := re.search(r"(\d+)\s*/\s*(\d+)", progress.message):
+            parts.append(
+                f"trajectory {int(trajectory_match.group(1))} / {int(trajectory_match.group(2))}"
+            )
+        if chunk_match := re.search(r"\((\d+)\s*/\s*(\d+)\)", progress.message):
+            parts.append(
+                f"chunk {int(chunk_match.group(1))} / {int(chunk_match.group(2))}"
+            )
+        elif progress.total > 0:
+            parts.append(f"{progress.current} / {progress.total}")
+        return " | ".join(parts)
 
     def _on_status_job_button_clicked(self) -> None:
         if self._current_job_worker is not None:
@@ -2395,13 +2425,13 @@ class MainWindow(QMainWindow):
                 OrbitBuildWorker(
                     generation_id=self._next_generation_id(),
                     job_kind="rebuild",
-                    simulation_config=self._config.simulation,
-                    max_reflections=self._config.simulation.n_geom_default,
+                    simulation_config=self.app_state.config.simulation,
+                    max_reflections=self.app_state.config.simulation.n_geom_default,
                     phase_steps=self._normalized_phase_steps(
-                        self._config.simulation.n_phase_default,
-                        self._config.simulation.n_geom_default,
+                        self.app_state.config.simulation.n_phase_default,
+                        self.app_state.config.simulation.n_geom_default,
                     ),
-                    chunk_size=self._config.background.build_chunk_size,
+                    chunk_size=self.app_state.config.background.build_chunk_size,
                     seeds=seeds,
                     existing_orbits=self._trajectory_orbits,
                 ),
@@ -2414,13 +2444,13 @@ class MainWindow(QMainWindow):
                 OrbitBuildWorker(
                     generation_id=self._next_generation_id(),
                     job_kind="single_build",
-                    simulation_config=self._config.simulation,
-                    max_reflections=self._config.simulation.n_geom_default,
+                    simulation_config=self.app_state.config.simulation,
+                    max_reflections=self.app_state.config.simulation.n_geom_default,
                     phase_steps=self._normalized_phase_steps(
-                        self._config.simulation.n_phase_default,
-                        self._config.simulation.n_geom_default,
+                        self.app_state.config.simulation.n_phase_default,
+                        self.app_state.config.simulation.n_geom_default,
                     ),
-                    chunk_size=self._config.background.build_chunk_size,
+                    chunk_size=self.app_state.config.background.build_chunk_size,
                     seeds=seeds,
                     existing_orbits=self._trajectory_orbits,
                 ),
@@ -2429,7 +2459,7 @@ class MainWindow(QMainWindow):
             )
 
     def _schedule_autosave(self) -> None:
-        if not self._config.autosave.enabled:
+        if not self.app_state.config.autosave.enabled:
             return
         self._autosave_timer.start()
 

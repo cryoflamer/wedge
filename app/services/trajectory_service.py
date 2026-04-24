@@ -1,0 +1,123 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+
+from app.core.trajectory_engine import build_orbit, build_wedge_geometry
+from app.models.config import Config
+from app.models.geometry import WedgeGeometry
+from app.models.orbit import Orbit
+from app.models.trajectory import TrajectorySeed
+
+
+class TrajectoryService:
+    def __init__(self, config_provider: Callable[[], Config]) -> None:
+        self._config_provider = config_provider
+        self.seeds: dict[int, TrajectorySeed] = {}
+        self.orbits: dict[int, Orbit] = {}
+        self.geometries: dict[int, WedgeGeometry] = {}
+
+    def get_seeds(self) -> dict[int, TrajectorySeed]:
+        return self.seeds
+
+    def get_orbits(self) -> dict[int, Orbit]:
+        return self.orbits
+
+    def build_orbit(self, seed: TrajectorySeed) -> Orbit:
+        config = self._config_provider()
+        return build_orbit(
+            seed=seed,
+            config=config.simulation,
+            steps=max(
+                config.simulation.n_phase_default,
+                config.simulation.n_geom_default + 1,
+            ),
+        )
+
+    def build_geometry(self, orbit: Orbit) -> WedgeGeometry:
+        config = self._config_provider()
+        return build_wedge_geometry(
+            orbit=orbit,
+            config=config.simulation,
+            max_reflections=config.simulation.n_geom_default,
+        )
+
+    def rebuild_orbits(self) -> None:
+        self.orbits = {
+            trajectory_id: self.build_orbit(seed)
+            for trajectory_id, seed in self.seeds.items()
+        }
+        self.geometries = {
+            trajectory_id: self.build_geometry(orbit)
+            for trajectory_id, orbit in self.orbits.items()
+        }
+
+    def add_built_seed(self, seed: TrajectorySeed) -> None:
+        self.seeds[seed.id] = seed
+        self.orbits[seed.id] = self.build_orbit(seed)
+        self.geometries[seed.id] = self.build_geometry(self.orbits[seed.id])
+
+    def add_pending_seed(self, seed: TrajectorySeed) -> None:
+        self.seeds[seed.id] = seed
+        self.orbits[seed.id] = Orbit(trajectory_id=seed.id)
+        self.geometries[seed.id] = WedgeGeometry()
+
+    def add_trajectory(self, seed: TrajectorySeed, *, pending: bool = False) -> None:
+        if pending:
+            self.add_pending_seed(seed)
+            return
+        self.add_built_seed(seed)
+
+    def update_seed_values(
+        self,
+        trajectory_id: int,
+        d_value: float,
+        tau_value: float,
+    ) -> TrajectorySeed | None:
+        seed = self.seeds.get(trajectory_id)
+        if seed is None:
+            return None
+        seed.d0 = d_value
+        seed.tau0 = tau_value
+        return seed
+
+    def reset_pending_result(self, trajectory_id: int) -> None:
+        self.orbits[trajectory_id] = Orbit(trajectory_id=trajectory_id)
+        self.geometries[trajectory_id] = WedgeGeometry()
+
+    def remove_trajectory(self, trajectory_id: int) -> None:
+        self.seeds.pop(trajectory_id, None)
+        self.orbits.pop(trajectory_id, None)
+        self.geometries.pop(trajectory_id, None)
+
+    def clear_trajectories(self) -> None:
+        self.seeds.clear()
+        self.orbits.clear()
+        self.geometries.clear()
+
+    def load_trajectories(self, seeds: dict[int, TrajectorySeed]) -> None:
+        self.seeds = seeds
+
+    def initialize_pending_for_all(self) -> None:
+        self.orbits = {
+            trajectory_id: Orbit(trajectory_id=trajectory_id)
+            for trajectory_id in self.seeds
+        }
+        self.geometries = {
+            trajectory_id: WedgeGeometry()
+            for trajectory_id in self.seeds
+        }
+
+    def clear_results(self) -> None:
+        self.orbits = {}
+        self.geometries = {}
+
+    def apply_partial_result(
+        self,
+        trajectory_id: int,
+        seed: TrajectorySeed,
+        orbit: Orbit,
+        geometry: WedgeGeometry,
+    ) -> None:
+        self.seeds[trajectory_id] = seed
+        self.orbits[trajectory_id] = orbit
+        self.geometries[trajectory_id] = geometry
