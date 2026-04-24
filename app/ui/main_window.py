@@ -4,7 +4,9 @@ from collections import deque
 from copy import deepcopy
 import math
 import logging
+import re
 import sys
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QSignalBlocker, QThread, QTimer, Qt
@@ -22,7 +24,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
-    QProgressBar,
     QPushButton,
     QScrollArea,
     QWidget,
@@ -126,6 +127,7 @@ class MainWindow(QMainWindow):
         self._job_status_state = "idle"
         self._job_status_message = "Idle"
         self._job_last_percent = 0
+        self._last_status_progress_update = 0.0
         self._pending_partial_results: deque[OrbitPartialResult] = deque()
         self._pending_finished_payload: JobFinished | None = None
         self._active_job_payload: dict[str, object] | None = None
@@ -330,19 +332,12 @@ class MainWindow(QMainWindow):
         self._status_jobs_selector = QComboBox()
         self._status_jobs_selector.setMinimumWidth(180)
         self._status_jobs_selector.hide()
-        self._status_progress = QProgressBar()
-        self._status_progress.setRange(0, 100)
-        self._status_progress.setValue(0)
-        self._status_progress.setTextVisible(True)
-        self._status_progress.setMaximumWidth(220)
-        self._status_progress.hide()
         self._status_fast_build = QCheckBox("Fast build")
         self._status_fast_build.setChecked(self.app_state.config.background.fast_build)
         self._status_fast_build.toggled.connect(self._on_fast_build_changed)
         self.statusBar().addWidget(self._status_label, 1)
         self.statusBar().addPermanentWidget(self._status_jobs_selector)
         self.statusBar().addPermanentWidget(self._status_job_button)
-        self.statusBar().addPermanentWidget(self._status_progress)
         self.statusBar().addPermanentWidget(self._status_fast_build)
 
     def _apply_tooltips(self) -> None:
@@ -353,7 +348,6 @@ class MainWindow(QMainWindow):
         self.angle_panel.setStatusTip("")
         apply_tooltip(self._status_label, "status_label")
         apply_tooltip(self._status_jobs_selector, "status_jobs_selector")
-        apply_tooltip(self._status_progress, "status_progress")
         apply_tooltip(self._status_fast_build, "status_fast_build")
         self._sync_status_job_button_tooltip()
 
@@ -2124,8 +2118,10 @@ class MainWindow(QMainWindow):
                 self._job_status_message = (
                     f"{progress.message} | Press Esc to cancel"
                 )
-                self._status_label.setText(self._job_status_message)
-                self._status_progress.setVisible(True)
+                self._set_status_progress_text(
+                    self._format_job_progress_message(progress, self._job_last_percent),
+                    throttle=True,
+                )
                 self.controls_panel.set_job_status(
                     status=self._job_status_state,
                     message=self._job_status_message,
@@ -2149,8 +2145,10 @@ class MainWindow(QMainWindow):
             self._job_status_message = f"{progress.message} | Press Esc to cancel"
         else:
             self._job_status_message = progress.message
-        self._status_label.setText(self._job_status_message)
-        self._status_progress.setValue(percent)
+        self._set_status_progress_text(
+            self._format_job_progress_message(progress, percent),
+            throttle=progress.status in ("running", "partial"),
+        )
         self._update_status_job_controls()
         self.controls_panel.set_job_status(
             status=self._job_status_state,
@@ -2263,7 +2261,6 @@ class MainWindow(QMainWindow):
         else:
             self._job_status_message = payload.message
         self._status_label.setText(self._job_status_message)
-        self._status_progress.setValue(100 if payload.status == "done" else 0)
         self._active_job_payload = None
         self._current_job_worker = None
         self._current_job_thread = None
@@ -2316,19 +2313,15 @@ class MainWindow(QMainWindow):
         if running:
             self._status_job_button.show()
             self._status_job_button.setText("Cancel")
-            self._status_progress.setVisible(True)
             self._status_jobs_selector.hide()
             return
         paused_payload = self._latest_paused_job()
         if paused_payload is None:
             self._status_job_button.hide()
-            self._status_progress.setVisible(False)
             self._status_jobs_selector.hide()
             return
         self._status_job_button.show()
         percent = int(paused_payload.get("progress_percent", 0))
-        self._status_progress.setVisible(True)
-        self._status_progress.setValue(percent)
         title = str(paused_payload.get("title", "Paused job"))
         self._job_status_state = "paused"
         self._job_status_message = (
@@ -2358,6 +2351,37 @@ class MainWindow(QMainWindow):
             self._status_jobs_selector.show()
         else:
             self._status_jobs_selector.hide()
+
+    def _set_status_progress_text(self, text: str, *, throttle: bool = False) -> None:
+        now = time.monotonic()
+        if throttle and (now - self._last_status_progress_update) < 0.075:
+            return
+        self._last_status_progress_update = now
+        self._status_label.setText(text)
+
+    def _format_job_progress_message(self, progress: JobProgress, percent: int) -> str:
+        if progress.job_kind not in ("single_build", "rebuild", "display"):
+            return self._job_status_message
+
+        parts = [f"Building trajectories: {percent}%"]
+
+        if progress.job_kind == "single_build":
+            parts.append("trajectory 1 / 1")
+            if progress.total > 0:
+                parts.append(f"chunk {progress.current} / {progress.total}")
+            return " | ".join(parts)
+
+        if trajectory_match := re.search(r"(\d+)\s*/\s*(\d+)", progress.message):
+            parts.append(
+                f"trajectory {int(trajectory_match.group(1))} / {int(trajectory_match.group(2))}"
+            )
+        if chunk_match := re.search(r"\((\d+)\s*/\s*(\d+)\)", progress.message):
+            parts.append(
+                f"chunk {int(chunk_match.group(1))} / {int(chunk_match.group(2))}"
+            )
+        elif progress.total > 0:
+            parts.append(f"{progress.current} / {progress.total}")
+        return " | ".join(parts)
 
     def _on_status_job_button_clicked(self) -> None:
         if self._current_job_worker is not None:
