@@ -16,7 +16,3 @@ class AppState:
     base_angle_constraint_name: str | None = None
     active_angle_constraint_name: str | None = None
     symmetric_mode: bool = False
-    show_phase_grid: bool = True
-    show_phase_minor_grid: bool = False
-    show_directrix: bool = True
-    show_regions: bool = True

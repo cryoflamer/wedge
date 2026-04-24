@@ -105,10 +105,6 @@ class MainWindow(QMainWindow):
             base_angle_constraint_name=self._base_angle_constraint_name,
             active_angle_constraint_name=self._active_angle_constraint_name,
             symmetric_mode=self._symmetric_mode,
-            show_phase_grid=config.view.show_phase_grid,
-            show_phase_minor_grid=config.view.show_phase_minor_grid,
-            show_directrix=config.view.show_directrix,
-            show_regions=config.view.show_regions,
         )
         self._trajectory_seeds: dict[int, TrajectorySeed] = {}
         self._trajectory_orbits: dict[int, Orbit] = {}
