@@ -188,6 +188,15 @@ class MainWindow(QMainWindow):
         self._connect_signals()
         self.update_view()
 
+    @property
+    def _selected_trajectory(self) -> int | None:
+        return self.app_state.selected_trajectory_id
+
+    @_selected_trajectory.setter
+    def _selected_trajectory(self, value: int | None) -> None:
+        self.app_state.selected_trajectory_id = value
+        self._selected_trajectory_id = value
+
     def showEvent(self, event) -> None:
         super().showEvent(event)
 
@@ -452,12 +461,12 @@ class MainWindow(QMainWindow):
         # dropdown and seed-based trajectory selection. Only selected-trajectory
         # controls plus selection-dependent panels should be refreshed.
         selected_seed = (
-            self._trajectory_seeds.get(self._selected_trajectory_id)
-            if self._selected_trajectory_id is not None
+            self._trajectory_seeds.get(self._selected_trajectory)
+            if self._selected_trajectory is not None
             else None
         )
         self.controls_panel.set_selected_trajectory_id(
-            self._selected_trajectory_id,
+            self._selected_trajectory,
             selected_seed.color if selected_seed is not None else None,
         )
         self._update_selected_trajectory_controls()
@@ -542,19 +551,19 @@ class MainWindow(QMainWindow):
         ]
         self.controls_panel.set_trajectory_items(
             trajectory_items,
-            self._selected_trajectory_id,
+            self._selected_trajectory,
         )
         self._update_selected_trajectory_controls()
 
     def _update_selected_trajectory_controls(self) -> None:
         selected_orbit = (
-            self._trajectory_orbits.get(self._selected_trajectory_id)
-            if self._selected_trajectory_id is not None
+            self._trajectory_orbits.get(self._selected_trajectory)
+            if self._selected_trajectory is not None
             else None
         )
         selected_seed = (
-            self._trajectory_seeds.get(self._selected_trajectory_id)
-            if self._selected_trajectory_id is not None
+            self._trajectory_seeds.get(self._selected_trajectory)
+            if self._selected_trajectory is not None
             else None
         )
         if selected_orbit is None:
@@ -605,7 +614,7 @@ class MainWindow(QMainWindow):
         self.phase_panel_wall_1.set_trajectories(
             self._trajectory_seeds,
             self._trajectory_orbits,
-            self._selected_trajectory_id,
+            self._selected_trajectory,
             self._active_phase_frames,
         )
         self.phase_panel_wall_1.set_stationary_point(
@@ -614,7 +623,7 @@ class MainWindow(QMainWindow):
         self.phase_panel_wall_2.set_trajectories(
             self._trajectory_seeds,
             self._trajectory_orbits,
-            self._selected_trajectory_id,
+            self._selected_trajectory,
             self._active_phase_frames,
         )
         self.phase_panel_wall_2.set_stationary_point(
@@ -623,7 +632,7 @@ class MainWindow(QMainWindow):
         self.wedge_panel.set_geometries(
             self._trajectory_seeds,
             self._trajectory_geometries,
-            self._selected_trajectory_id,
+            self._selected_trajectory,
             self._active_segment_indices,
         )
 
@@ -686,8 +695,8 @@ class MainWindow(QMainWindow):
         # Drag-start selection uses the same lightweight path as dropdown/seed
         # click selection. Calling update_view() here makes seed dragging and
         # selection laggy because unrelated controls/config are rebuilt.
-        if trajectory_id != self._selected_trajectory_id:
-            self._selected_trajectory_id = trajectory_id
+        if trajectory_id != self._selected_trajectory:
+            self._selected_trajectory = trajectory_id
             self._reset_replay_views()
             self._update_selected_trajectory_view()
 
@@ -703,7 +712,7 @@ class MainWindow(QMainWindow):
 
         seed.d0 = d_value
         seed.tau0 = tau_value
-        self._selected_trajectory_id = trajectory_id
+        self._selected_trajectory = trajectory_id
         self._reset_replay_views()
         self._trajectory_orbits[trajectory_id] = Orbit(trajectory_id=trajectory_id)
         self._trajectory_geometries[trajectory_id] = WedgeGeometry()
@@ -719,9 +728,9 @@ class MainWindow(QMainWindow):
         d_value: float,
         tau_value: float,
     ) -> None:
-        if self._selected_trajectory_id is None:
+        if self._selected_trajectory is None:
             return
-        seed = self._trajectory_seeds.get(self._selected_trajectory_id)
+        seed = self._trajectory_seeds.get(self._selected_trajectory)
         if seed is None:
             return
 
@@ -886,12 +895,12 @@ class MainWindow(QMainWindow):
         self.update_view()
 
     def _on_compute_lyapunov(self) -> None:
-        if self._selected_trajectory_id is None:
+        if self._selected_trajectory is None:
             self.controls_panel.set_lyapunov_status("failed", 0, None, "no_selection")
             return
 
-        seed = self._trajectory_seeds.get(self._selected_trajectory_id)
-        orbit = self._trajectory_orbits.get(self._selected_trajectory_id)
+        seed = self._trajectory_seeds.get(self._selected_trajectory)
+        orbit = self._trajectory_orbits.get(self._selected_trajectory)
         if seed is None or orbit is None:
             self.controls_panel.set_lyapunov_status("failed", 0, None, "missing_orbit")
             return
@@ -899,17 +908,17 @@ class MainWindow(QMainWindow):
         self._start_lyapunov_job(seed)
 
     def _on_export_data(self) -> None:
-        if self._selected_trajectory_id is None:
+        if self._selected_trajectory is None:
             logger.info("Data export skipped: no selected trajectory")
             return
 
-        orbit = self._trajectory_orbits.get(self._selected_trajectory_id)
+        orbit = self._trajectory_orbits.get(self._selected_trajectory)
         if orbit is None:
             logger.info("Data export skipped: selected orbit is missing")
             return
 
         export_format = self.controls_panel.data_export_format()
-        suggested_name = f"wedge_trajectory_{self._selected_trajectory_id}.{export_format}"
+        suggested_name = f"wedge_trajectory_{self._selected_trajectory}.{export_format}"
         output_path, _ = QFileDialog.getSaveFileName(
             self,
             "Export Data",
@@ -926,7 +935,7 @@ class MainWindow(QMainWindow):
         )
         logger.info(
             "Trajectory data exported: id=%s format=%s path=%s",
-            self._selected_trajectory_id,
+            self._selected_trajectory,
             export_format,
             exported_path,
         )
@@ -994,9 +1003,9 @@ class MainWindow(QMainWindow):
         # Selection hot path: route through _update_selected_trajectory_view(),
         # never the full update_view() cycle. Full refresh is for structural
         # changes, not simple selected-id switches.
-        if trajectory_id == self._selected_trajectory_id:
+        if trajectory_id == self._selected_trajectory:
             return
-        self._selected_trajectory_id = trajectory_id
+        self._selected_trajectory = trajectory_id
         self._reset_replay_views()
         self._update_selected_trajectory_view()
 
@@ -1080,9 +1089,9 @@ class MainWindow(QMainWindow):
         )
 
     def _on_selected_trajectory_color_changed(self, color: str) -> None:
-        if self._selected_trajectory_id is None:
+        if self._selected_trajectory is None:
             return
-        seed = self._trajectory_seeds.get(self._selected_trajectory_id)
+        seed = self._trajectory_seeds.get(self._selected_trajectory)
         if seed is None or seed.color == color:
             return
         seed.color = color
@@ -1090,7 +1099,7 @@ class MainWindow(QMainWindow):
         self.update_view()
         logger.info(
             "Trajectory color changed: id=%s color=%s",
-            self._selected_trajectory_id,
+            self._selected_trajectory,
             color,
         )
 
@@ -1350,14 +1359,14 @@ class MainWindow(QMainWindow):
         )
 
     def _on_clear_selected_trajectory(self) -> None:
-        if self._selected_trajectory_id is None:
+        if self._selected_trajectory is None:
             return
-        trajectory_id = self._selected_trajectory_id
+        trajectory_id = self._selected_trajectory
         self._trajectory_seeds.pop(trajectory_id, None)
         self._trajectory_orbits.pop(trajectory_id, None)
         self._trajectory_geometries.pop(trajectory_id, None)
         self._prune_job_payloads_for_existing_trajectories()
-        self._selected_trajectory_id = (
+        self._selected_trajectory = (
             next(iter(self._trajectory_seeds.keys()))
             if self._trajectory_seeds
             else None
@@ -1374,7 +1383,7 @@ class MainWindow(QMainWindow):
         self._trajectory_geometries.clear()
         self._paused_job_payloads.clear()
         self._active_job_payload = None
-        self._selected_trajectory_id = None
+        self._selected_trajectory = None
         self._reset_replay_views()
         self._schedule_autosave()
         self.update_view()
@@ -1418,10 +1427,10 @@ class MainWindow(QMainWindow):
             self.update_view()
             return
 
-        if mode == "selected" and self._selected_trajectory_id is not None:
-            self._active_phase_frames = {self._selected_trajectory_id: active_frame}
+        if mode == "selected" and self._selected_trajectory is not None:
+            self._active_phase_frames = {self._selected_trajectory: active_frame}
             self._active_segment_indices = {
-                self._selected_trajectory_id: active_frame - 1
+                self._selected_trajectory: active_frame - 1
             }
         elif mode == "all":
             self._active_phase_frames = {
@@ -1439,9 +1448,9 @@ class MainWindow(QMainWindow):
         self._active_segment_indices = {}
 
     def _max_frame_for_selected(self) -> int:
-        if self._selected_trajectory_id is None:
+        if self._selected_trajectory is None:
             return 0
-        orbit = self._trajectory_orbits.get(self._selected_trajectory_id)
+        orbit = self._trajectory_orbits.get(self._selected_trajectory)
         if orbit is None:
             return 0
         return max(len(orbit.points) - 1, 0)
@@ -1521,7 +1530,7 @@ class MainWindow(QMainWindow):
             n_geom=self._config.simulation.n_geom_default,
             replay_delay_ms=self._config.replay.delay_ms,
             replay_selected_only=self._config.replay.selected_only_by_default,
-            selected_trajectory_id=self._selected_trajectory_id,
+            selected_trajectory_id=self._selected_trajectory,
             trajectories=list(self._trajectory_seeds.values()),
             angle_units=self._angle_units,
             symmetric_mode=self._symmetric_mode,
@@ -1599,13 +1608,13 @@ class MainWindow(QMainWindow):
             )
             for seed in session.trajectories
         }
-        self._selected_trajectory_id = session.selected_trajectory_id
+        self._selected_trajectory = session.selected_trajectory_id
         self.phase_panel_wall_1.set_fixed_domain_mode(session.phase_fixed_domain)
         self.phase_panel_wall_2.set_fixed_domain_mode(session.phase_fixed_domain)
         self.phase_panel_wall_1.set_viewport(session.phase_viewport_wall_1)
         self.phase_panel_wall_2.set_viewport(session.phase_viewport_wall_2)
-        if self._selected_trajectory_id not in self._trajectory_seeds:
-            self._selected_trajectory_id = next(
+        if self._selected_trajectory not in self._trajectory_seeds:
+            self._selected_trajectory = next(
                 iter(self._trajectory_seeds.keys()),
                 None,
             )
@@ -1942,8 +1951,8 @@ class MainWindow(QMainWindow):
         self._trajectory_geometries[trajectory_id] = self._build_geometry(
             self._trajectory_orbits[trajectory_id]
         )
-        if self._selected_trajectory_id is None:
-            self._selected_trajectory_id = trajectory_id
+        if self._selected_trajectory is None:
+            self._selected_trajectory = trajectory_id
         self._reset_replay_views()
         return trajectory_id
 
@@ -1963,8 +1972,8 @@ class MainWindow(QMainWindow):
         self._trajectory_seeds[trajectory_id] = seed
         self._trajectory_orbits[trajectory_id] = Orbit(trajectory_id=trajectory_id)
         self._trajectory_geometries[trajectory_id] = WedgeGeometry()
-        if self._selected_trajectory_id is None:
-            self._selected_trajectory_id = trajectory_id
+        if self._selected_trajectory is None:
+            self._selected_trajectory = trajectory_id
         self._reset_replay_views()
         self.update_view()
         self._start_single_seed_rebuild(
@@ -2223,8 +2232,8 @@ class MainWindow(QMainWindow):
         self._trajectory_seeds[payload.trajectory_id] = payload.seed
         self._trajectory_orbits[payload.trajectory_id] = payload.orbit
         self._trajectory_geometries[payload.trajectory_id] = payload.geometry
-        if self._selected_trajectory_id is None:
-            self._selected_trajectory_id = payload.trajectory_id
+        if self._selected_trajectory is None:
+            self._selected_trajectory = payload.trajectory_id
         self._next_trajectory_id = max(
             self._next_trajectory_id,
             payload.trajectory_id + 1,
