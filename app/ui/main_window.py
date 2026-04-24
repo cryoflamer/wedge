@@ -133,6 +133,7 @@ class MainWindow(QMainWindow):
         self._job_status_message = "Idle"
         self._job_last_percent = 0
         self._last_status_progress_update = 0.0
+        self._perf_enabled = config.debug.performance_trace
         self._pending_partial_results: deque[OrbitPartialResult] = deque()
         self._pending_finished_payload: JobFinished | None = None
         self._job_controller = JobController(self)
@@ -1859,6 +1860,8 @@ class MainWindow(QMainWindow):
     def _on_job_progress(self, progress: object) -> None:
         if not isinstance(progress, JobProgress):
             return
+        if progress.job_kind == "display":
+            progress = self._job_controller.enrich_progress(progress)
         percent = self._job_controller.progress_percent(progress)
         if progress.status in ("running", "partial"):
             self._job_last_percent = percent
@@ -1868,10 +1871,12 @@ class MainWindow(QMainWindow):
                 self._job_status_message = (
                     f"{progress.message} | Press Esc to cancel"
                 )
-                self._set_status_progress_text(
+                updated = self._set_status_progress_text(
                     self._format_job_progress_message(progress, percent),
                     throttle=True,
                 )
+                if updated:
+                    self._print_progress_metrics(progress)
                 self._update_status_job_controls()
                 self.controls_panel.set_job_status(
                     status=self._job_status_state,
@@ -1885,10 +1890,12 @@ class MainWindow(QMainWindow):
             self._job_status_message = f"{progress.message} | Press Esc to cancel"
         else:
             self._job_status_message = progress.message
-        self._set_status_progress_text(
+        updated = self._set_status_progress_text(
             self._format_job_progress_message(progress, percent),
             throttle=progress.status in ("running", "partial"),
         )
+        if updated and progress.status in ("running", "partial"):
+            self._print_progress_metrics(progress)
         self._update_status_job_controls()
         self.controls_panel.set_job_status(
             status=self._job_status_state,
@@ -2064,21 +2071,30 @@ class MainWindow(QMainWindow):
         else:
             self._status_jobs_selector.hide()
 
-    def _set_status_progress_text(self, text: str, *, throttle: bool = False) -> None:
+    def _set_status_progress_text(self, text: str, *, throttle: bool = False) -> bool:
         now = time.monotonic()
         if throttle and (now - self._last_status_progress_update) < 0.075:
-            return
+            return False
         self._last_status_progress_update = now
         self._status_progress_label.setText(text)
         self._status_progress_label.show()
+        return True
 
     def _clear_status_progress_text(self) -> None:
         self._status_progress_label.clear()
         self._status_progress_label.hide()
 
+    def _print_progress_metrics(self, progress: JobProgress) -> None:
+        if not self._perf_enabled:
+            return
+        current, total, steps_per_sec, eta = self._job_controller.progress_metrics(progress)
+        eta_value = eta if eta is not None else 0.0
+        print(f"[perf] {current}/{total} | {steps_per_sec:.1f} it/s | ETA {eta_value:.1f}s")
+
     def _format_job_progress_message(self, progress: JobProgress, percent: int) -> str:
         if progress.job_kind not in ("single_build", "rebuild", "display"):
             return self._job_status_message
+        base_message, timing_suffix = self._split_progress_message(progress.message)
 
         parts = [f"Building trajectories: {percent}%"]
 
@@ -2086,19 +2102,29 @@ class MainWindow(QMainWindow):
             parts.append("trajectory 1 / 1")
             if progress.total > 0:
                 parts.append(f"chunk {progress.current} / {progress.total}")
+            if timing_suffix:
+                parts.append(timing_suffix)
             return " | ".join(parts)
 
-        if trajectory_match := re.search(r"(\d+)\s*/\s*(\d+)", progress.message):
+        if trajectory_match := re.search(r"(\d+)\s*/\s*(\d+)", base_message):
             parts.append(
                 f"trajectory {int(trajectory_match.group(1))} / {int(trajectory_match.group(2))}"
             )
-        if chunk_match := re.search(r"\((\d+)\s*/\s*(\d+)\)", progress.message):
+        if chunk_match := re.search(r"\((\d+)\s*/\s*(\d+)\)", base_message):
             parts.append(
                 f"chunk {int(chunk_match.group(1))} / {int(chunk_match.group(2))}"
             )
         elif progress.total > 0:
             parts.append(f"{progress.current} / {progress.total}")
+        if timing_suffix:
+            parts.append(timing_suffix)
         return " | ".join(parts)
+
+    def _split_progress_message(self, message: str) -> tuple[str, str]:
+        parts = message.split(" || ", 1)
+        if len(parts) == 2:
+            return parts[0], parts[1]
+        return message, ""
 
     def _on_status_job_button_clicked(self) -> None:
         if self._job_controller.is_running():

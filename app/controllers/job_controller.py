@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from copy import deepcopy
 import logging
+import time
 from PySide6.QtCore import QObject, QThread, Signal
 
 from app.models.config import LyapunovConfig, SimulationConfig
@@ -16,6 +18,7 @@ from app.services.background_jobs import (
 )
 
 logger = logging.getLogger(__name__)
+_TIMING_SEPARATOR = " || "
 
 
 class JobController(QObject):
@@ -34,6 +37,8 @@ class JobController(QObject):
         self._paused_job_payloads: list[dict[str, object]] = []
         self._next_job_payload_id = 1
         self._last_progress_percent = 0
+        self._job_started_at: float | None = None
+        self._job_elapsed_before = 0.0
 
     def _next_generation_id(self) -> int:
         self._job_generation += 1
@@ -56,6 +61,23 @@ class JobController(QObject):
     def progress_percent(self, progress: JobProgress) -> int:
         return self._progress_percent(progress)
 
+    def enrich_progress(self, progress: JobProgress) -> JobProgress:
+        elapsed = self._progress_elapsed_seconds()
+        if elapsed is None:
+            return progress
+        return replace(progress, message=self._timed_progress_message(progress, elapsed))
+
+    def progress_metrics(self, progress: JobProgress) -> tuple[int, int, float, float | None]:
+        elapsed = self._progress_elapsed_seconds()
+        current = max(progress.current, 0)
+        total = max(progress.total, 0)
+        if elapsed is None or elapsed <= 0.0:
+            return current, total, 0.0, None
+        steps_per_sec = current / elapsed
+        remaining = max(total - current, 0)
+        eta = (remaining / steps_per_sec) if steps_per_sec > 0.0 else None
+        return current, total, steps_per_sec, eta
+
     def cancel_current_job(self) -> None:
         worker = self._current_job_worker
         if worker is None:
@@ -64,11 +86,14 @@ class JobController(QObject):
         if self._active_job_payload is not None:
             paused_payload = dict(self._active_job_payload)
             paused_payload["paused"] = True
+            paused_payload["elapsed_seconds"] = self._progress_elapsed_seconds() or 0.0
             self._store_paused_job(paused_payload)
         self._job_generation += 1
         self._current_job_worker = None
         self._current_job_thread = None
         self._active_job_payload = None
+        self._job_started_at = None
+        self._job_elapsed_before = 0.0
         self.state_updated.emit()
 
     def start_single_build(
@@ -282,9 +307,12 @@ class JobController(QObject):
             payload["progress_percent"] = 0
             payload["message"] = start_message
             self._active_job_payload = payload
+            self._job_elapsed_before = float(payload.get("elapsed_seconds", 0.0))
         else:
             self._active_job_payload = None
+            self._job_elapsed_before = 0.0
         self._last_progress_percent = 0
+        self._job_started_at = time.perf_counter()
         self.state_updated.emit()
         logger.debug(
             "Starting job generation=%s kind=%s message=%s",
@@ -293,13 +321,15 @@ class JobController(QObject):
             start_message,
         )
         self.progress.emit(
-            JobProgress(
+            self.enrich_progress(
+                JobProgress(
                 generation_id=generation_id,
                 job_kind=job_kind,
                 status="running",
                 current=0,
                 total=0,
                 message=start_message,
+            )
             )
         )
         thread.start()
@@ -347,6 +377,7 @@ class JobController(QObject):
                 progress.job_kind,
             )
             return
+        progress = self.enrich_progress(progress)
         percent = self._progress_percent(progress)
         if progress.status in ("running", "partial"):
             self._last_progress_percent = percent
@@ -377,6 +408,8 @@ class JobController(QObject):
         self._active_job_payload = None
         self._current_job_worker = None
         self._current_job_thread = None
+        self._job_started_at = None
+        self._job_elapsed_before = 0.0
         self.state_updated.emit()
         self.finished.emit(payload)
 
@@ -384,3 +417,49 @@ class JobController(QObject):
         total = max(progress.total, 0)
         current = min(max(progress.current, 0), total) if total > 0 else 0
         return int((current / total) * 100.0) if total > 0 else 0
+
+    def _progress_elapsed_seconds(self) -> float | None:
+        if self._job_started_at is None:
+            return None
+        return self._job_elapsed_before + max(time.perf_counter() - self._job_started_at, 0.0)
+
+    def _timed_progress_message(self, progress: JobProgress, elapsed: float) -> str:
+        base_message = progress.message.split(_TIMING_SEPARATOR, 1)[0]
+        steps = max(progress.current, 0)
+        rate = (steps / elapsed) if elapsed > 0.0 else 0.0
+        remaining = max(progress.total - steps, 0)
+        eta = (remaining / rate) if rate > 0.0 else None
+        timing = (
+            f"{self._format_steps(steps)} steps"
+            f" | {self._format_rate(rate)} it/s"
+            f" | ETA {self._format_seconds(eta)}"
+            f" | {self._format_seconds(elapsed)} elapsed"
+        )
+        return f"{base_message}{_TIMING_SEPARATOR}{timing}"
+
+    def _format_steps(self, steps: int) -> str:
+        if steps >= 1_000_000:
+            return f"{steps / 1_000_000:.1f}M"
+        if steps >= 1_000:
+            return f"{steps / 1_000:.1f}k"
+        return str(steps)
+
+    def _format_rate(self, rate: float) -> str:
+        if rate >= 1_000_000:
+            return f"{rate / 1_000_000:.1f}M"
+        if rate >= 1_000:
+            return f"{rate / 1_000:.1f}k"
+        if rate >= 100:
+            return f"{rate:.0f}"
+        if rate >= 10:
+            return f"{rate:.1f}"
+        return f"{rate:.2f}"
+
+    def _format_seconds(self, value: float | None) -> str:
+        if value is None:
+            return "-"
+        if value >= 100:
+            return f"{value:.0f}s"
+        if value >= 10:
+            return f"{value:.1f}s"
+        return f"{value:.2f}s"

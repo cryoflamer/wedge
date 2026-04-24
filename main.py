@@ -31,6 +31,7 @@ def main() -> None:
     args = parse_args()
     config = load_config(args.config)
     setup_logging(config.app.log_level)
+    logging.getLogger().setLevel(logging.WARNING)
 
     logger = logging.getLogger(__name__)
     logger.info("Application initialized")
