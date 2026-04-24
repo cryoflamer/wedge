@@ -321,8 +321,11 @@ class MainWindow(QMainWindow):
 
     def _build_status_bar(self) -> None:
         self._status_label = QLabel("Idle")
+        self._status_progress_label = QLabel("")
+        self._status_progress_label.hide()
         self._status_job_button = QPushButton("Cancel")
         self._status_job_button.clicked.connect(self._on_status_job_button_clicked)
+        self._status_job_button.setEnabled(False)
         self._status_job_button.hide()
         self._status_jobs_selector = QComboBox()
         self._status_jobs_selector.setMinimumWidth(180)
@@ -331,6 +334,7 @@ class MainWindow(QMainWindow):
         self._status_fast_build.setChecked(self.app_state.config.background.fast_build)
         self._status_fast_build.toggled.connect(self._on_fast_build_changed)
         self.statusBar().addWidget(self._status_label, 1)
+        self.statusBar().addPermanentWidget(self._status_progress_label, 1)
         self.statusBar().addPermanentWidget(self._status_jobs_selector)
         self.statusBar().addPermanentWidget(self._status_job_button)
         self.statusBar().addPermanentWidget(self._status_fast_build)
@@ -1053,6 +1057,7 @@ class MainWindow(QMainWindow):
             f"Job interrupted at {self._job_last_percent}%"
         )
         self._status_label.setText(self._job_status_message)
+        self._clear_status_progress_text()
         self._update_status_job_controls()
         self.controls_panel.set_job_status(
             status=self._job_status_state,
@@ -2163,6 +2168,7 @@ class MainWindow(QMainWindow):
         else:
             self._job_status_message = payload.message
         self._status_label.setText(self._job_status_message)
+        self._clear_status_progress_text()
         self._update_status_job_controls()
         self.controls_panel.set_job_status(
             status=self._job_status_state,
@@ -2186,15 +2192,20 @@ class MainWindow(QMainWindow):
         paused_count = len(paused_payloads)
         if running:
             self._status_job_button.show()
+            self._status_job_button.setEnabled(True)
             self._status_job_button.setText("Cancel")
             self._status_jobs_selector.hide()
             return
         paused_payload = self._job_controller.latest_paused_job()
         if paused_payload is None:
+            self._clear_status_progress_text()
+            self._status_job_button.setEnabled(False)
             self._status_job_button.hide()
             self._status_jobs_selector.hide()
             return
+        self._clear_status_progress_text()
         self._status_job_button.show()
+        self._status_job_button.setEnabled(True)
         percent = int(paused_payload.get("progress_percent", 0))
         title = str(paused_payload.get("title", "Paused job"))
         self._job_status_state = "paused"
@@ -2231,7 +2242,12 @@ class MainWindow(QMainWindow):
         if throttle and (now - self._last_status_progress_update) < 0.075:
             return
         self._last_status_progress_update = now
-        self._status_label.setText(text)
+        self._status_progress_label.setText(text)
+        self._status_progress_label.show()
+
+    def _clear_status_progress_text(self) -> None:
+        self._status_progress_label.clear()
+        self._status_progress_label.hide()
 
     def _format_job_progress_message(self, progress: JobProgress, percent: int) -> str:
         if progress.job_kind not in ("single_build", "rebuild", "display"):

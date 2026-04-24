@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import logging
 from PySide6.QtCore import QObject, QThread, Signal
 
 from app.models.config import LyapunovConfig, SimulationConfig
@@ -13,6 +14,8 @@ from app.services.background_jobs import (
     OrbitBuildWorker,
     OrbitPartialResult,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class JobController(QObject):
@@ -80,16 +83,15 @@ class JobController(QObject):
         start_message: str,
     ) -> None:
         self._start_worker(
-            OrbitBuildWorker(
-                generation_id=self._next_generation_id(),
-                job_kind="single_build",
-                simulation_config=simulation_config,
-                max_reflections=max_reflections,
-                phase_steps=phase_steps,
-                chunk_size=chunk_size,
-                seeds=[seed],
-                existing_orbits=existing_orbits,
-            ),
+            job_kind="single_build",
+            worker_kwargs={
+                "simulation_config": simulation_config,
+                "max_reflections": max_reflections,
+                "phase_steps": phase_steps,
+                "chunk_size": chunk_size,
+                "seeds": [seed],
+                "existing_orbits": existing_orbits,
+            },
             start_message=start_message,
             resumable_payload={
                 "job_kind": "single_build",
@@ -110,15 +112,14 @@ class JobController(QObject):
         start_message: str,
     ) -> None:
         self._start_worker(
-            OrbitBuildWorker(
-                generation_id=self._next_generation_id(),
-                job_kind="rebuild",
-                simulation_config=simulation_config,
-                max_reflections=max_reflections,
-                phase_steps=phase_steps,
-                chunk_size=chunk_size,
-                seeds=seeds,
-            ),
+            job_kind="rebuild",
+            worker_kwargs={
+                "simulation_config": simulation_config,
+                "max_reflections": max_reflections,
+                "phase_steps": phase_steps,
+                "chunk_size": chunk_size,
+                "seeds": seeds,
+            },
             start_message=start_message,
             resumable_payload={
                 "job_kind": "rebuild",
@@ -147,24 +148,23 @@ class JobController(QObject):
         max_trajectory_count: int,
     ) -> None:
         self._start_worker(
-            OrbitBuildWorker(
-                generation_id=self._next_generation_id(),
-                job_kind="scan",
-                simulation_config=simulation_config,
-                max_reflections=max_reflections,
-                phase_steps=phase_steps,
-                chunk_size=chunk_size,
-                scan_mode=mode,
-                scan_count=count,
-                scan_wall=wall,
-                scan_d_min=d_min,
-                scan_d_max=d_max,
-                scan_tau_min=tau_min,
-                scan_tau_max=tau_max,
-                next_trajectory_id=next_trajectory_id,
-                palette=palette,
-                max_trajectory_count=max_trajectory_count,
-            )
+            job_kind="scan",
+            worker_kwargs={
+                "simulation_config": simulation_config,
+                "max_reflections": max_reflections,
+                "phase_steps": phase_steps,
+                "chunk_size": chunk_size,
+                "scan_mode": mode,
+                "scan_count": count,
+                "scan_wall": wall,
+                "scan_d_min": d_min,
+                "scan_d_max": d_max,
+                "scan_tau_min": tau_min,
+                "scan_tau_max": tau_max,
+                "next_trajectory_id": next_trajectory_id,
+                "palette": palette,
+                "max_trajectory_count": max_trajectory_count,
+            },
         )
 
     def start_lyapunov(
@@ -178,16 +178,15 @@ class JobController(QObject):
         lyapunov_config: LyapunovConfig,
     ) -> None:
         self._start_worker(
-            OrbitBuildWorker(
-                generation_id=self._next_generation_id(),
-                job_kind="lyapunov",
-                simulation_config=simulation_config,
-                max_reflections=max_reflections,
-                phase_steps=phase_steps,
-                chunk_size=chunk_size,
-                lyapunov_seed=seed,
-                lyapunov_config=lyapunov_config,
-            )
+            job_kind="lyapunov",
+            worker_kwargs={
+                "simulation_config": simulation_config,
+                "max_reflections": max_reflections,
+                "phase_steps": phase_steps,
+                "chunk_size": chunk_size,
+                "lyapunov_seed": seed,
+                "lyapunov_config": lyapunov_config,
+            },
         )
 
     def resume_job(
@@ -220,43 +219,49 @@ class JobController(QObject):
         self.remove_paused_job(job_id)
         if job_kind == "rebuild":
             self._start_worker(
-                OrbitBuildWorker(
-                    generation_id=self._next_generation_id(),
-                    job_kind="rebuild",
-                    simulation_config=simulation_config,
-                    max_reflections=max_reflections,
-                    phase_steps=phase_steps,
-                    chunk_size=chunk_size,
-                    seeds=deepcopy(seeds),
-                    existing_orbits=existing_orbits,
-                ),
+                job_kind="rebuild",
+                worker_kwargs={
+                    "simulation_config": simulation_config,
+                    "max_reflections": max_reflections,
+                    "phase_steps": phase_steps,
+                    "chunk_size": chunk_size,
+                    "seeds": deepcopy(seeds),
+                    "existing_orbits": existing_orbits,
+                },
                 start_message=start_message.replace("Starting", "Resuming"),
                 resumable_payload=payload,
             )
             return
         if job_kind == "single_build":
             self._start_worker(
-                OrbitBuildWorker(
-                    generation_id=self._next_generation_id(),
-                    job_kind="single_build",
-                    simulation_config=simulation_config,
-                    max_reflections=max_reflections,
-                    phase_steps=phase_steps,
-                    chunk_size=chunk_size,
-                    seeds=deepcopy(seeds),
-                    existing_orbits=existing_orbits,
-                ),
+                job_kind="single_build",
+                worker_kwargs={
+                    "simulation_config": simulation_config,
+                    "max_reflections": max_reflections,
+                    "phase_steps": phase_steps,
+                    "chunk_size": chunk_size,
+                    "seeds": deepcopy(seeds),
+                    "existing_orbits": existing_orbits,
+                },
                 start_message=start_message.replace("Building", "Resuming"),
                 resumable_payload=payload,
             )
 
     def _start_worker(
         self,
-        worker: OrbitBuildWorker,
+        *,
+        job_kind: str,
+        worker_kwargs: dict[str, object],
         start_message: str = "Starting background job...",
         resumable_payload: dict[str, object] | None = None,
     ) -> None:
         self.cancel_current_job()
+        generation_id = self._next_generation_id()
+        worker = OrbitBuildWorker(
+            generation_id=generation_id,
+            job_kind=job_kind,
+            **worker_kwargs,
+        )
         thread = QThread(self)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
@@ -281,10 +286,16 @@ class JobController(QObject):
             self._active_job_payload = None
         self._last_progress_percent = 0
         self.state_updated.emit()
+        logger.debug(
+            "Starting job generation=%s kind=%s message=%s",
+            generation_id,
+            job_kind,
+            start_message,
+        )
         self.progress.emit(
             JobProgress(
-                generation_id=worker._generation_id,
-                job_kind="start",
+                generation_id=generation_id,
+                job_kind=job_kind,
                 status="running",
                 current=0,
                 total=0,
@@ -329,6 +340,12 @@ class JobController(QObject):
         if not isinstance(progress, JobProgress):
             return
         if progress.generation_id != self._job_generation:
+            logger.debug(
+                "Dropping job progress generation=%s expected=%s kind=%s",
+                progress.generation_id,
+                self._job_generation,
+                progress.job_kind,
+            )
             return
         percent = self._progress_percent(progress)
         if progress.status in ("running", "partial"):
