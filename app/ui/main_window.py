@@ -88,7 +88,6 @@ class MainWindow(QMainWindow):
         self._config_path = config_path
         self._window_position_restored = False
         self._next_trajectory_id = 1
-        self._selected_trajectory_id: int | None = None
         self._selected_scene_item_name: str | None = None
         self._scene_dirty = False
         self._angle_units = "rad"
@@ -100,7 +99,7 @@ class MainWindow(QMainWindow):
         self.app_state = AppState(
             simulation_config=self._config.simulation,
             view_config=self._config.view,
-            selected_trajectory_id=self._selected_trajectory_id,
+            selected_trajectory_id=None,
             selected_scene_item_name=self._selected_scene_item_name,
             angle_units=self._angle_units,
             base_angle_constraint_name=self._base_angle_constraint_name,
@@ -195,7 +194,6 @@ class MainWindow(QMainWindow):
     @_selected_trajectory.setter
     def _selected_trajectory(self, value: int | None) -> None:
         self.app_state.selected_trajectory_id = value
-        self._selected_trajectory_id = value
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
