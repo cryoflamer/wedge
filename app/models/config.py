@@ -21,6 +21,9 @@ class SimulationConfig:
     n_geom_default: int
     eps: float = 1.0e-9
     performance_trace: bool = False
+    native_enabled: bool = True
+    native_sample_mode: str = "every_n"
+    native_sample_step: int = 1
 
 
 @dataclass
@@ -38,6 +41,13 @@ class BackgroundConfig:
 @dataclass
 class DebugConfig:
     performance_trace: bool = False
+
+
+@dataclass
+class NativeConfig:
+    enabled: bool = True
+    sample_mode: str = "every_n"
+    sample_step: int = 1
 
 
 @dataclass
@@ -125,6 +135,7 @@ class Config:
     view: ViewConfig
     background: BackgroundConfig = field(default_factory=BackgroundConfig)
     debug: DebugConfig = field(default_factory=DebugConfig)
+    native: NativeConfig = field(default_factory=NativeConfig)
     window: WindowConfig = field(default_factory=WindowConfig)
     autosave: AutosaveConfig = field(default_factory=AutosaveConfig)
     regions: list[SceneItemDescription] = field(default_factory=list)

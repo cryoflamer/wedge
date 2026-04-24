@@ -12,6 +12,7 @@ from app.models.config import (
     DebugConfig,
     ExportConfig,
     LyapunovConfig,
+    NativeConfig,
     PhaseGridConfig,
     ReplayConfig,
     SimulationConfig,
@@ -34,6 +35,7 @@ def load_config(path: str | Path) -> Config:
     replay_data = data.get("replay", {})
     background_data = data.get("background", {})
     debug_data = data.get("debug", {})
+    native_data = data.get("native", {})
     lyapunov_data = data.get("lyapunov", {})
     export_data = data.get("export", {})
     view_data = data.get("view", {})
@@ -125,6 +127,9 @@ def load_config(path: str | Path) -> Config:
             n_geom_default=int(simulation_data["n_geom_default"]),
             eps=float(simulation_data.get("eps", 1.0e-9)),
             performance_trace=bool(debug_data.get("performance_trace", False)),
+            native_enabled=bool(native_data.get("enabled", True)),
+            native_sample_mode=str(native_data.get("sample_mode", "every_n")),
+            native_sample_step=int(native_data.get("sample_step", 1)),
         ),
         replay=ReplayConfig(
             delay_ms=int(replay_data.get("delay_ms", 120)),
@@ -138,6 +143,11 @@ def load_config(path: str | Path) -> Config:
         ),
         debug=DebugConfig(
             performance_trace=bool(debug_data.get("performance_trace", False)),
+        ),
+        native=NativeConfig(
+            enabled=bool(native_data.get("enabled", True)),
+            sample_mode=str(native_data.get("sample_mode", "every_n")),
+            sample_step=int(native_data.get("sample_step", 1)),
         ),
         lyapunov=LyapunovConfig(
             delta0=float(lyapunov_data.get("delta0", 1.0e-6)),
@@ -277,6 +287,13 @@ def save_runtime_config(
     background_payload["build_chunk_size"] = config.background.build_chunk_size
     background_payload["fast_build"] = config.background.fast_build
     payload["background"] = background_payload
+    native_payload = payload.get("native", {})
+    if not isinstance(native_payload, dict):
+        native_payload = {}
+    native_payload["enabled"] = config.native.enabled
+    native_payload["sample_mode"] = config.native.sample_mode
+    native_payload["sample_step"] = config.native.sample_step
+    payload["native"] = native_payload
 
     if persist_scene_items:
         regions_payload: list[dict] = []

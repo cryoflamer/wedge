@@ -102,3 +102,7 @@ regions:
     border: '#17becf'
     line_style: solid
     line_width: 1.5
+native:
+  enabled: true
+  sample_mode: every_n
+  sample_step: 1

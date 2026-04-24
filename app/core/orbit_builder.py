@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import copy
 import time
+from typing import Optional, Tuple
 
 from app.core.math_engine import PhaseState, next_state, validate_state
 from app.models.config import SimulationConfig
 from app.models.orbit import Orbit, OrbitPoint, ReplayFrame
 from app.models.trajectory import TrajectorySeed
 
-PhaseSample = tuple[int, float, float, int, bool, str | None, str | None]
+PhaseSample = Tuple[int, float, float, int, bool, Optional[str], Optional[str]]
 
 
 def build_orbit(
