@@ -5,9 +5,11 @@ from threading import Event
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from app.core.geometry_builder import build_wedge_geometry
-from app.core.lyapunov import compute_finite_time_lyapunov
-from app.core.orbit_builder import iter_orbit_chunks
+from app.core.trajectory_engine import (
+    build_wedge_geometry,
+    compute_finite_time_lyapunov,
+    iter_orbit_chunks,
+)
 from app.models.config import LyapunovConfig, SimulationConfig
 from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
