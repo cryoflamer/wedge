@@ -243,6 +243,19 @@ class AnglePanel(QWidget):
             return []
 
         candidates: list[ActivePointConstraint] = []
+        for item in self._scene_items:
+            if not item.visible or not is_boundary_scene_item(item):
+                continue
+            boundary_segments = self._boundary_segments_cache.get(item.name, ())
+            if boundary_segments:
+                candidates.append(
+                    ActivePointConstraint(
+                        kind="boundary",
+                        region_name=item.name,
+                        boundary_segments=boundary_segments,
+                    )
+                )
+
         for constraint in self._constraints:
             if not constraint.visible:
                 continue
@@ -254,32 +267,6 @@ class AnglePanel(QWidget):
                         region_name=constraint.name,
                     )
                 )
-            elif kind == "boundary" and constraint.target:
-                boundary_segments = self._boundary_segments_cache.get(
-                    constraint.target,
-                    (),
-                )
-                if boundary_segments:
-                    candidates.append(
-                        ActivePointConstraint(
-                            kind="boundary",
-                            region_name=constraint.target,
-                            boundary_segments=boundary_segments,
-                        )
-                    )
-
-        hydrated_active = self._hydrate_constraint(self._active_constraint)
-        if (
-            hydrated_active is not None
-            and hydrated_active.kind == "boundary"
-            and hydrated_active.boundary_segments
-            and all(
-                candidate.kind != hydrated_active.kind
-                or candidate.region_name != hydrated_active.region_name
-                for candidate in candidates
-            )
-        ):
-            candidates.append(hydrated_active)
         return candidates
 
     def _hydrate_constraint(
