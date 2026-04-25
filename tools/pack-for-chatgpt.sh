@@ -20,7 +20,7 @@ set -euo pipefail
 #   ./pack-for-chatgpt.sh history investigate-regression --full-history
 #
 # Output:
-#   chatgpt-packs/chatgpt-pack-<mode>-<task>-<timestamp>-<counter>-<hash>.tar.gz
+#   chatgpt-packs/chatgpt-pack-<mode>-<task>-<timestamp>.tar.gz
 #
 # Archive structure:
 #   chatgpt-pack/
@@ -371,18 +371,27 @@ make_archive_name() {
     local out_dir="$1"
     local mode="$2"
     local task="$3"
-    local pack_dir="$4"
 
     local timestamp
-    timestamp="$(date +%Y%m%d-%H%M%S)"
+    timestamp="$(date +%Y%m%d-%H%M)"
 
-    local counter
-    counter="$(next_counter "$out_dir")"
+    local base="$out_dir/chatgpt-pack-${mode}-${task}-${timestamp}"
+    local candidate="${base}.tar.gz"
 
-    local hash
-    hash="$(find "$pack_dir" -type f ! -path '*/.git/*' -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-12)"
+    if [[ ! -e "$candidate" ]]; then
+        printf '%s\n' "$candidate"
+        return
+    fi
 
-    printf '%s/chatgpt-pack-%s-%s-%s-%s-%s.tar.gz' "$out_dir" "$mode" "$task" "$timestamp" "$counter" "$hash"
+    local i=1
+    while true; do
+        candidate="${base} (${i}).tar.gz"
+        if [[ ! -e "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return
+        fi
+        i=$((i + 1))
+    done
 }
 
 create_clean_pack_dir() {
