@@ -466,6 +466,10 @@ class MainWindow(QMainWindow):
         self._job_controller.state_updated.connect(self._update_status_view)
 
     def update_view(self) -> None:
+        # Heavy full refresh: reloads config-backed controls, trajectory lists,
+        # phase/geometric panels, and status widgets. Do not call this from
+        # lightweight checkbox/combo handlers. Prefer targeted refresh helpers
+        # unless the scene/trajectory/runtime state changed structurally.
         self._update_controls_config_view()
         self._update_trajectory_views()
         self._update_panel_views()
@@ -788,7 +792,7 @@ class MainWindow(QMainWindow):
 
     def _on_angle_units_changed(self, units: str) -> None:
         self._angle_units = units
-        self.update_view()
+        self._update_controls_config_view()
         logger.info("Angle units changed: %s", units)
 
     def _on_angle_constraint_mode_changed(self, mode: str) -> None:
@@ -864,7 +868,7 @@ class MainWindow(QMainWindow):
         self.app_state.config.view.show_regions = show_regions
         self.app_state.config.view.show_region_labels = show_labels
         self.app_state.config.view.show_region_legend = show_legend
-        self.update_view()
+        self._update_panel_views()
 
     def _on_plot_labels_changed(
         self,
@@ -877,7 +881,7 @@ class MainWindow(QMainWindow):
         self.app_state.config.view.tooltip_label_mode = (
             tooltip_mode.strip().lower() or "legend"
         )
-        self.update_view()
+        self._update_panel_views()
 
     def _on_phase_grid_visibility_changed(
         self,
@@ -887,23 +891,23 @@ class MainWindow(QMainWindow):
         self.app_state.config.view.show_phase_grid = show_grid
         self.app_state.config.view.show_phase_minor_grid = show_minor_grid
         self.app_state.config.view.phase_grid.show_minor = show_minor_grid
-        self.update_view()
+        self._update_panel_views()
 
     def _on_seed_markers_visibility_changed(self, enabled: bool) -> None:
         self.app_state.config.view.show_seed_markers = enabled
-        self.update_view()
+        self._update_panel_views()
 
     def _on_stationary_point_visibility_changed(self, enabled: bool) -> None:
         self.app_state.config.view.show_stationary_point = enabled
-        self.update_view()
+        self._update_panel_views()
 
     def _on_directrix_visibility_changed(self, enabled: bool) -> None:
         self.app_state.config.view.show_directrix = enabled
-        self.update_view()
+        self._update_panel_views()
 
     def _on_branch_markers_changed(self, enabled: bool) -> None:
         self.app_state.config.view.show_branch_markers = enabled
-        self.update_view()
+        self._update_panel_views()
 
     def _on_heatmap_settings_changed(
         self,
@@ -916,13 +920,13 @@ class MainWindow(QMainWindow):
         self.app_state.config.view.heatmap_mode = mode
         self.app_state.config.view.heatmap_resolution = resolution
         self.app_state.config.view.heatmap_normalization = normalization
-        self.update_view()
+        self._update_panel_views()
 
     def _on_fast_build_changed(self, enabled: bool) -> None:
         self.app_state.config.background.fast_build = enabled
         self._status_fast_build.setChecked(enabled)
         self._autosave_session()
-        self.update_view()
+        self._update_status_view()
 
     def _on_compute_lyapunov(self) -> None:
         if self._selected_trajectory is None:
