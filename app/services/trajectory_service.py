@@ -8,12 +8,16 @@ from app.core.trajectory_engine import (
     build_orbit,
     build_wedge_geometry,
 )
-from app.models.config import Config
+from app.models.config import Config, SimulationConfig
 from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
 from app.models.trajectory_metadata import TrajectoryBuildMetadata
 from app.models.trajectory import TrajectorySeed
 from app.services.trajectory_metadata_builder import build_metadata_from_config
+from app.services.trajectory_update_planner import (
+    TrajectoryUpdatePlan,
+    TrajectoryUpdatePlanner,
+)
 
 
 class TrajectoryService:
@@ -112,6 +116,18 @@ class TrajectoryService:
     def reset_pending_result(self, trajectory_id: int) -> None:
         self.orbits[trajectory_id] = Orbit(trajectory_id=trajectory_id)
         self.geometries[trajectory_id] = WedgeGeometry()
+
+    def plan_updates(
+        self,
+        new_config: SimulationConfig | None = None,
+    ) -> dict[int, TrajectoryUpdatePlan]:
+        """Return read-only update plans for all currently stored orbits."""
+        simulation_config = new_config or self._config_provider().simulation
+        desired_metadata = build_metadata_from_config(simulation_config)
+        return {
+            trajectory_id: TrajectoryUpdatePlanner.plan_metadata(orbit.metadata, desired_metadata)
+            for trajectory_id, orbit in self.orbits.items()
+        }
 
     def remove_trajectory(self, trajectory_id: int) -> None:
         self.seeds.pop(trajectory_id, None)
