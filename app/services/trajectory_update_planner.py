@@ -4,12 +4,12 @@ from dataclasses import dataclass
 from enum import Enum
 
 from app.models.config import SimulationConfig
-from app.models.simulation_fingerprint import SimulationFingerprint
 from app.models.trajectory_metadata import TrajectoryBuildMetadata
+from app.services.trajectory_metadata_builder import build_metadata_from_config
 
 
 class TrajectoryUpdateDecision(str, Enum):
-    """Actions required to make an existing trajectory match a new simulation config."""
+    """Actions required to make an existing trajectory match desired metadata."""
 
     UNCHANGED = "unchanged"
     REDRAW = "redraw"
@@ -27,39 +27,39 @@ class TrajectoryUpdatePlan:
 
 
 class TrajectoryUpdatePlanner:
-    """Pure planner for deciding how a trajectory should react to config changes."""
+    """Pure planner for deciding how a trajectory should react to metadata changes."""
 
     @staticmethod
-    def plan(
+    def plan_metadata(
         metadata: TrajectoryBuildMetadata | None,
-        new_config: SimulationConfig,
+        desired_metadata: TrajectoryBuildMetadata,
     ) -> TrajectoryUpdatePlan:
+        """Plan an update from existing build metadata to desired build metadata."""
         if metadata is None:
             return TrajectoryUpdatePlan(
                 decision=TrajectoryUpdateDecision.REBUILD,
                 reason="trajectory metadata is missing",
             )
 
-        new_fingerprint = SimulationFingerprint.from_config(new_config)
-        if metadata.fingerprint != new_fingerprint:
+        if metadata.fingerprint != desired_metadata.fingerprint:
             return TrajectoryUpdatePlan(
                 decision=TrajectoryUpdateDecision.REBUILD,
                 reason="simulation fingerprint changed",
             )
 
-        if metadata.phase_steps < new_config.n_phase_default:
+        if metadata.phase_steps < desired_metadata.phase_steps:
             return TrajectoryUpdatePlan(
                 decision=TrajectoryUpdateDecision.EXTEND,
                 reason="phase length increased",
             )
 
-        if metadata.phase_steps > new_config.n_phase_default:
+        if metadata.phase_steps > desired_metadata.phase_steps:
             return TrajectoryUpdatePlan(
                 decision=TrajectoryUpdateDecision.TRUNCATE,
                 reason="phase length decreased",
             )
 
-        if metadata.geom_steps != new_config.n_geom_default:
+        if metadata.geom_steps != desired_metadata.geom_steps:
             return TrajectoryUpdatePlan(
                 decision=TrajectoryUpdateDecision.REDRAW,
                 reason="geometry length changed",
@@ -69,3 +69,12 @@ class TrajectoryUpdatePlanner:
             decision=TrajectoryUpdateDecision.UNCHANGED,
             reason="trajectory is up to date",
         )
+
+    @staticmethod
+    def plan(
+        metadata: TrajectoryBuildMetadata | None,
+        new_config: SimulationConfig,
+    ) -> TrajectoryUpdatePlan:
+        """Compatibility wrapper for planning against a simulation config."""
+        desired_metadata = build_metadata_from_config(new_config)
+        return TrajectoryUpdatePlanner.plan_metadata(metadata, desired_metadata)

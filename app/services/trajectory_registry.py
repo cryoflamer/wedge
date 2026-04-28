@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from app.models.config import SimulationConfig
 from app.models.orbit import Orbit
 from app.models.trajectory_metadata import TrajectoryBuildMetadata
+from app.services.trajectory_metadata_builder import build_metadata_from_config
 from app.services.trajectory_update_planner import (
     TrajectoryUpdatePlan,
     TrajectoryUpdatePlanner,
@@ -50,7 +51,8 @@ class TrajectoryRegistry:
         return True
 
     def plan_updates(self, new_config: SimulationConfig) -> dict[int, TrajectoryUpdatePlan]:
+        desired_metadata = build_metadata_from_config(new_config)
         return {
-            trajectory_id: TrajectoryUpdatePlanner.plan(trajectory.metadata, new_config)
+            trajectory_id: TrajectoryUpdatePlanner.plan_metadata(trajectory.metadata, desired_metadata)
             for trajectory_id, trajectory in self._trajectories.items()
         }

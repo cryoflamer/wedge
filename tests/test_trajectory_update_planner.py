@@ -5,6 +5,7 @@ import unittest
 from app.models.config import SimulationConfig
 from app.models.simulation_fingerprint import SimulationFingerprint
 from app.models.trajectory_metadata import TrajectoryBuildMetadata
+from app.services.trajectory_metadata_builder import build_metadata_from_config
 from app.services.trajectory_update_planner import (
     TrajectoryUpdateDecision,
     TrajectoryUpdatePlanner,
@@ -42,6 +43,30 @@ class TrajectoryUpdatePlannerTests(unittest.TestCase):
         config: SimulationConfig,
     ) -> TrajectoryUpdateDecision:
         return TrajectoryUpdatePlanner.plan(metadata, config).decision
+
+    def _metadata_decision(
+        self,
+        metadata: TrajectoryBuildMetadata | None,
+        desired_metadata: TrajectoryBuildMetadata,
+    ) -> TrajectoryUpdateDecision:
+        return TrajectoryUpdatePlanner.plan_metadata(metadata, desired_metadata).decision
+
+    def test_plan_metadata_accepts_desired_metadata_directly(self) -> None:
+        config = self._make_config()
+        desired_metadata = build_metadata_from_config(config)
+
+        self.assertEqual(
+            self._metadata_decision(self._make_metadata(config), desired_metadata),
+            TrajectoryUpdateDecision.UNCHANGED,
+        )
+
+    def test_plan_metadata_phase_length_increase_extends(self) -> None:
+        desired_metadata = build_metadata_from_config(self._make_config(n_phase_default=128))
+
+        self.assertEqual(
+            self._metadata_decision(self._make_metadata(), desired_metadata),
+            TrajectoryUpdateDecision.EXTEND,
+        )
 
     def test_no_metadata_requires_rebuild(self) -> None:
         self.assertEqual(
