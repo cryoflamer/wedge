@@ -16,6 +16,7 @@ from app.models.scene_item import (
 )
 from app.models.session import Session
 from app.models.trajectory import TrajectorySeed
+from app.models.simulation_fingerprint import SimulationFingerprint
 
 __all__ = [
     "AppConfig",
@@ -34,6 +35,7 @@ __all__ = [
     "ReplayConfig",
     "Session",
     "SimulationConfig",
+    "SimulationFingerprint",
     "TrajectorySeed",
     "ViewConfig",
     "WedgeGeometry",
