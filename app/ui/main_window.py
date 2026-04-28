@@ -467,7 +467,7 @@ class MainWindow(QMainWindow):
         self._job_controller.partial_result.connect(self._on_job_partial_result)
         self._job_controller.lyapunov_result.connect(self._on_lyapunov_result)
         self._job_controller.finished.connect(self._on_job_finished)
-        self._job_controller.state_updated.connect(self._update_status_view)
+        self._job_controller.state_updated.connect(self._on_job_state_updated)
 
     def update_view(self) -> None:
         # Heavy full refresh: reloads config-backed controls, trajectory lists,
@@ -670,6 +670,7 @@ class MainWindow(QMainWindow):
         blocker = QSignalBlocker(self._status_fast_build)
         self._status_fast_build.setChecked(self.app_state.config.background.fast_build)
         del blocker
+        self._update_status_job_controls()
         self._sync_status_job_button_tooltip()
         self.controls_panel.set_job_status(
             status=self._job_status_state,
@@ -677,6 +678,18 @@ class MainWindow(QMainWindow):
             cancellable=self._job_controller.is_running(),
             resumable=bool(self._job_controller.paused_payloads()) and not self._job_controller.is_running(),
         )
+
+    def _on_job_state_updated(self) -> None:
+        self._update_status_view()
+        if self._job_controller.is_running():
+            self._repaint_status_job_controls()
+
+    def _repaint_status_job_controls(self) -> None:
+        self._status_job_button.updateGeometry()
+        self._status_job_button.update()
+        self._status_job_button.repaint()
+        self.statusBar().update()
+        self.statusBar().repaint()
 
     def _sync_status_job_button_tooltip(self) -> None:
         if self._status_job_button.text().strip().lower() == "resume":
@@ -2007,6 +2020,7 @@ class MainWindow(QMainWindow):
             },
             start_message=start_message,
         )
+        self._repaint_status_job_controls()
 
     def _start_rebuild_job(self, job_message: str = "Starting rebuild...") -> None:
         self._trajectory_service.clear_results()
@@ -2024,6 +2038,7 @@ class MainWindow(QMainWindow):
             chunk_size=self.app_state.config.background.build_chunk_size,
             start_message=job_message,
         )
+        self._repaint_status_job_controls()
 
     def _start_scan_job(
         self,
