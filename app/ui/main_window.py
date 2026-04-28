@@ -1016,6 +1016,25 @@ class MainWindow(QMainWindow):
         self._sync_native_backend_settings_from_controls()
 
         plans = self._trajectory_service.plan_updates(self.app_state.config.simulation)
+        plan_summary = self._format_update_plan_summary(plans)
+        if self._plans_are_unchanged(plans):
+            self.controls_panel.mark_parameters_applied()
+            self._job_status_state = "idle"
+            self._job_status_message = "No parameter changes to apply"
+            self._status_label.setText(self._job_status_message)
+            self._clear_status_progress_text()
+            self._update_status_view()
+            logger.info(
+                "Parameters smart-applied without changes: alpha=%.6f beta=%.6f "
+                "n_phase=%s n_geom=%s plans=%s",
+                alpha,
+                beta,
+                normalized_n_phase,
+                n_geom,
+                plan_summary,
+            )
+            return
+
         if self._plans_require_legacy_rebuild(plans):
             self._start_rebuild_job()
         else:
@@ -1030,7 +1049,16 @@ class MainWindow(QMainWindow):
             beta,
             normalized_n_phase,
             n_geom,
-            self._format_update_plan_summary(plans),
+            plan_summary,
+        )
+
+    @staticmethod
+    def _plans_are_unchanged(
+        plans: dict[int, TrajectoryUpdatePlan],
+    ) -> bool:
+        return bool(plans) and all(
+            plan.decision == TrajectoryUpdateDecision.UNCHANGED
+            for plan in plans.values()
         )
 
     @staticmethod

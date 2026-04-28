@@ -148,6 +148,7 @@ class ControlsPanel(QWidget):
         self._native_sample_step_spin = QSpinBox()
         self._native_status_label = QLabel("Native unavailable, using Python fallback")
         self._parameter_pending_label = QLabel("")
+        self._apply_parameters_button = QPushButton("Apply")
         self._show_branch_markers_checkbox = QCheckBox("Show branch markers")
         self._show_heatmap_checkbox = QCheckBox("Show heatmap")
         self._heatmap_mode_combo = QComboBox()
@@ -371,6 +372,8 @@ class ControlsPanel(QWidget):
         )
         self._trajectory_selector.setMinimumContentsLength(12)
         self._trajectory_selector.setIconSize(QSize(12, 12))
+        self._alpha_edit.textChanged.connect(self._update_parameter_pending_state)
+        self._beta_edit.textChanged.connect(self._update_parameter_pending_state)
         self._n_phase_edit.textChanged.connect(self._update_parameter_pending_state)
         self._n_geom_edit.textChanged.connect(self._update_parameter_pending_state)
         self._apply_tooltips()
@@ -483,15 +486,14 @@ class ControlsPanel(QWidget):
         outer_layout.addWidget(self._parameter_status)
         outer_layout.addWidget(self._parameter_pending_label)
 
-        apply_button = QPushButton("Apply")
-        apply_button.clicked.connect(self._emit_parameters)
-        apply_tooltip(apply_button, "apply")
-        self._set_compact_button_policy(apply_button)
+        self._apply_parameters_button.clicked.connect(self._emit_parameters)
+        apply_tooltip(self._apply_parameters_button, "apply")
+        self._set_compact_button_policy(self._apply_parameters_button)
 
         button_row = QVBoxLayout()
         button_row.setContentsMargins(0, 0, 0, 0)
         button_row.setSpacing(4)
-        button_row.addWidget(apply_button)
+        button_row.addWidget(self._apply_parameters_button)
         outer_layout.addLayout(button_row)
         return section
 
@@ -1513,14 +1515,16 @@ class ControlsPanel(QWidget):
         self._alpha_edit.setStyleSheet("")
         self._beta_edit.setStyleSheet("")
 
-    def _parameter_state_snapshot(self) -> tuple[int, int, bool, str, int] | None:
+    def _parameter_state_snapshot(self) -> tuple[float, float, int, int, bool, str, int] | None:
         try:
+            alpha = self._parse_angle(self._alpha_edit.text())
+            beta = self._parse_angle(self._beta_edit.text())
             n_phase = int(self._n_phase_edit.text())
             n_geom = int(self._n_geom_edit.text())
         except ValueError:
             return None
         enabled, sample_mode, sample_step = self.native_backend_settings()
-        return (n_phase, n_geom, enabled, sample_mode, sample_step)
+        return (alpha, beta, n_phase, n_geom, enabled, sample_mode, sample_step)
 
     def _mark_parameters_applied(self) -> None:
         self._applied_parameter_state = self._parameter_state_snapshot()
@@ -1537,6 +1541,7 @@ class ControlsPanel(QWidget):
             "Parameters changed — press Apply" if is_pending else ""
         )
         self._parameter_pending_label.setVisible(is_pending)
+        self._apply_parameters_button.setEnabled(is_pending)
 
     def _sync_native_sample_step_enabled(self) -> None:
         sample_mode = self._native_sample_mode_combo.currentText().strip().lower()
