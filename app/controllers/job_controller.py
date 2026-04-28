@@ -4,7 +4,7 @@ from dataclasses import replace
 from copy import deepcopy
 import logging
 import time
-from PySide6.QtCore import QObject, QThread, Signal
+from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from app.models.config import LyapunovConfig, SimulationConfig
 from app.models.orbit import Orbit
@@ -19,6 +19,7 @@ from app.services.background_jobs import (
 
 logger = logging.getLogger(__name__)
 _TIMING_SEPARATOR = " || "
+_DEFERRED_WORKER_START_MS = 10
 
 
 class JobController(QObject):
@@ -338,15 +339,36 @@ class JobController(QObject):
         self.progress.emit(
             self.enrich_progress(
                 JobProgress(
-                generation_id=generation_id,
-                job_kind=job_kind,
-                status="running",
-                current=0,
-                total=0,
-                message=start_message,
-            )
+                    generation_id=generation_id,
+                    job_kind=job_kind,
+                    status="running",
+                    current=0,
+                    total=0,
+                    message=start_message,
+                )
             )
         )
+        QTimer.singleShot(
+            _DEFERRED_WORKER_START_MS,
+            lambda: self._start_thread_if_current(thread, worker, generation_id, job_kind),
+        )
+
+    def _start_thread_if_current(
+        self,
+        thread: QThread,
+        worker: OrbitBuildWorker,
+        generation_id: int,
+        job_kind: str,
+    ) -> None:
+        if self._current_job_thread is not thread or self._current_job_worker is not worker:
+            logger.debug(
+                "Skipping deferred job start generation=%s kind=%s: job is no longer current",
+                generation_id,
+                job_kind,
+            )
+            return
+        if thread.isRunning():
+            return
         thread.start()
 
     def prune_job_payloads_for_existing_trajectories(self, existing_ids: set[int]) -> None:
