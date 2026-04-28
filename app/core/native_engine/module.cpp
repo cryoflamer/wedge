@@ -348,9 +348,12 @@ py::dict native_build_dense_orbit_impl(
     double beta,
     int steps
 ) {
-    return dense_result_to_python_dict(
-        build_native_orbit_result(d0, tau0, wall0, alpha, beta, steps, 1, "dense")
-    );
+    OrbitBuildResult result_data;
+    {
+        py::gil_scoped_release release;
+        result_data = build_native_orbit_result(d0, tau0, wall0, alpha, beta, steps, 1, "dense");
+    }
+    return dense_result_to_python_dict(result_data);
 }
 
 py::dict native_build_sparse_orbit_impl(
@@ -363,16 +366,20 @@ py::dict native_build_sparse_orbit_impl(
     int sample_step,
     const std::string& sample_mode
 ) {
-    const auto result_data = build_native_orbit_result(
-        d0,
-        tau0,
-        wall0,
-        alpha,
-        beta,
-        steps,
-        sample_step,
-        sample_mode
-    );
+    OrbitBuildResult result_data;
+    {
+        py::gil_scoped_release release;
+        result_data = build_native_orbit_result(
+            d0,
+            tau0,
+            wall0,
+            alpha,
+            beta,
+            steps,
+            sample_step,
+            sample_mode
+        );
+    }
 
     const auto size = static_cast<py::ssize_t>(result_data.step_indices.size());
     py::array_t<int> step_array(size);
@@ -416,19 +423,38 @@ py::list native_build_sparse_orbits_batch_impl(
         throw std::runtime_error("batch input arrays must have matching lengths");
     }
 
-    py::list batch_results;
-    for (py::ssize_t seed_index = 0; seed_index < d0_view.shape(0); ++seed_index) {
-        const auto orbit_result = build_native_orbit_result(
-            d0_view(seed_index),
-            tau0_view(seed_index),
-            wall0_view(seed_index),
-            alpha,
-            beta,
-            steps,
-            sample_step,
-            sample_mode
-        );
+    struct BatchSeed {
+        double d0;
+        double tau0;
+        int wall0;
+    };
 
+    std::vector<BatchSeed> seeds;
+    seeds.reserve(static_cast<size_t>(d0_view.shape(0)));
+    for (py::ssize_t seed_index = 0; seed_index < d0_view.shape(0); ++seed_index) {
+        seeds.push_back({d0_view(seed_index), tau0_view(seed_index), wall0_view(seed_index)});
+    }
+
+    std::vector<OrbitBuildResult> orbit_results;
+    orbit_results.reserve(seeds.size());
+    {
+        py::gil_scoped_release release;
+        for (const auto& seed : seeds) {
+            orbit_results.push_back(build_native_orbit_result(
+                seed.d0,
+                seed.tau0,
+                seed.wall0,
+                alpha,
+                beta,
+                steps,
+                sample_step,
+                sample_mode
+            ));
+        }
+    }
+
+    py::list batch_results;
+    for (const auto& orbit_result : orbit_results) {
         const auto size = static_cast<py::ssize_t>(orbit_result.step_indices.size());
         py::array_t<int> step_array(size);
         py::array_t<double> d_array(size);
