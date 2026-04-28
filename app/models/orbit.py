@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from app.models.trajectory_metadata import TrajectoryBuildMetadata
+
 
 @dataclass
 class OrbitPoint:
@@ -28,6 +30,7 @@ class Orbit:
     valid: bool = True
     invalid_reason: str | None = None
     completed_steps: int = 0
+    metadata: TrajectoryBuildMetadata | None = None
     lyapunov_estimate: float | None = None
     lyapunov_running: list[float] = field(default_factory=list)
     lyapunov_valid: bool = False

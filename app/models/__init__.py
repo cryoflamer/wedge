@@ -16,6 +16,7 @@ from app.models.scene_item import (
 )
 from app.models.session import Session
 from app.models.trajectory import TrajectorySeed
+from app.models.trajectory_metadata import TrajectoryBuildMetadata
 from app.models.simulation_fingerprint import SimulationFingerprint
 
 __all__ = [
@@ -36,6 +37,7 @@ __all__ = [
     "Session",
     "SimulationConfig",
     "SimulationFingerprint",
+    "TrajectoryBuildMetadata",
     "TrajectorySeed",
     "ViewConfig",
     "WedgeGeometry",
