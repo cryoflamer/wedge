@@ -1000,6 +1000,7 @@ class MainWindow(QMainWindow):
         n_phase: int,
         n_geom: int,
     ) -> None:
+        parameters_are_pending = self.controls_panel.has_pending_parameter_changes()
         normalized_n_phase = self._normalized_phase_steps(n_phase, n_geom)
         alpha = self._preserve_current_angle_if_control_rounded(
             alpha,
@@ -1014,6 +1015,20 @@ class MainWindow(QMainWindow):
         self.app_state.config.simulation.n_phase_default = normalized_n_phase
         self.app_state.config.simulation.n_geom_default = n_geom
         self._sync_native_backend_settings_from_controls()
+
+        if not parameters_are_pending:
+            self._start_rebuild_job()
+            self._reset_replay_views()
+            self._autosave_session()
+            self.update_view()
+            logger.info(
+                "Parameters force-rebuilt: alpha=%.6f beta=%.6f n_phase=%s n_geom=%s",
+                alpha,
+                beta,
+                normalized_n_phase,
+                n_geom,
+            )
+            return
 
         plans = self._trajectory_service.plan_updates(self.app_state.config.simulation)
         plan_summary = self._format_update_plan_summary(plans)

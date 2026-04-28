@@ -971,6 +971,9 @@ class ControlsPanel(QWidget):
     def mark_parameters_applied(self) -> None:
         self._mark_parameters_applied()
 
+    def has_pending_parameter_changes(self) -> bool:
+        return self._parameters_are_pending()
+
     def set_phase_grid_options(
         self,
         show_grid: bool,
@@ -1530,18 +1533,24 @@ class ControlsPanel(QWidget):
         self._applied_parameter_state = self._parameter_state_snapshot()
         self._update_parameter_pending_state()
 
-    def _update_parameter_pending_state(self, *_args: object) -> None:
+    def _parameters_are_pending(self) -> bool:
         current_state = self._parameter_state_snapshot()
-        is_pending = (
+        return (
             current_state is not None
             and self._applied_parameter_state is not None
             and current_state != self._applied_parameter_state
         )
+
+    def _update_parameter_pending_state(self, *_args: object) -> None:
+        current_state = self._parameter_state_snapshot()
+        is_valid = current_state is not None
+        is_pending = self._parameters_are_pending()
         self._parameter_pending_label.setText(
             "Parameters changed — press Apply" if is_pending else ""
         )
         self._parameter_pending_label.setVisible(is_pending)
-        self._apply_parameters_button.setEnabled(is_pending)
+        self._apply_parameters_button.setText("Apply" if is_pending else "Rebuild")
+        self._apply_parameters_button.setEnabled(is_valid)
 
     def _sync_native_sample_step_enabled(self) -> None:
         sample_mode = self._native_sample_mode_combo.currentText().strip().lower()
