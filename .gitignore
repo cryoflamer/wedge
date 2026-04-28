@@ -8,3 +8,8 @@ autosave/
 
 wedge_session*.yaml
 wedge_export_*.png
+
+sessions/
+chatgpt-packs/
+
+*.csv
