@@ -91,6 +91,25 @@ class TrajectoryServiceMetadataTests(unittest.TestCase):
 
         self.assertIsNone(service.orbits[trajectory_id].metadata)
 
+    def test_build_geometry_orbit_uses_geometry_steps_only(self) -> None:
+        simulation_config = self._make_simulation_config(n_phase_default=10_000, n_geom_default=24)
+        service = self._make_service(simulation_config)
+        seed = TrajectorySeed(id=13, wall_start=1, d0=0.3, tau0=0.4)
+        dense_orbit = Orbit(trajectory_id=seed.id, completed_steps=25)
+
+        with patch(
+            "app.services.trajectory_service.build_dense_orbit_for_geometry",
+            return_value=dense_orbit,
+        ) as build_mock:
+            orbit = service.build_geometry_orbit(seed)
+
+        self.assertIs(orbit, dense_orbit)
+        build_mock.assert_called_once_with(
+            seed=seed,
+            config=simulation_config,
+            steps=25,
+        )
+
     def test_apply_partial_result_attaches_metadata_when_missing(self) -> None:
         simulation_config = self._make_simulation_config()
         service = self._make_service(simulation_config)

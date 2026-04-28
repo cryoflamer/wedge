@@ -65,10 +65,7 @@ class TrajectoryService:
         return build_dense_orbit_for_geometry(
             seed=seed,
             config=config.simulation,
-            steps=max(
-                config.simulation.n_phase_default,
-                config.simulation.n_geom_default + 1,
-            ),
+            steps=max(1, config.simulation.n_geom_default + 1),
         )
 
     def rebuild_orbits(self) -> None:
@@ -136,23 +133,37 @@ class TrajectoryService:
     ) -> dict[int, TrajectoryUpdatePlan]:
         """Apply the minimal supported update decisions and return all plans.
 
-        This first execution layer intentionally supports only REBUILD and
-        UNCHANGED. Extend, truncate, and redraw decisions are planned but left
-        untouched for later focused patches.
+        This execution layer supports REBUILD, REDRAW, and UNCHANGED. Extend
+        and truncate decisions are still planned but left untouched for later
+        focused patches.
         """
-        plans = self.plan_updates(new_config)
+        simulation_config = new_config or self._config_provider().simulation
+        desired_metadata = build_metadata_from_config(simulation_config)
+        plans = self.plan_updates(simulation_config)
         for trajectory_id, plan in plans.items():
             if plan.decision == TrajectoryUpdateDecision.UNCHANGED:
-                continue
-            if plan.decision != TrajectoryUpdateDecision.REBUILD:
                 continue
 
             seed = self.seeds.get(trajectory_id)
             if seed is None:
                 continue
 
-            self.orbits[trajectory_id] = self.build_orbit(seed)
-            self.geometries[trajectory_id] = self.build_geometry(self.build_geometry_orbit(seed))
+            if plan.decision == TrajectoryUpdateDecision.REBUILD:
+                self.orbits[trajectory_id] = self.build_orbit(seed)
+                self.geometries[trajectory_id] = self.build_geometry(self.build_geometry_orbit(seed))
+                continue
+
+            if plan.decision == TrajectoryUpdateDecision.REDRAW:
+                orbit = self.orbits.get(trajectory_id)
+                if orbit is None or orbit.metadata is None:
+                    continue
+
+                self.geometries[trajectory_id] = self.build_geometry(self.build_geometry_orbit(seed))
+                orbit.metadata = replace(
+                    desired_metadata,
+                    completed_steps=orbit.metadata.completed_steps,
+                )
+
         return plans
 
     def remove_trajectory(self, trajectory_id: int) -> None:

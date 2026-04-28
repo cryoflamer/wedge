@@ -98,26 +98,22 @@ class TrajectoryServiceApplyUpdatesTests(unittest.TestCase):
         geometry_orbit_mock.assert_not_called()
         geometry_mock.assert_not_called()
 
-    def test_apply_updates_does_not_execute_extend_truncate_or_redraw_yet(self) -> None:
+    def test_apply_updates_does_not_execute_extend_or_truncate_yet(self) -> None:
         config = self._make_config()
         service = self._make_service(config)
         service.seeds = {
             3: TrajectorySeed(id=3, wall_start=0, d0=0.1, tau0=0.2),
             4: TrajectorySeed(id=4, wall_start=0, d0=0.2, tau0=0.3),
-            5: TrajectorySeed(id=5, wall_start=1, d0=0.3, tau0=0.4),
         }
         extend_orbit = Orbit(trajectory_id=3, metadata=self._make_metadata(config, phase_steps=32))
         truncate_orbit = Orbit(trajectory_id=4, metadata=self._make_metadata(config, phase_steps=96))
-        redraw_orbit = Orbit(trajectory_id=5, metadata=self._make_metadata(config, geom_steps=12))
         service.orbits = {
             3: extend_orbit,
             4: truncate_orbit,
-            5: redraw_orbit,
         }
         service.geometries = {
             3: WedgeGeometry(),
             4: WedgeGeometry(),
-            5: WedgeGeometry(),
         }
 
         with (
@@ -129,13 +125,45 @@ class TrajectoryServiceApplyUpdatesTests(unittest.TestCase):
 
         self.assertEqual(plans[3].decision, TrajectoryUpdateDecision.EXTEND)
         self.assertEqual(plans[4].decision, TrajectoryUpdateDecision.TRUNCATE)
-        self.assertEqual(plans[5].decision, TrajectoryUpdateDecision.REDRAW)
         self.assertIs(service.orbits[3], extend_orbit)
         self.assertIs(service.orbits[4], truncate_orbit)
-        self.assertIs(service.orbits[5], redraw_orbit)
         build_orbit_mock.assert_not_called()
         geometry_orbit_mock.assert_not_called()
         geometry_mock.assert_not_called()
+
+    def test_apply_updates_redraws_geometry_without_rebuilding_phase_orbit(self) -> None:
+        config = self._make_config()
+        service = self._make_service(config)
+        seed = TrajectorySeed(id=5, wall_start=1, d0=0.3, tau0=0.4)
+        orbit = Orbit(
+            trajectory_id=5,
+            completed_steps=64,
+            metadata=self._make_metadata(config, geom_steps=12, completed_steps=64),
+        )
+        old_geometry = WedgeGeometry()
+        dense_orbit = Orbit(trajectory_id=5, completed_steps=25)
+        redrawn_geometry = WedgeGeometry()
+        service.seeds = {5: seed}
+        service.orbits = {5: orbit}
+        service.geometries = {5: old_geometry}
+
+        with (
+            patch.object(service, "build_orbit") as build_orbit_mock,
+            patch.object(service, "build_geometry_orbit", return_value=dense_orbit) as geometry_orbit_mock,
+            patch.object(service, "build_geometry", return_value=redrawn_geometry) as geometry_mock,
+        ):
+            plans = service.apply_updates()
+
+        self.assertEqual(plans[5].decision, TrajectoryUpdateDecision.REDRAW)
+        self.assertIs(service.orbits[5], orbit)
+        self.assertIs(service.geometries[5], redrawn_geometry)
+        self.assertIsNotNone(orbit.metadata)
+        self.assertEqual(orbit.metadata.geom_steps, config.n_geom_default)
+        self.assertEqual(orbit.metadata.phase_steps, config.n_phase_default)
+        self.assertEqual(orbit.metadata.completed_steps, 64)
+        build_orbit_mock.assert_not_called()
+        geometry_orbit_mock.assert_called_once_with(seed)
+        geometry_mock.assert_called_once_with(dense_orbit)
 
 
 if __name__ == "__main__":
