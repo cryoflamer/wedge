@@ -580,6 +580,13 @@ class MainWindow(QMainWindow):
             self.app_state.config.simulation.beta,
         )
 
+    def _update_parameter_controls_view(self) -> None:
+        self.controls_panel.set_simulation_parameter_values(self.app_state.config)
+        self.angle_panel.set_angles(
+            self.app_state.config.simulation.alpha,
+            self.app_state.config.simulation.beta,
+        )
+
     def _update_trajectory_views(self) -> None:
         trajectory_items = [
             (
@@ -741,7 +748,6 @@ class MainWindow(QMainWindow):
             trajectory_id,
         )
         self._autosave_session()
-        self.update_view()
 
     def _on_manual_seed_requested(
         self,
@@ -762,7 +768,6 @@ class MainWindow(QMainWindow):
             trajectory_id,
         )
         self._autosave_session()
-        self.update_view()
 
     def _on_seed_drag_started(self, trajectory_id: int) -> None:
         # Drag-start selection uses the same lightweight path as dropdown/seed
@@ -793,7 +798,7 @@ class MainWindow(QMainWindow):
         self._selected_trajectory = trajectory_id
         self._reset_replay_views()
         self._trajectory_service.reset_pending_result(trajectory_id)
-        self.update_view()
+        self._refresh_trajectory_hot_path("seed_drag_finished")
         self._start_single_seed_rebuild(
             seed,
             start_message=f"Rebuilding trajectory #{trajectory_id}...",
@@ -821,7 +826,7 @@ class MainWindow(QMainWindow):
             return
         self._reset_replay_views()
         self._trajectory_service.reset_pending_result(seed.id)
-        self.update_view()
+        self._refresh_trajectory_hot_path("selected_seed_apply")
         self._start_single_seed_rebuild(
             seed,
             start_message=f"Rebuilding trajectory #{seed.id}...",
@@ -1239,12 +1244,11 @@ class MainWindow(QMainWindow):
         # background rebuild starts. Keep this deliberately narrow: updating the
         # angle marker and controls is cheap, while update_view() also redraws
         # all trajectory panels and can visibly block the UI.
-        self.angle_panel.set_angles(
-            self.app_state.config.simulation.alpha,
-            self.app_state.config.simulation.beta,
+        self._time_refresh(
+            "parameter_change_preview.parameter_controls",
+            self._update_parameter_controls_view,
         )
-        self._update_controls_config_view()
-        self._update_status_view()
+        self._time_refresh("parameter_change_preview.status", self._update_status_view)
 
     def _sync_native_backend_settings_from_controls(self) -> None:
         enabled, sample_mode, sample_step = self.controls_panel.native_backend_settings()
@@ -1312,13 +1316,13 @@ class MainWindow(QMainWindow):
         self.phase_panel_wall_1.set_fixed_domain_mode(fixed_domain)
         self.phase_panel_wall_2.set_fixed_domain_mode(fixed_domain)
         self._autosave_session()
-        self.update_view()
+        self._refresh_panels_and_status("phase_view_mode")
 
     def _on_reset_phase_view(self) -> None:
         self.phase_panel_wall_1.reset_view()
         self.phase_panel_wall_2.reset_view()
         self._autosave_session()
-        self.update_view()
+        self._refresh_panels_and_status("reset_phase_view")
 
     def _on_phase_viewport_changed(self) -> None:
         self._schedule_autosave()
@@ -1364,7 +1368,7 @@ class MainWindow(QMainWindow):
             return
         seed.visible = not seed.visible
         self._autosave_session()
-        self.update_view()
+        self._refresh_trajectory_hot_path("trajectory_visibility")
         logger.info(
             "Trajectory visibility toggled: id=%s visible=%s",
             trajectory_id,
@@ -1379,7 +1383,7 @@ class MainWindow(QMainWindow):
             return
         seed.color = color
         self._autosave_session()
-        self.update_view()
+        self._refresh_trajectory_hot_path("trajectory_color")
         logger.info(
             "Trajectory color changed: id=%s color=%s",
             self._selected_trajectory,
@@ -1611,7 +1615,7 @@ class MainWindow(QMainWindow):
         elif action_name == "reset_replay":
             self.replay_controller.reset()
             self._reset_replay_views()
-            self.update_view()
+            self._refresh_panels_and_status("reset_replay")
         elif action_name == "export_png":
             self._export_png()
         elif action_name == "save_session":
@@ -1630,7 +1634,7 @@ class MainWindow(QMainWindow):
         del running
         if not mode:
             self._reset_replay_views()
-            self.update_view()
+            self._refresh_panels_and_status("replay_state.reset")
             return
 
         if mode == "selected" and self._selected_trajectory is not None:
@@ -1647,7 +1651,7 @@ class MainWindow(QMainWindow):
                 trajectory_id: active_frame - 1
                 for trajectory_id in self._trajectory_geometries.keys()
             }
-        self.update_view()
+        self._refresh_panels_and_status("replay_state")
 
     def _reset_replay_views(self) -> None:
         self._active_phase_frames = {}
@@ -2062,7 +2066,7 @@ class MainWindow(QMainWindow):
         if self._selected_trajectory is None:
             self._selected_trajectory = trajectory_id
         self._reset_replay_views()
-        self.update_view()
+        self._refresh_trajectory_hot_path("queued_single_seed")
         self._start_single_seed_rebuild(
             seed,
             start_message=f"Building trajectory #{seed.id}",
@@ -2278,7 +2282,7 @@ class MainWindow(QMainWindow):
         orbit.lyapunov_status = payload.status
         orbit.lyapunov_steps_used = payload.steps_used
         orbit.lyapunov_wall_divergence_count = payload.wall_divergence_count
-        self.update_view()
+        self._refresh_trajectory_hot_path("lyapunov_result")
 
     def _on_job_finished(self, payload: object) -> None:
         if not isinstance(payload, JobFinished):

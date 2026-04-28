@@ -806,6 +806,24 @@ class ControlsPanel(QWidget):
         )
         self._mark_parameters_applied()
 
+    def set_simulation_parameter_values(self, config: Config) -> None:
+        alpha_value, beta_value = self._display_angles(
+            config.simulation.alpha,
+            config.simulation.beta,
+        )
+        blockers = [
+            QSignalBlocker(self._alpha_edit),
+            QSignalBlocker(self._beta_edit),
+            QSignalBlocker(self._n_phase_edit),
+            QSignalBlocker(self._n_geom_edit),
+        ]
+        self._alpha_edit.setText(f"{alpha_value:.6f}")
+        self._beta_edit.setText(f"{beta_value:.6f}")
+        self._n_phase_edit.setText(str(config.simulation.n_phase_default))
+        self._n_geom_edit.setText(str(config.simulation.n_geom_default))
+        del blockers
+        self._mark_parameters_applied()
+
     def set_angle_units(self, units: str) -> None:
         normalized_units = units.strip().lower() if units.strip() else "rad"
         blocker = QSignalBlocker(self._angle_units_combo)
