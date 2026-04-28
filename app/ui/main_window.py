@@ -1095,6 +1095,7 @@ class MainWindow(QMainWindow):
     ) -> bool:
         supported_decisions = {
             TrajectoryUpdateDecision.REBUILD,
+            TrajectoryUpdateDecision.REDRAW,
             TrajectoryUpdateDecision.UNCHANGED,
         }
         return any(plan.decision not in supported_decisions for plan in plans.values())
