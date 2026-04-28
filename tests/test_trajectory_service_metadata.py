@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from app.models.config import SimulationConfig
+from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
 from app.models.simulation_fingerprint import SimulationFingerprint
 from app.models.trajectory import TrajectorySeed
@@ -89,6 +90,39 @@ class TrajectoryServiceMetadataTests(unittest.TestCase):
         service.reset_pending_result(trajectory_id)
 
         self.assertIsNone(service.orbits[trajectory_id].metadata)
+
+    def test_apply_partial_result_attaches_metadata_when_missing(self) -> None:
+        simulation_config = self._make_simulation_config()
+        service = self._make_service(simulation_config)
+        seed = TrajectorySeed(id=11, wall_start=1, d0=0.4, tau0=0.5)
+        orbit = Orbit(trajectory_id=seed.id, completed_steps=31)
+
+        service.apply_partial_result(
+            trajectory_id=seed.id,
+            seed=seed,
+            orbit=orbit,
+            geometry=WedgeGeometry(),
+        )
+
+        self.assertIsNotNone(orbit.metadata)
+        self.assertEqual(orbit.metadata.fingerprint, SimulationFingerprint.from_config(simulation_config))
+        self.assertEqual(orbit.metadata.completed_steps, 31)
+        self.assertIs(service.orbits[seed.id], orbit)
+
+    def test_apply_partial_result_preserves_existing_metadata(self) -> None:
+        service = self._make_service(self._make_simulation_config())
+        seed = TrajectorySeed(id=12, wall_start=0, d0=0.6, tau0=0.7)
+        orbit = Orbit(trajectory_id=seed.id, completed_steps=8)
+        orbit.metadata = object()
+
+        service.apply_partial_result(
+            trajectory_id=seed.id,
+            seed=seed,
+            orbit=orbit,
+            geometry=WedgeGeometry(),
+        )
+
+        self.assertIs(orbit.metadata, service.orbits[seed.id].metadata)
 
 
 if __name__ == "__main__":

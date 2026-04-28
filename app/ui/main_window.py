@@ -48,6 +48,10 @@ from app.services.data_export_service import export_orbit_data
 from app.services.export_service import export_widget_bundle_png
 from app.services.scene_service import SceneService
 from app.services.trajectory_service import TrajectoryService
+from app.services.trajectory_update_planner import (
+    TrajectoryUpdateDecision,
+    TrajectoryUpdatePlan,
+)
 from app.state.app_state import AppState
 from app.ui.angle_panel import AnglePanel
 from app.ui.controls_panel import ControlsPanel
@@ -996,12 +1000,49 @@ class MainWindow(QMainWindow):
         n_phase: int,
         n_geom: int,
     ) -> None:
-        self._apply_parameter_change_with_rebuild(
-            alpha=alpha,
-            beta=beta,
-            n_phase=n_phase,
-            n_geom=n_geom,
-            sync_native_settings=True,
+        normalized_n_phase = self._normalized_phase_steps(n_phase, n_geom)
+        self.app_state.config.simulation.alpha = alpha
+        self.app_state.config.simulation.beta = beta
+        self.app_state.config.simulation.n_phase_default = normalized_n_phase
+        self.app_state.config.simulation.n_geom_default = n_geom
+        self._sync_native_backend_settings_from_controls()
+
+        plans = self._trajectory_service.plan_updates(self.app_state.config.simulation)
+        if self._plans_require_legacy_rebuild(plans):
+            self._start_rebuild_job()
+        else:
+            self._trajectory_service.apply_updates(self.app_state.config.simulation)
+
+        self._reset_replay_views()
+        self._autosave_session()
+        self.update_view()
+        logger.info(
+            "Parameters smart-applied: alpha=%.6f beta=%.6f n_phase=%s n_geom=%s plans=%s",
+            alpha,
+            beta,
+            normalized_n_phase,
+            n_geom,
+            self._format_update_plan_summary(plans),
+        )
+
+    @staticmethod
+    def _plans_require_legacy_rebuild(
+        plans: dict[int, TrajectoryUpdatePlan],
+    ) -> bool:
+        supported_decisions = {
+            TrajectoryUpdateDecision.REBUILD,
+            TrajectoryUpdateDecision.UNCHANGED,
+        }
+        return any(plan.decision not in supported_decisions for plan in plans.values())
+
+    @staticmethod
+    def _format_update_plan_summary(plans: dict[int, TrajectoryUpdatePlan]) -> str:
+        counts: dict[TrajectoryUpdateDecision, int] = {}
+        for plan in plans.values():
+            counts[plan.decision] = counts.get(plan.decision, 0) + 1
+        return ", ".join(
+            f"{decision.value}={count}"
+            for decision, count in sorted(counts.items(), key=lambda item: item[0].value)
         )
 
     def _apply_parameter_change_with_rebuild(

@@ -189,6 +189,8 @@ class TrajectoryService:
         orbit: Orbit,
         geometry: WedgeGeometry,
     ) -> None:
+        if orbit.metadata is None:
+            orbit.metadata = self._build_metadata_for_orbit(orbit)
         self.seeds[trajectory_id] = seed
         self.orbits[trajectory_id] = orbit
         self.geometries[trajectory_id] = geometry
