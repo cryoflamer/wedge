@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import deque
 import math
 import logging
+import os
 import re
 import sys
 import time
@@ -469,15 +470,29 @@ class MainWindow(QMainWindow):
         self._job_controller.finished.connect(self._on_job_finished)
         self._job_controller.state_updated.connect(self._on_job_state_updated)
 
+    @staticmethod
+    def _refresh_timing_enabled() -> bool:
+        value = os.environ.get("WEDGE_UI_REFRESH_TIMING", "")
+        return value.lower() in {"1", "true", "yes", "on"}
+
+    def _time_refresh(self, label: str, func) -> None:
+        if not self._refresh_timing_enabled():
+            func()
+            return
+        started = time.perf_counter()
+        func()
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        logger.info("UI refresh timing: %s %.1f ms", label, elapsed_ms)
+
     def update_view(self) -> None:
         # Heavy full refresh: reloads config-backed controls, trajectory lists,
         # phase/geometric panels, and status widgets. Do not call this from
         # lightweight checkbox/combo handlers. Prefer targeted refresh helpers
         # unless the scene/trajectory/runtime state changed structurally.
-        self._update_controls_config_view()
-        self._update_trajectory_views()
-        self._update_panel_views()
-        self._update_status_view()
+        self._time_refresh("update_view.controls_config", self._update_controls_config_view)
+        self._time_refresh("update_view.trajectory_views", self._update_trajectory_views)
+        self._time_refresh("update_view.panel_views", self._update_panel_views)
+        self._time_refresh("update_view.status_view", self._update_status_view)
 
     def _update_selected_trajectory_view(self) -> None:
         # Selection hot path: keep this lightweight. Do not call update_view()
@@ -493,9 +508,12 @@ class MainWindow(QMainWindow):
             self._selected_trajectory,
             selected_seed.color if selected_seed is not None else None,
         )
-        self._update_selected_trajectory_controls()
-        self._update_panel_views()
-        self._update_status_view()
+        self._time_refresh(
+            "selected_trajectory.controls",
+            self._update_selected_trajectory_controls,
+        )
+        self._time_refresh("selected_trajectory.panels", self._update_panel_views)
+        self._time_refresh("selected_trajectory.status", self._update_status_view)
 
     def _update_controls_config_view(self) -> None:
         self.controls_panel.load_config(self.app_state.config)
@@ -678,6 +696,18 @@ class MainWindow(QMainWindow):
             cancellable=self._job_controller.is_running(),
             resumable=bool(self._job_controller.paused_payloads()) and not self._job_controller.is_running(),
         )
+
+    def _refresh_trajectory_hot_path(self, label: str) -> None:
+        self._time_refresh(f"{label}.trajectory_views", self._update_trajectory_views)
+        self._time_refresh(f"{label}.panel_views", self._update_panel_views)
+        self._time_refresh(f"{label}.status_view", self._update_status_view)
+
+    def _refresh_panels_and_status(self, label: str) -> None:
+        self._time_refresh(f"{label}.panel_views", self._update_panel_views)
+        self._time_refresh(f"{label}.status_view", self._update_status_view)
+
+    def _refresh_status_only(self, label: str) -> None:
+        self._time_refresh(f"{label}.status_view", self._update_status_view)
 
     def _on_job_state_updated(self) -> None:
         self._update_status_view()
@@ -1117,13 +1147,16 @@ class MainWindow(QMainWindow):
         self._clear_status_progress_text()
 
         if decisions <= {TrajectoryUpdateDecision.REDRAW, TrajectoryUpdateDecision.UNCHANGED}:
-            self.wedge_panel.set_geometries(
-                self._trajectory_seeds,
-                self._trajectory_geometries,
-                self._selected_trajectory,
-                self._active_segment_indices,
+            self._time_refresh(
+                "smart_apply.redraw.geometry_panel",
+                lambda: self.wedge_panel.set_geometries(
+                    self._trajectory_seeds,
+                    self._trajectory_geometries,
+                    self._selected_trajectory,
+                    self._active_segment_indices,
+                ),
             )
-            self._update_status_view()
+            self._refresh_status_only("smart_apply.redraw")
             return
 
         if decisions <= {
@@ -1131,12 +1164,10 @@ class MainWindow(QMainWindow):
             TrajectoryUpdateDecision.REDRAW,
             TrajectoryUpdateDecision.UNCHANGED,
         }:
-            self._update_trajectory_views()
-            self._update_panel_views()
-            self._update_status_view()
+            self._refresh_trajectory_hot_path("smart_apply.truncate")
             return
 
-        self.update_view()
+        self._time_refresh("smart_apply.full_update", self.update_view)
 
     def _preserve_current_angle_if_control_rounded(
         self,
