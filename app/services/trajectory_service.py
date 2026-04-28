@@ -127,15 +127,38 @@ class TrajectoryService:
             for trajectory_id, orbit in self.orbits.items()
         }
 
+    def _truncate_orbit(self, orbit: Orbit, phase_steps: int) -> Orbit:
+        target_steps = max(0, phase_steps)
+        kept_points = [point for point in orbit.points if point.step_index < target_steps]
+        old_to_new_index = {id(point): index for index, point in enumerate(kept_points)}
+        kept_frames = [
+            replace(
+                frame,
+                orbit_point_index=old_to_new_index[id(orbit.points[frame.orbit_point_index])],
+            )
+            for frame in orbit.replay_frames
+            if 0 <= frame.orbit_point_index < len(orbit.points)
+            and id(orbit.points[frame.orbit_point_index]) in old_to_new_index
+        ]
+        invalid_point = next((point for point in reversed(kept_points) if not point.valid), None)
+        return replace(
+            orbit,
+            points=kept_points,
+            replay_frames=kept_frames,
+            valid=invalid_point is None,
+            invalid_reason=invalid_point.invalid_reason if invalid_point is not None else None,
+            completed_steps=target_steps,
+        )
+
     def apply_updates(
         self,
         new_config: SimulationConfig | None = None,
     ) -> dict[int, TrajectoryUpdatePlan]:
         """Apply the minimal supported update decisions and return all plans.
 
-        This execution layer supports REBUILD, REDRAW, and UNCHANGED. Extend
-        and truncate decisions are still planned but left untouched for later
-        focused patches.
+        This execution layer supports REBUILD, REDRAW, TRUNCATE, and
+        UNCHANGED. Extend decisions are still planned but left untouched for a
+        later focused patch.
         """
         simulation_config = new_config or self._config_provider().simulation
         desired_metadata = build_metadata_from_config(simulation_config)
@@ -150,7 +173,9 @@ class TrajectoryService:
 
             if plan.decision == TrajectoryUpdateDecision.REBUILD:
                 self.orbits[trajectory_id] = self.build_orbit(seed)
-                self.geometries[trajectory_id] = self.build_geometry(self.build_geometry_orbit(seed))
+                self.geometries[trajectory_id] = self.build_geometry(
+                    self.build_geometry_orbit(seed)
+                )
                 continue
 
             if plan.decision == TrajectoryUpdateDecision.REDRAW:
@@ -158,10 +183,28 @@ class TrajectoryService:
                 if orbit is None or orbit.metadata is None:
                     continue
 
-                self.geometries[trajectory_id] = self.build_geometry(self.build_geometry_orbit(seed))
+                self.geometries[trajectory_id] = self.build_geometry(
+                    self.build_geometry_orbit(seed)
+                )
                 orbit.metadata = replace(
                     desired_metadata,
                     completed_steps=orbit.metadata.completed_steps,
+                )
+                continue
+
+            if plan.decision == TrajectoryUpdateDecision.TRUNCATE:
+                orbit = self.orbits.get(trajectory_id)
+                if orbit is None or orbit.metadata is None:
+                    continue
+
+                truncated_orbit = self._truncate_orbit(orbit, desired_metadata.phase_steps)
+                truncated_orbit.metadata = replace(
+                    desired_metadata,
+                    completed_steps=desired_metadata.phase_steps,
+                )
+                self.orbits[trajectory_id] = truncated_orbit
+                self.geometries[trajectory_id] = self.build_geometry(
+                    self.build_geometry_orbit(seed)
                 )
 
         return plans

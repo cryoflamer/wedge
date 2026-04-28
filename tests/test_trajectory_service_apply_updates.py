@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from app.models.config import SimulationConfig
 from app.models.geometry import WedgeGeometry
-from app.models.orbit import Orbit
+from app.models.orbit import Orbit, OrbitPoint, ReplayFrame
 from app.models.simulation_fingerprint import SimulationFingerprint
 from app.models.trajectory import TrajectorySeed
 from app.models.trajectory_metadata import TrajectoryBuildMetadata
@@ -98,23 +98,14 @@ class TrajectoryServiceApplyUpdatesTests(unittest.TestCase):
         geometry_orbit_mock.assert_not_called()
         geometry_mock.assert_not_called()
 
-    def test_apply_updates_does_not_execute_extend_or_truncate_yet(self) -> None:
+    def test_apply_updates_does_not_execute_extend_yet(self) -> None:
         config = self._make_config()
         service = self._make_service(config)
-        service.seeds = {
-            3: TrajectorySeed(id=3, wall_start=0, d0=0.1, tau0=0.2),
-            4: TrajectorySeed(id=4, wall_start=0, d0=0.2, tau0=0.3),
-        }
+        seed = TrajectorySeed(id=3, wall_start=0, d0=0.1, tau0=0.2)
         extend_orbit = Orbit(trajectory_id=3, metadata=self._make_metadata(config, phase_steps=32))
-        truncate_orbit = Orbit(trajectory_id=4, metadata=self._make_metadata(config, phase_steps=96))
-        service.orbits = {
-            3: extend_orbit,
-            4: truncate_orbit,
-        }
-        service.geometries = {
-            3: WedgeGeometry(),
-            4: WedgeGeometry(),
-        }
+        service.seeds = {3: seed}
+        service.orbits = {3: extend_orbit}
+        service.geometries = {3: WedgeGeometry()}
 
         with (
             patch.object(service, "build_orbit") as build_orbit_mock,
@@ -124,12 +115,60 @@ class TrajectoryServiceApplyUpdatesTests(unittest.TestCase):
             plans = service.apply_updates()
 
         self.assertEqual(plans[3].decision, TrajectoryUpdateDecision.EXTEND)
-        self.assertEqual(plans[4].decision, TrajectoryUpdateDecision.TRUNCATE)
         self.assertIs(service.orbits[3], extend_orbit)
-        self.assertIs(service.orbits[4], truncate_orbit)
         build_orbit_mock.assert_not_called()
         geometry_orbit_mock.assert_not_called()
         geometry_mock.assert_not_called()
+
+    def test_apply_updates_truncates_phase_orbit_without_rebuilding_it(self) -> None:
+        config = self._make_config(n_phase_default=32)
+        service = self._make_service(config)
+        seed = TrajectorySeed(id=4, wall_start=0, d0=0.2, tau0=0.3)
+        orbit = Orbit(
+            trajectory_id=4,
+            points=[
+                OrbitPoint(step_index=0, d=0.1, tau=0.2, wall=0),
+                OrbitPoint(step_index=16, d=0.2, tau=0.3, wall=1),
+                OrbitPoint(step_index=32, d=0.3, tau=0.4, wall=0),
+                OrbitPoint(step_index=48, d=0.4, tau=0.5, wall=1),
+            ],
+            replay_frames=[
+                ReplayFrame(frame_index=0, orbit_point_index=0),
+                ReplayFrame(frame_index=16, orbit_point_index=1),
+                ReplayFrame(frame_index=32, orbit_point_index=2),
+                ReplayFrame(frame_index=48, orbit_point_index=3),
+            ],
+            completed_steps=64,
+            metadata=self._make_metadata(config, phase_steps=64, completed_steps=64),
+        )
+        old_geometry = WedgeGeometry()
+        dense_orbit = Orbit(trajectory_id=4, completed_steps=25)
+        rebuilt_geometry = WedgeGeometry()
+        service.seeds = {4: seed}
+        service.orbits = {4: orbit}
+        service.geometries = {4: old_geometry}
+
+        with (
+            patch.object(service, "build_orbit") as build_orbit_mock,
+            patch.object(service, "build_geometry_orbit", return_value=dense_orbit) as geometry_orbit_mock,
+            patch.object(service, "build_geometry", return_value=rebuilt_geometry) as geometry_mock,
+        ):
+            plans = service.apply_updates()
+
+        truncated_orbit = service.orbits[4]
+        self.assertEqual(plans[4].decision, TrajectoryUpdateDecision.TRUNCATE)
+        self.assertIsNot(truncated_orbit, orbit)
+        self.assertEqual([point.step_index for point in truncated_orbit.points], [0, 16])
+        self.assertEqual([frame.orbit_point_index for frame in truncated_orbit.replay_frames], [0, 1])
+        self.assertEqual(truncated_orbit.completed_steps, config.n_phase_default)
+        self.assertIsNotNone(truncated_orbit.metadata)
+        self.assertEqual(truncated_orbit.metadata.phase_steps, config.n_phase_default)
+        self.assertEqual(truncated_orbit.metadata.geom_steps, config.n_geom_default)
+        self.assertEqual(truncated_orbit.metadata.completed_steps, config.n_phase_default)
+        self.assertIs(service.geometries[4], rebuilt_geometry)
+        build_orbit_mock.assert_not_called()
+        geometry_orbit_mock.assert_called_once_with(seed)
+        geometry_mock.assert_called_once_with(dense_orbit)
 
     def test_apply_updates_redraws_geometry_without_rebuilding_phase_orbit(self) -> None:
         config = self._make_config()
