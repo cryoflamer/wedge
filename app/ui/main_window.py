@@ -516,68 +516,129 @@ class MainWindow(QMainWindow):
         self._time_refresh("selected_trajectory.status", self._update_status_view)
 
     def _update_controls_config_view(self) -> None:
-        self.controls_panel.load_config(self.app_state.config)
-        self.controls_panel.set_angle_units(self._angle_units)
-        self.controls_panel.set_constraint_options(
-            self._angle_constraint_options(),
-            self._base_angle_constraint_name,
+        self._time_refresh(
+            "controls_config.controls_panel.load_config",
+            lambda: self.controls_panel.load_config(self.app_state.config),
         )
-        self.controls_panel.set_constraint_mode(
-            "constraint" if self._active_angle_constraint_name is not None else "free"
+        self._time_refresh(
+            "controls_config.controls_panel.set_angle_units",
+            lambda: self.controls_panel.set_angle_units(self._angle_units),
         )
-        self.controls_panel.set_symmetric_mode(self._symmetric_mode)
-        self.controls_panel.set_phase_view_mode(
-            self.phase_panel_wall_1.is_fixed_domain_mode()
+        self._time_refresh(
+            "controls_config.controls_panel.set_constraint_options",
+            lambda: self.controls_panel.set_constraint_options(
+                self._angle_constraint_options(),
+                self._base_angle_constraint_name,
+            ),
         )
-        self.controls_panel.set_region_view_options(
-            show_regions=self.app_state.config.view.show_regions,
-            show_labels=self.app_state.config.view.show_region_labels,
-            show_legend=self.app_state.config.view.show_region_legend,
+        self._time_refresh(
+            "controls_config.controls_panel.set_constraint_mode",
+            lambda: self.controls_panel.set_constraint_mode(
+                "constraint" if self._active_angle_constraint_name is not None else "free"
+            ),
         )
-        self.controls_panel.set_branch_markers_enabled(
-            self.app_state.config.view.show_branch_markers
+        self._time_refresh(
+            "controls_config.controls_panel.set_symmetric_mode",
+            lambda: self.controls_panel.set_symmetric_mode(self._symmetric_mode),
         )
-        self.controls_panel.set_heatmap_settings(
-            show_heatmap=self.app_state.config.view.show_heatmap,
-            mode=self.app_state.config.view.heatmap_mode,
-            resolution=self.app_state.config.view.heatmap_resolution,
-            normalization=self.app_state.config.view.heatmap_normalization,
+        self._time_refresh(
+            "controls_config.controls_panel.set_phase_view_mode",
+            lambda: self.controls_panel.set_phase_view_mode(
+                self.phase_panel_wall_1.is_fixed_domain_mode()
+            ),
         )
-        self.controls_panel.set_native_backend_options(
-            enabled=self.app_state.config.native.enabled,
-            sample_mode=self.app_state.config.native.sample_mode,
-            sample_step=self.app_state.config.native.sample_step,
-            status_text=self._native_backend_status_text(),
+        self._time_refresh(
+            "controls_config.controls_panel.set_region_view_options",
+            lambda: self.controls_panel.set_region_view_options(
+                show_regions=self.app_state.config.view.show_regions,
+                show_labels=self.app_state.config.view.show_region_labels,
+                show_legend=self.app_state.config.view.show_region_legend,
+            ),
         )
-        if self._selected_scene_item_name not in {
-            item.name for item in self.app_state.config.regions
-        }:
-            self._selected_scene_item_name = (
-                self.app_state.config.regions[0].name if self.app_state.config.regions else None
-            )
-        self.controls_panel.set_scene_item_items(
-            [
-                (
-                    item.name,
-                    item.display_text,
-                    item.relation or "",
+        self._time_refresh(
+            "controls_config.controls_panel.set_branch_markers_enabled",
+            lambda: self.controls_panel.set_branch_markers_enabled(
+                self.app_state.config.view.show_branch_markers
+            ),
+        )
+        self._time_refresh(
+            "controls_config.controls_panel.set_heatmap_settings",
+            lambda: self.controls_panel.set_heatmap_settings(
+                show_heatmap=self.app_state.config.view.show_heatmap,
+                mode=self.app_state.config.view.heatmap_mode,
+                resolution=self.app_state.config.view.heatmap_resolution,
+                normalization=self.app_state.config.view.heatmap_normalization,
+            ),
+        )
+        self._time_refresh(
+            "controls_config.controls_panel.set_native_backend_options",
+            lambda: self.controls_panel.set_native_backend_options(
+                enabled=self.app_state.config.native.enabled,
+                sample_mode=self.app_state.config.native.sample_mode,
+                sample_step=self.app_state.config.native.sample_step,
+                status_text=self._native_backend_status_text(),
+            ),
+        )
+
+        def ensure_selected_scene_item() -> None:
+            if self._selected_scene_item_name not in {
+                item.name for item in self.app_state.config.regions
+            }:
+                self._selected_scene_item_name = (
+                    self.app_state.config.regions[0].name if self.app_state.config.regions else None
                 )
-                for item in sorted(self.app_state.config.regions, key=lambda entry: entry.priority)
-            ],
-            self._selected_scene_item_name,
+
+        self._time_refresh(
+            "controls_config.scene_item.ensure_selection",
+            ensure_selected_scene_item,
         )
-        self.controls_panel.set_scene_item_editor_values(
-            self._selected_scene_item_editor_values(),
-            sync_sections=False,
+        self._time_refresh(
+            "controls_config.controls_panel.set_scene_item_items",
+            lambda: self.controls_panel.set_scene_item_items(
+                [
+                    (
+                        item.name,
+                        item.display_text,
+                        item.relation or "",
+                    )
+                    for item in sorted(self.app_state.config.regions, key=lambda entry: entry.priority)
+                ],
+                self._selected_scene_item_name,
+            ),
         )
-        self.angle_panel.set_angle_units(self._angle_units)
-        self.angle_panel.set_regions(self.app_state.config.regions)
-        self.angle_panel.set_selected_scene_item(self._selected_scene_item_name)
-        self.angle_panel.set_constraints(self.app_state.config.constraints)
-        self.angle_panel.set_active_constraint(self._resolved_angle_constraint())
-        self.angle_panel.set_angles(
-            self.app_state.config.simulation.alpha,
-            self.app_state.config.simulation.beta,
+        self._time_refresh(
+            "controls_config.controls_panel.set_scene_item_editor_values",
+            lambda: self.controls_panel.set_scene_item_editor_values(
+                self._selected_scene_item_editor_values(),
+                sync_sections=False,
+            ),
+        )
+        self._time_refresh(
+            "controls_config.angle_panel.set_angle_units",
+            lambda: self.angle_panel.set_angle_units(self._angle_units),
+        )
+        self._time_refresh(
+            "controls_config.angle_panel.set_regions",
+            lambda: self.angle_panel.set_regions(self.app_state.config.regions),
+        )
+        self._time_refresh(
+            "controls_config.angle_panel.set_selected_scene_item",
+            lambda: self.angle_panel.set_selected_scene_item(self._selected_scene_item_name),
+        )
+        self._time_refresh(
+            "controls_config.angle_panel.set_constraints",
+            lambda: self.angle_panel.set_constraints(self.app_state.config.constraints),
+        )
+        self._time_refresh(
+            "controls_config.angle_panel.set_active_constraint",
+            lambda: self.angle_panel.set_active_constraint(self._resolved_angle_constraint()),
+        )
+        self._time_refresh(
+            "controls_config.angle_panel.set_angles",
+            lambda: self.angle_panel.set_angles(
+                self.app_state.config.simulation.alpha,
+                self.app_state.config.simulation.beta,
+            ),
         )
 
     def _update_parameter_controls_view(self) -> None:
