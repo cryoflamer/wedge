@@ -1065,12 +1065,15 @@ class MainWindow(QMainWindow):
 
         if self._plans_require_legacy_rebuild(plans):
             self._start_rebuild_job()
+            self._reset_replay_views()
+            self._autosave_session()
+            self.update_view()
         else:
             self._trajectory_service.apply_updates(self.app_state.config.simulation)
+            self._reset_replay_views()
+            self._autosave_session()
+            self._refresh_after_smart_apply(plans)
 
-        self._reset_replay_views()
-        self._autosave_session()
-        self.update_view()
         logger.info(
             "Parameters smart-applied: alpha=%.6f beta=%.6f n_phase=%s n_geom=%s plans=%s",
             alpha,
@@ -1100,6 +1103,40 @@ class MainWindow(QMainWindow):
             TrajectoryUpdateDecision.UNCHANGED,
         }
         return any(plan.decision not in supported_decisions for plan in plans.values())
+
+    def _refresh_after_smart_apply(
+        self,
+        plans: dict[int, TrajectoryUpdatePlan],
+    ) -> None:
+        """Refresh only the UI sections affected by supported smart-apply plans."""
+        decisions = {plan.decision for plan in plans.values()}
+        self.controls_panel.mark_parameters_applied()
+        self._job_status_state = "idle"
+        self._job_status_message = "Parameters applied"
+        self._status_label.setText(self._job_status_message)
+        self._clear_status_progress_text()
+
+        if decisions <= {TrajectoryUpdateDecision.REDRAW, TrajectoryUpdateDecision.UNCHANGED}:
+            self.wedge_panel.set_geometries(
+                self._trajectory_seeds,
+                self._trajectory_geometries,
+                self._selected_trajectory,
+                self._active_segment_indices,
+            )
+            self._update_status_view()
+            return
+
+        if decisions <= {
+            TrajectoryUpdateDecision.TRUNCATE,
+            TrajectoryUpdateDecision.REDRAW,
+            TrajectoryUpdateDecision.UNCHANGED,
+        }:
+            self._update_trajectory_views()
+            self._update_panel_views()
+            self._update_status_view()
+            return
+
+        self.update_view()
 
     def _preserve_current_angle_if_control_rounded(
         self,
