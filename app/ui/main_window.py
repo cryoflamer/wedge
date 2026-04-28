@@ -486,9 +486,10 @@ class MainWindow(QMainWindow):
 
     def update_view(self) -> None:
         # Heavy full refresh: reloads config-backed controls, trajectory lists,
-        # phase/geometric panels, and status widgets. Do not call this from
-        # lightweight checkbox/combo handlers. Prefer targeted refresh helpers
-        # unless the scene/trajectory/runtime state changed structurally.
+        # phase/geometric panels, and status widgets. Keep this for startup,
+        # session restore/load, and major structural resets only. Hot paths must
+        # use targeted refresh helpers so they do not rebuild angle regions or
+        # unrelated controls after lightweight trajectory/config changes.
         self._time_refresh("update_view.controls_config", self._update_controls_config_view)
         self._time_refresh("update_view.trajectory_views", self._update_trajectory_views)
         self._time_refresh("update_view.panel_views", self._update_panel_views)
@@ -777,6 +778,14 @@ class MainWindow(QMainWindow):
     def _refresh_status_only(self, label: str) -> None:
         self._time_refresh(f"{label}.status_view", self._update_status_view)
 
+    def _refresh_structural_controls(self, label: str) -> None:
+        # Narrow structural controls refresh: update config-backed controls and
+        # the angle panel without touching trajectory lists or plot panels. Use
+        # this for constraint/scene-control state changes that need the controls
+        # synced but do not require a full update_view() pass.
+        self._time_refresh(f"{label}.controls_config", self._update_controls_config_view)
+        self._time_refresh(f"{label}.status_view", self._update_status_view)
+
     def _on_job_state_updated(self) -> None:
         self._update_status_view()
         if self._job_controller.is_running():
@@ -916,14 +925,14 @@ class MainWindow(QMainWindow):
         self._base_angle_constraint_name = name
         if self._active_angle_constraint_name is None:
             self.app_state.config.view.active_angle_constraint = None
-            self.update_view()
+            self._refresh_structural_controls("angle_constraint.no_active")
             return
         if (
             self._active_angle_constraint_name == name
             and self.app_state.config.view.active_angle_constraint == name
             and self._symmetric_mode == self._constraint_name_is_symmetry(name)
         ):
-            self.update_view()
+            self._refresh_structural_controls("angle_constraint.unchanged")
             return
         self._active_angle_constraint_name = name
         self.app_state.config.view.active_angle_constraint = name
@@ -932,7 +941,7 @@ class MainWindow(QMainWindow):
         self._start_rebuild_job()
         self._reset_replay_views()
         self._autosave_session()
-        self.update_view()
+        self._refresh_structural_controls("angle_constraint.changed")
         logger.info("Angle constraint changed: %s", name)
 
     def _set_angle_constraint_mode(self, mode: str) -> None:
@@ -957,13 +966,13 @@ class MainWindow(QMainWindow):
             previous_active == self._active_angle_constraint_name
             and previous_symmetric == self._symmetric_mode
         ):
-            self.update_view()
+            self._refresh_structural_controls("angle_constraint_mode.unchanged")
             return
         self._project_angles_to_active_constraint()
         self._start_rebuild_job()
         self._reset_replay_views()
         self._autosave_session()
-        self.update_view()
+        self._refresh_structural_controls("angle_constraint_mode.changed")
         logger.info(
             "Angle constraint mode changed: mode=%s active=%s",
             normalized_mode,
@@ -1129,7 +1138,7 @@ class MainWindow(QMainWindow):
             self._start_rebuild_job()
             self._reset_replay_views()
             self._autosave_session()
-            self.update_view()
+            self._update_parameter_change_preview()
             logger.info(
                 "Parameters force-rebuilt: alpha=%.6f beta=%.6f n_phase=%s n_geom=%s",
                 alpha,
@@ -1163,7 +1172,7 @@ class MainWindow(QMainWindow):
             self._start_rebuild_job()
             self._reset_replay_views()
             self._autosave_session()
-            self.update_view()
+            self._update_parameter_change_preview()
         else:
             self._trajectory_service.apply_updates(self.app_state.config.simulation)
             self._reset_replay_views()
@@ -1648,7 +1657,7 @@ class MainWindow(QMainWindow):
         )
         self._reset_replay_views()
         self._schedule_autosave()
-        self.update_view()
+        self._refresh_trajectory_hot_path("trajectory_clear_selected")
         logger.info("Trajectory cleared: id=%s", trajectory_id)
 
     def _on_clear_all_trajectories(self) -> None:
@@ -1657,7 +1666,7 @@ class MainWindow(QMainWindow):
         self._selected_trajectory = None
         self._reset_replay_views()
         self._schedule_autosave()
-        self.update_view()
+        self._refresh_trajectory_hot_path("trajectory_clear_all")
         logger.info("All trajectories cleared")
 
     def _on_replay_action(self, action_name: str) -> None:
