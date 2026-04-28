@@ -44,6 +44,7 @@ class AnglePanel(QWidget):
         self._angle_units = "rad"
         self._active_constraint: ActivePointConstraint | None = None
         self._scene_items: list[SceneItemDescription] = []
+        self._scene_items_signature: tuple[tuple[object, ...], ...] = ()
         self._selected_scene_item_name: str | None = None
         self._boundary_item_names: set[str] = set()
         self._predicate_item_names: set[str] = set()
@@ -87,13 +88,44 @@ class AnglePanel(QWidget):
         self.update()
 
     def set_regions(self, regions: list[SceneItemDescription]) -> None:
-        self._scene_items = sorted(regions, key=lambda item: item.priority)
+        scene_items = sorted(regions, key=lambda item: item.priority)
+        signature = self._scene_items_signature_for(scene_items)
+        if signature == self._scene_items_signature:
+            return
+
+        self._scene_items = scene_items
+        self._scene_items_signature = signature
         self._boundary_segments_cache = {
             item.name: tuple(build_boundary_segments(item, self._is_inside_domain))
             for item in self._scene_items
             if is_boundary_scene_item(item)
         }
         self.update()
+
+    def _scene_items_signature_for(
+        self,
+        scene_items: list[SceneItemDescription],
+    ) -> tuple[tuple[object, ...], ...]:
+        return tuple(
+            (
+                item.name,
+                item.alias,
+                item.display_text,
+                item.legend_text,
+                item.expression,
+                item.relation,
+                item.visible,
+                item.priority,
+                item.compatibility_predicate,
+                item.style.fill,
+                item.style.alpha,
+                item.style.hatch,
+                item.style.border,
+                item.style.line_style,
+                item.style.line_width,
+            )
+            for item in scene_items
+        )
 
     def set_selected_scene_item(self, name: str | None) -> None:
         if name == self._selected_scene_item_name:
