@@ -1139,10 +1139,10 @@ class MainWindow(QMainWindow):
         self.app_state.config.simulation.n_geom_default = n_geom
         if sync_native_settings:
             self._sync_native_backend_settings_from_controls()
-        self._start_rebuild_job()
         self._reset_replay_views()
         self._autosave_session()
-        self.update_view()
+        self._update_parameter_change_preview()
+        self._start_rebuild_job()
         logger.info(
             "Parameters updated: alpha=%.6f beta=%.6f n_phase=%s n_geom=%s",
             alpha,
@@ -1150,6 +1150,18 @@ class MainWindow(QMainWindow):
             normalized_n_phase,
             n_geom,
         )
+
+    def _update_parameter_change_preview(self) -> None:
+        # Parameter-space clicks should give immediate visual feedback before the
+        # background rebuild starts. Keep this deliberately narrow: updating the
+        # angle marker and controls is cheap, while update_view() also redraws
+        # all trajectory panels and can visibly block the UI.
+        self.angle_panel.set_angles(
+            self.app_state.config.simulation.alpha,
+            self.app_state.config.simulation.beta,
+        )
+        self._update_controls_config_view()
+        self._update_status_view()
 
     def _sync_native_backend_settings_from_controls(self) -> None:
         enabled, sample_mode, sample_step = self.controls_panel.native_backend_settings()
@@ -1998,7 +2010,6 @@ class MainWindow(QMainWindow):
 
     def _start_rebuild_job(self, job_message: str = "Starting rebuild...") -> None:
         self._trajectory_service.clear_results()
-        self.update_view()
         self._clear_status_progress_text()
         seeds = sorted(self._trajectory_seeds.values(), key=lambda item: item.id)
         self._job_controller.start_rebuild(
