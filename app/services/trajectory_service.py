@@ -15,6 +15,7 @@ from app.models.trajectory_metadata import TrajectoryBuildMetadata
 from app.models.trajectory import TrajectorySeed
 from app.services.trajectory_metadata_builder import build_metadata_from_config
 from app.services.trajectory_update_planner import (
+    TrajectoryUpdateDecision,
     TrajectoryUpdatePlan,
     TrajectoryUpdatePlanner,
 )
@@ -128,6 +129,31 @@ class TrajectoryService:
             trajectory_id: TrajectoryUpdatePlanner.plan_metadata(orbit.metadata, desired_metadata)
             for trajectory_id, orbit in self.orbits.items()
         }
+
+    def apply_updates(
+        self,
+        new_config: SimulationConfig | None = None,
+    ) -> dict[int, TrajectoryUpdatePlan]:
+        """Apply the minimal supported update decisions and return all plans.
+
+        This first execution layer intentionally supports only REBUILD and
+        UNCHANGED. Extend, truncate, and redraw decisions are planned but left
+        untouched for later focused patches.
+        """
+        plans = self.plan_updates(new_config)
+        for trajectory_id, plan in plans.items():
+            if plan.decision == TrajectoryUpdateDecision.UNCHANGED:
+                continue
+            if plan.decision != TrajectoryUpdateDecision.REBUILD:
+                continue
+
+            seed = self.seeds.get(trajectory_id)
+            if seed is None:
+                continue
+
+            self.orbits[trajectory_id] = self.build_orbit(seed)
+            self.geometries[trajectory_id] = self.build_geometry(self.build_geometry_orbit(seed))
+        return plans
 
     def remove_trajectory(self, trajectory_id: int) -> None:
         self.seeds.pop(trajectory_id, None)
