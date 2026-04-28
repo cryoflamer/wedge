@@ -84,6 +84,58 @@ class TrajectoryServicePlanningTests(unittest.TestCase):
         self.assertIs(service.orbits[1], orbit)
         self.assertIs(service.orbits[1].metadata, metadata)
 
+    def test_plan_updates_rebuilds_when_dynamic_config_changes(self) -> None:
+        current_config = self._make_config()
+        changed_config = self._make_config(alpha=0.65)
+        service = self._make_service(current_config)
+        service.orbits = {
+            1: Orbit(trajectory_id=1, metadata=self._make_metadata(current_config)),
+        }
+
+        plans = service.plan_updates(changed_config)
+
+        self.assertEqual(plans[1].decision, TrajectoryUpdateDecision.REBUILD)
+        self.assertEqual(plans[1].reason, "simulation fingerprint changed")
+
+    def test_plan_updates_extends_when_only_phase_length_increases(self) -> None:
+        current_config = self._make_config(n_phase_default=64)
+        changed_config = self._make_config(n_phase_default=96)
+        service = self._make_service(current_config)
+        service.orbits = {
+            1: Orbit(trajectory_id=1, metadata=self._make_metadata(current_config)),
+        }
+
+        plans = service.plan_updates(changed_config)
+
+        self.assertEqual(plans[1].decision, TrajectoryUpdateDecision.EXTEND)
+        self.assertEqual(plans[1].reason, "phase length increased")
+
+    def test_plan_updates_truncates_when_only_phase_length_decreases(self) -> None:
+        current_config = self._make_config(n_phase_default=64)
+        changed_config = self._make_config(n_phase_default=32)
+        service = self._make_service(current_config)
+        service.orbits = {
+            1: Orbit(trajectory_id=1, metadata=self._make_metadata(current_config)),
+        }
+
+        plans = service.plan_updates(changed_config)
+
+        self.assertEqual(plans[1].decision, TrajectoryUpdateDecision.TRUNCATE)
+        self.assertEqual(plans[1].reason, "phase length decreased")
+
+    def test_plan_updates_redraws_when_only_geometry_length_changes(self) -> None:
+        current_config = self._make_config(n_geom_default=24)
+        changed_config = self._make_config(n_geom_default=36)
+        service = self._make_service(current_config)
+        service.orbits = {
+            1: Orbit(trajectory_id=1, metadata=self._make_metadata(current_config)),
+        }
+
+        plans = service.plan_updates(changed_config)
+
+        self.assertEqual(plans[1].decision, TrajectoryUpdateDecision.REDRAW)
+        self.assertEqual(plans[1].reason, "geometry length changed")
+
 
 if __name__ == "__main__":
     unittest.main()
