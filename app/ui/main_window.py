@@ -1001,6 +1001,14 @@ class MainWindow(QMainWindow):
         n_geom: int,
     ) -> None:
         normalized_n_phase = self._normalized_phase_steps(n_phase, n_geom)
+        alpha = self._preserve_current_angle_if_control_rounded(
+            alpha,
+            self.app_state.config.simulation.alpha,
+        )
+        beta = self._preserve_current_angle_if_control_rounded(
+            beta,
+            self.app_state.config.simulation.beta,
+        )
         self.app_state.config.simulation.alpha = alpha
         self.app_state.config.simulation.beta = beta
         self.app_state.config.simulation.n_phase_default = normalized_n_phase
@@ -1034,6 +1042,33 @@ class MainWindow(QMainWindow):
             TrajectoryUpdateDecision.UNCHANGED,
         }
         return any(plan.decision not in supported_decisions for plan in plans.values())
+
+    def _preserve_current_angle_if_control_rounded(
+        self,
+        submitted_value: float,
+        current_value: float,
+    ) -> float:
+        # Controls display angles with six decimals. After parameter-space clicks
+        # the runtime value often has more precision than the visible field.
+        # Pressing Apply without a visible edit should not turn that display
+        # rounding into a dynamic alpha/beta change and force a rebuild.
+        return (
+            current_value
+            if math.isclose(
+                submitted_value,
+                current_value,
+                rel_tol=0.0,
+                abs_tol=self._angle_control_rounding_tolerance(),
+            )
+            else submitted_value
+        )
+
+    def _angle_control_rounding_tolerance(self) -> float:
+        # ControlsPanel.load_config() formats alpha/beta as %.6f in the current
+        # angle unit, so half of the last displayed digit is the no-op window.
+        if self._angle_units == "deg":
+            return math.radians(0.5e-6)
+        return 0.5e-6
 
     @staticmethod
     def _format_update_plan_summary(plans: dict[int, TrajectoryUpdatePlan]) -> str:
