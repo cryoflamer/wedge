@@ -782,11 +782,12 @@ class MainWindow(QMainWindow):
         self._autosave_session()
 
     def _on_angle_click(self, alpha: float, beta: float) -> None:
-        self._on_parameters_changed(
+        self._apply_parameter_change_with_rebuild(
             alpha=alpha,
             beta=beta,
             n_phase=self.app_state.config.simulation.n_phase_default,
             n_geom=self.app_state.config.simulation.n_geom_default,
+            sync_native_settings=False,
         )
         logger.info("Angle panel clicked: alpha=%.6f beta=%.6f", alpha, beta)
 
@@ -981,29 +982,44 @@ class MainWindow(QMainWindow):
         n_phase: int,
         n_geom: int,
     ) -> None:
+        self._apply_parameter_change_from_controls(
+            alpha=alpha,
+            beta=beta,
+            n_phase=n_phase,
+            n_geom=n_geom,
+        )
+
+    def _apply_parameter_change_from_controls(
+        self,
+        alpha: float,
+        beta: float,
+        n_phase: int,
+        n_geom: int,
+    ) -> None:
+        self._apply_parameter_change_with_rebuild(
+            alpha=alpha,
+            beta=beta,
+            n_phase=n_phase,
+            n_geom=n_geom,
+            sync_native_settings=True,
+        )
+
+    def _apply_parameter_change_with_rebuild(
+        self,
+        alpha: float,
+        beta: float,
+        n_phase: int,
+        n_geom: int,
+        *,
+        sync_native_settings: bool,
+    ) -> None:
         normalized_n_phase = self._normalized_phase_steps(n_phase, n_geom)
         self.app_state.config.simulation.alpha = alpha
         self.app_state.config.simulation.beta = beta
         self.app_state.config.simulation.n_phase_default = normalized_n_phase
         self.app_state.config.simulation.n_geom_default = n_geom
-        if self.sender() is self.controls_panel:
-            enabled, sample_mode, sample_step = (
-                self.controls_panel.native_backend_settings()
-            )
-            normalized_mode = sample_mode.strip().lower() or "every_n"
-            normalized_step = max(int(sample_step), 1)
-            self.app_state.config.native.enabled = enabled
-            self.app_state.config.native.sample_mode = normalized_mode
-            self.app_state.config.native.sample_step = normalized_step
-            self.app_state.config.simulation.native_enabled = enabled
-            self.app_state.config.simulation.native_sample_mode = normalized_mode
-            self.app_state.config.simulation.native_sample_step = normalized_step
-            self.controls_panel.set_native_backend_options(
-                enabled=enabled,
-                sample_mode=normalized_mode,
-                sample_step=normalized_step,
-                status_text=self._native_backend_status_text(),
-            )
+        if sync_native_settings:
+            self._sync_native_backend_settings_from_controls()
         self._start_rebuild_job()
         self._reset_replay_views()
         self._autosave_session()
@@ -1014,6 +1030,23 @@ class MainWindow(QMainWindow):
             beta,
             normalized_n_phase,
             n_geom,
+        )
+
+    def _sync_native_backend_settings_from_controls(self) -> None:
+        enabled, sample_mode, sample_step = self.controls_panel.native_backend_settings()
+        normalized_mode = sample_mode.strip().lower() or "every_n"
+        normalized_step = max(int(sample_step), 1)
+        self.app_state.config.native.enabled = enabled
+        self.app_state.config.native.sample_mode = normalized_mode
+        self.app_state.config.native.sample_step = normalized_step
+        self.app_state.config.simulation.native_enabled = enabled
+        self.app_state.config.simulation.native_sample_mode = normalized_mode
+        self.app_state.config.simulation.native_sample_step = normalized_step
+        self.controls_panel.set_native_backend_options(
+            enabled=enabled,
+            sample_mode=normalized_mode,
+            sample_step=normalized_step,
+            status_text=self._native_backend_status_text(),
         )
 
     def _on_scan_requested(
