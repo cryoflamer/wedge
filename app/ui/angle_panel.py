@@ -45,6 +45,7 @@ class AnglePanel(QWidget):
         self._active_constraint: ActivePointConstraint | None = None
         self._scene_items: list[SceneItemDescription] = []
         self._scene_items_signature: tuple[tuple[object, ...], ...] = ()
+        self._boundary_segments_signature: tuple[tuple[object, ...], ...] = ()
         self._selected_scene_item_name: str | None = None
         self._boundary_item_names: set[str] = set()
         self._predicate_item_names: set[str] = set()
@@ -93,13 +94,17 @@ class AnglePanel(QWidget):
         if signature == self._scene_items_signature:
             return
 
+        boundary_segments_signature = self._boundary_segments_signature_for(scene_items)
+        if boundary_segments_signature != self._boundary_segments_signature:
+            self._boundary_segments_cache = {
+                item.name: tuple(build_boundary_segments(item, self._is_inside_domain))
+                for item in scene_items
+                if is_boundary_scene_item(item)
+            }
+            self._boundary_segments_signature = boundary_segments_signature
+
         self._scene_items = scene_items
         self._scene_items_signature = signature
-        self._boundary_segments_cache = {
-            item.name: tuple(build_boundary_segments(item, self._is_inside_domain))
-            for item in self._scene_items
-            if is_boundary_scene_item(item)
-        }
         self.update()
 
     def _scene_items_signature_for(
@@ -125,6 +130,21 @@ class AnglePanel(QWidget):
                 item.style.line_width,
             )
             for item in scene_items
+        )
+
+    def _boundary_segments_signature_for(
+        self,
+        scene_items: list[SceneItemDescription],
+    ) -> tuple[tuple[object, ...], ...]:
+        return tuple(
+            (
+                item.name,
+                item.expression,
+                item.relation,
+                item.compatibility_predicate,
+            )
+            for item in scene_items
+            if is_boundary_scene_item(item)
         )
 
     def set_selected_scene_item(self, name: str | None) -> None:
