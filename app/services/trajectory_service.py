@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 
 from app.core.trajectory_engine import (
     build_dense_orbit_for_geometry,
@@ -10,7 +11,9 @@ from app.core.trajectory_engine import (
 from app.models.config import Config
 from app.models.geometry import WedgeGeometry
 from app.models.orbit import Orbit
+from app.models.trajectory_metadata import TrajectoryBuildMetadata
 from app.models.trajectory import TrajectorySeed
+from app.services.trajectory_metadata_builder import build_metadata_from_config
 
 
 class TrajectoryService:
@@ -28,7 +31,7 @@ class TrajectoryService:
 
     def build_orbit(self, seed: TrajectorySeed) -> Orbit:
         config = self._config_provider()
-        return build_orbit(
+        orbit = build_orbit(
             seed=seed,
             config=config.simulation,
             steps=max(
@@ -36,6 +39,13 @@ class TrajectoryService:
                 config.simulation.n_geom_default + 1,
             ),
         )
+        orbit.metadata = self._build_metadata_for_orbit(orbit)
+        return orbit
+
+    def _build_metadata_for_orbit(self, orbit: Orbit) -> TrajectoryBuildMetadata:
+        config = self._config_provider()
+        metadata = build_metadata_from_config(config.simulation)
+        return replace(metadata, completed_steps=orbit.completed_steps)
 
     def build_geometry(self, orbit: Orbit) -> WedgeGeometry:
         config = self._config_provider()
