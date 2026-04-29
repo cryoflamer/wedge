@@ -13,3 +13,4 @@ sessions/
 chatgpt-packs/
 
 *.csv
+*.iml
